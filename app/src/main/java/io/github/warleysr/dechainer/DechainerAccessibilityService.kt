@@ -13,7 +13,6 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -70,6 +69,9 @@ class DechainerAccessibilityService : AccessibilityService() {
     private var forbiddenPatterns: Map<String, Regex> = emptyMap()
     private var passiveForbiddenPatterns: Map<String, Map<String, Regex>> = emptyMap()
     private var targetPackages: Set<String> = emptySet()
+
+    private var wasTypingActively = false
+    private var lastActiveTypedText = ""
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -464,6 +466,12 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.packageName == packageName) return
 
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            checkActiveBlocking()
+        }
+
         // App tracking to control time limits and time between re-openings
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val newPackage = event.packageName?.toString() ?: return
@@ -479,6 +487,8 @@ class DechainerAccessibilityService : AccessibilityService() {
                 sessionStartTime = SystemClock.elapsedRealtime()
                 checkDateReset()
                 startTracking(newPackage)
+                wasTypingActively = false
+                lastActiveTypedText = ""
 
                 if (nsfwEnabled && newPackage in nsfwTargetPackages) {
                     warmUpNsfwDetector()
@@ -495,26 +505,6 @@ class DechainerAccessibilityService : AccessibilityService() {
                 if (blockedActivities.contains(className))
                     performGlobalAction(GLOBAL_ACTION_BACK)
             }
-        }
-
-        // Active blocking: when the user types the forbidden word
-        else if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            if (event.source?.isEditable == false) return
-
-            val pkg = currentPackage ?: return
-            if (!targetPackages.contains(pkg)) return
-
-            val text = event.text.joinToString(" ")
-            val forbiddenWord = checkForbiddenWord(text) ?: return
-
-            val arguments = Bundle()
-            arguments.putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                text.replace(forbiddenWord, "")
-            )
-            event.source?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-
-            showBlockedActivity(forbiddenWord)
         }
 
         // Passive blocking: when the forbidden word appears on the screen
@@ -975,6 +965,41 @@ class DechainerAccessibilityService : AccessibilityService() {
                 return word
         }
         return null
+    }
+
+    private data class ScreenExtraction(val text: String, val isTyping: Boolean)
+
+    private fun extractEditableFieldsTextAndFocus(): ScreenExtraction {
+        val root = rootInActiveWindow ?: return ScreenExtraction("", false)
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        root.recycle()
+
+        val isTyping = focused?.isEditable == true
+        val text = if (isTyping) focused?.text?.toString().orEmpty() else ""
+        focused?.recycle()
+
+        return ScreenExtraction(text, isTyping)
+    }
+
+    private fun checkActiveBlocking() {
+        val pkg = currentPackage ?: return
+        if (!targetPackages.contains(pkg)) return
+
+        val extraction = extractEditableFieldsTextAndFocus()
+        if (extraction.isTyping) {
+            wasTypingActively = true
+            lastActiveTypedText = extraction.text
+            return
+        }
+        if (!wasTypingActively) return
+        wasTypingActively = false
+
+        val text = extraction.text.ifBlank { lastActiveTypedText }
+        lastActiveTypedText = ""
+
+        val forbiddenWord = checkForbiddenWord(text) ?: return
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        showBlockedActivity(forbiddenWord)
     }
 
     private fun startTracking(pkg: String) {
