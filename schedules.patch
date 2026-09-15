@@ -27,17 +27,19 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/README.md dechainer-main/READM
  
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/AndroidManifest.xml dechainer-main/app/src/main/AndroidManifest.xml
 --- dechainer-orig/app/src/main/AndroidManifest.xml	2026-09-15 09:02:42.301925137 +0000
-+++ dechainer-main/app/src/main/AndroidManifest.xml	2026-09-15 09:09:52.499495147 +0000
-@@ -8,6 +8,8 @@
++++ dechainer-main/app/src/main/AndroidManifest.xml	2026-09-15 11:42:10.274546687 +0000
+@@ -8,6 +8,10 @@
          tools:ignore="ManifestOrder,PackageVisibilityPolicy,QueryAllPackagesPermission" />
      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
      <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 +    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
++    <!-- Exact alarms so schedule windows open and close on time: auto-granted on 31-32, USE_EXACT_ALARM from 33 on. -->
++    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
++    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
  
      <queries>
          <intent>
-@@ -73,6 +75,14 @@
+@@ -73,6 +77,14 @@
              android:launchMode="singleInstance"
              android:taskAffinity="" />
          <activity
@@ -52,7 +54,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/AndroidManifest.x
              android:name=".activities.AccessibilityRequestActivity"
              android:theme="@style/Theme.Dechainer"
              android:excludeFromRecents="true"
-@@ -92,6 +102,18 @@
+@@ -92,6 +104,18 @@
              </intent-filter>
          </receiver>
  
@@ -411,7 +413,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
              putStringArray("URLBlocklist", allSites.toTypedArray())
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	1970-01-01 00:00:00.000000000 +0000
-+++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	2026-09-15 09:30:39.166072511 +0000
++++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	2026-09-15 11:03:31.133570003 +0000
 @@ -0,0 +1,324 @@
 +package io.github.warleysr.dechainer.data
 +
@@ -515,7 +517,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +        applyRestrictions(ctx, dpm, admin, desiredRestrictions)
 +        applySites(ctx, desiredSites)
 +
-+        activeBlocks = buildMap {
++        activeBlocks = buildMap<String, ActiveBlock> {
 +            active.forEach { schedule ->
 +                val end = schedule.currentWindowEnd(nowLocal)
 +                    ?.atZone(now.zone)?.toInstant()?.toEpochMilli() ?: return@forEach
