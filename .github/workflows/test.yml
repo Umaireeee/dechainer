@@ -1,0 +1,160 @@
+name: Test schedules on emulator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Add schedule feature
+        run: |
+          NEWEST=$(git log -1 --diff-filter=AM --name-only --pretty=format: -- "*.patch" | grep -v "^$" | head -1)
+          echo "Using patch file: $NEWEST"
+          cp "$NEWEST" /tmp/s.patch
+          if patch -p1 --batch --forward --dry-run < /tmp/s.patch > /dev/null; then
+            patch -p1 --batch --forward < /tmp/s.patch
+          else
+            echo "Newest code conflicts, using the Sep 13 version"
+            git checkout -f f1c024be234e57957893aa3910a48ca83d5966e7
+            patch -p1 --batch --forward < /tmp/s.patch
+          fi
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Write test script
+        run: |
+          cat > emu_test.sh << 'EOF'
+          #!/bin/bash
+          set -u
+          PKG=io.github.warleysr.dechainer
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          PASS=0; FAIL=0
+          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+          sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
+          mkdir -p test-results
+
+          adb wait-for-device
+          adb install -r -g "$APK" || { echo "Install failed"; exit 1; }
+          ok "App installed"
+
+          TARGET=""
+          for p in com.android.camera2 com.android.gallery3d com.android.calendar com.android.deskclock com.android.contacts com.google.android.calculator com.android.calculator2; do
+            if sh_ pm path "$p" | grep -q "package:"; then TARGET=$p; break; fi
+          done
+          [ -z "$TARGET" ] && { echo "No test app found"; exit 1; }
+          echo "Test app to block: $TARGET"
+
+          BASE_BT=$(sh_ dumpsys user | grep -c "no_bluetooth")
+          BASE_DT=$(sh_ dumpsys user | grep -c "no_config_date_time")
+
+          H=$(sh_ date +%H); M=$(sh_ date +%M); S=$(sh_ date +%S)
+          NOW=$((10#$H * 60 + 10#$M))
+          START=$(( (NOW + 1440 - 2) % 1440 ))
+          END=$(( (NOW + 3) % 1440 ))
+          echo "Device time $H:$M:$S, window $START -> $END (minutes after midnight)"
+
+          python3 - "$START" "$END" "$TARGET" > /tmp/schedule_prefs.xml << 'PY'
+          import json, sys
+          from xml.sax.saxutils import escape
+          s, e, t = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+          j = json.dumps([{"id": "ci-test", "name": "CI test", "enabled": True, "days": [1, 2, 3, 4, 5, 6, 7],
+                           "start": s, "end": e, "packages": [t], "restrictions": ["no_bluetooth"],
+                           "websites": ["instagram.com"], "lockWhileActive": True}])
+          print("<?xml version='1.0' encoding='utf-8' standalone='yes' ?>")
+          print("<map>")
+          print('    <string name="schedules_json">%s</string>' % escape(j, {'"': "&quot;"}))
+          print("</map>")
+          PY
+          adb push /tmp/schedule_prefs.xml /data/local/tmp/schedule_prefs.xml > /dev/null
+          adb shell "run-as $PKG mkdir -p shared_prefs"
+          adb shell "cat /data/local/tmp/schedule_prefs.xml | run-as $PKG sh -c 'cat > shared_prefs/schedule_prefs.xml'"
+          if sh_ run-as $PKG cat shared_prefs/schedule_prefs.xml | grep -q "ci-test"; then ok "Test schedule saved in app"; else bad "Could not save test schedule"; exit 1; fi
+
+          OUT=$(sh_ dpm set-device-owner $PKG/.DechainerDeviceAdminReceiver)
+          echo "$OUT"
+          if echo "$OUT" | grep -qi "success"; then ok "Device Owner granted"; else bad "Device Owner not granted"; exit 1; fi
+
+          adb shell am force-stop $PKG
+          adb shell am start -n $PKG/.activities.MainActivity > /dev/null
+          sleep 20
+
+          echo "----- DURING the schedule window -----"
+          if sh_ dumpsys package "$TARGET" | grep -q "suspended=true"; then ok "App is blocked during the window"; else bad "App NOT blocked during the window"; fi
+          if [ "$BASE_BT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_bluetooth"; then ok "Service (Bluetooth) blocked during the window"; else bad "Service NOT blocked during the window"; fi
+          fi
+          if [ "$BASE_DT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_config_date_time"; then ok "Date/time settings locked (anti-tamper)"; else bad "Date/time NOT locked"; fi
+          fi
+          if [ "$(sh_ settings get global auto_time)" = "1" ]; then ok "Automatic time forced on"; else bad "Automatic time not forced"; fi
+
+          adb shell monkey -p "$TARGET" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
+          sleep 4
+          adb exec-out screencap -p > test-results/1-during-window.png
+
+          WAIT=$(( 3 * 60 - 10#$S + 60 ))
+          echo "Waiting ${WAIT}s for the window to end (no app restart, the alarm must do it)..."
+          sleep "$WAIT"
+
+          echo "----- AFTER the schedule window -----"
+          RELEASED=0
+          for i in 1 2 3 4; do
+            if sh_ dumpsys package "$TARGET" | grep -q "suspended=false"; then RELEASED=1; break; fi
+            sleep 30
+          done
+          if [ "$RELEASED" -eq 1 ]; then ok "App unblocked automatically after the window"; else bad "App still blocked after the window"; fi
+          if [ "$BASE_BT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_bluetooth"; then bad "Service still blocked after the window"; else ok "Service unblocked after the window"; fi
+          fi
+          if [ "$BASE_DT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_config_date_time"; then ok "Date/time still locked (schedule is still enabled)"; else bad "Date/time lock dropped too early"; fi
+          fi
+
+          adb shell monkey -p "$TARGET" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
+          sleep 4
+          adb exec-out screencap -p > test-results/2-after-window.png
+          adb logcat -d > test-results/logcat.txt
+
+          echo "=================================="
+          echo "RESULT: $PASS passed, $FAIL failed"
+          echo "=================================="
+          exit $FAIL
+          EOF
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run emulator test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash emu_test.sh
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
