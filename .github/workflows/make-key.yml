@@ -1,0 +1,42 @@
+name: Make signing key (run once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  make-key:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Create signing key
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          EXISTING_KEY: ${{ secrets.SIGNING_KEY_B64 }}
+        run: |
+          if [ -n "$EXISTING_KEY" ]; then
+            echo "A signing key already exists (SIGNING_KEY_B64). Not creating another one."
+            exit 1
+          fi
+          if [ ${#SIGNING_PASSWORD} -lt 16 ]; then
+            echo "The SIGNING_PASSWORD secret is missing or shorter than 16 characters."
+            exit 1
+          fi
+          mkdir key
+          keytool -genkeypair -storetype PKCS12 -keystore key/dechainer-release.p12 \
+            -alias dechainer -keyalg RSA -keysize 4096 -validity 36500 \
+            -dname "CN=Dechainer personal build" \
+            -storepass:env SIGNING_PASSWORD -keypass:env SIGNING_PASSWORD
+          base64 -w0 key/dechainer-release.p12 > key/SIGNING_KEY_B64.txt
+          keytool -list -keystore key/dechainer-release.p12 -storepass:env SIGNING_PASSWORD
+          echo "Key created. Download the 'signing-key' artifact, then delete it from this page."
+
+      - name: Upload key (password-protected, auto-deleted after 1 day)
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-key
+          path: key/
+          retention-days: 1
