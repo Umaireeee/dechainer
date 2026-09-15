@@ -1,4 +1,4 @@
-name: Build Dechainer with schedules
+name: Build v2 newest patch
 
 on:
   workflow_dispatch:
@@ -18,7 +18,9 @@ jobs:
 
       - name: Add schedule feature
         run: |
-          cp schedules.patch /tmp/s.patch
+          NEWEST=$(git log -1 --diff-filter=AM --name-only --pretty=format: -- "*.patch" | grep -v "^$" | head -1)
+          echo "Using patch file: $NEWEST"
+          cp "$NEWEST" /tmp/s.patch
           if patch -p1 --batch --forward --dry-run < /tmp/s.patch > /dev/null; then
             patch -p1 --batch --forward < /tmp/s.patch
           else
