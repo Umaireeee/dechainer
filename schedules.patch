@@ -411,6 +411,58 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
  
          val urlRestrictions = Bundle().apply {
              putStringArray("URLBlocklist", allSites.toTypedArray())
+diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt
+--- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt	1970-01-01 00:00:00.000000000 +0000
++++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt	2026-09-15 12:10:51.660360844 +0000
+@@ -0,0 +1,48 @@
++package io.github.warleysr.dechainer.data
++
++import io.github.warleysr.dechainer.models.BlockSchedule
++
++/**
++ * Guards against "Lock while active" turning into a permanent lockout. A locked schedule can't be
++ * edited while its window is open, so if the locked windows of all schedules together cover the
++ * whole week (e.g. a 24h window every day, or two windows that chain into each other), there
++ * would never be a moment to change them — only Forced removal would get the user out.
++ */
++object LockSafety {
++    /** Locked windows must leave at least this much free time somewhere in the week. */
++    const val MIN_FREE_MINUTES = 60
++
++    /** Locked windows longer than this ask for explicit confirmation before saving. */
++    const val LONG_LOCK_MINUTES = 6 * 60
++
++    private const val WEEK_MINUTES = 7 * 1440
++
++    /** Longest stretch of the week (wrapping Sunday -> Monday) not covered by any locked window. */
++    fun longestUnlockedGapMinutes(schedules: List<BlockSchedule>): Int {
++        val locked = BooleanArray(WEEK_MINUTES)
++        schedules.filter { it.enabled && it.lockWhileActive }.forEach { schedule ->
++            schedule.days.forEach { day ->
++                val windowStart = (day.value - 1) * 1440 + schedule.startMinute
++                for (m in 0 until schedule.windowMinutes) locked[(windowStart + m) % WEEK_MINUTES] = true
++            }
++        }
++        val firstLocked = locked.indexOfFirst { it }
++        if (firstLocked == -1) return WEEK_MINUTES
++
++        var best = 0
++        var run = 0
++        // Start right after a locked minute so a gap that wraps around the week is counted whole.
++        for (i in 1..WEEK_MINUTES) {
++            if (!locked[(firstLocked + i) % WEEK_MINUTES]) {
++                run++
++                if (run > best) best = run
++            } else {
++                run = 0
++            }
++        }
++        return best
++    }
++
++    fun leavesEnoughFreeTime(schedules: List<BlockSchedule>): Boolean =
++        longestUnlockedGapMinutes(schedules) >= MIN_FREE_MINUTES
++}
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	1970-01-01 00:00:00.000000000 +0000
 +++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	2026-09-15 11:03:31.133570003 +0000
@@ -812,8 +864,8 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +}
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt	1970-01-01 00:00:00.000000000 +0000
-+++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt	2026-09-15 09:03:11.555712483 +0000
-@@ -0,0 +1,141 @@
++++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt	2026-09-15 12:10:51.660199929 +0000
+@@ -0,0 +1,145 @@
 +package io.github.warleysr.dechainer.models
 +
 +import org.json.JSONArray
@@ -848,6 +900,10 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +    val lockWhileActive: Boolean = false
 +) {
 +    val crossesMidnight: Boolean get() = endMinute <= startMinute
++
++    /** Length of one window in minutes (1440 when start == end). */
++    val windowMinutes: Int
++        get() = if (endMinute > startMinute) endMinute - startMinute else endMinute + 1440 - startMinute
 +
 +    fun isActiveAt(now: LocalDateTime): Boolean {
 +        if (!enabled || days.isEmpty()) return false
@@ -1025,8 +1081,8 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
                      headlineContent = { Text(stringResource(R.string.impulse_lock)) },
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt	1970-01-01 00:00:00.000000000 +0000
-+++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt	2026-09-15 09:30:39.167628397 +0000
-@@ -0,0 +1,789 @@
++++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt	2026-09-15 12:11:11.442235096 +0000
+@@ -0,0 +1,848 @@
 +package io.github.warleysr.dechainer.screens.tabs
 +
 +import androidx.compose.foundation.background
@@ -1096,6 +1152,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +    val snackbarHostState = remember { SnackbarHostState() }
 +    val scope = rememberCoroutineScope()
 +    val lockedMsg = stringResource(R.string.schedule_locked_message)
++    val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
 +    val defaultName = stringResource(R.string.schedule_default_name)
 +
 +    var now by remember { mutableStateOf(ZonedDateTime.now()) }
@@ -1175,7 +1232,12 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +                    },
 +                    onEnabledChange = { enabled ->
 +                        when {
-+                            enabled -> viewModel.setEnabled(schedule, true)
++                            enabled -> {
++                                val result = viewModel.setEnabled(schedule, true)
++                                if (result == SchedulesViewModel.SaveResult.NO_FREE_TIME) {
++                                    scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
++                                }
++                            }
 +                            viewModel.isLocked(schedule) -> showLocked()
 +                            else -> recoveryGate.run {
 +                                if (viewModel.setEnabled(schedule, false) == SchedulesViewModel.SaveResult.LOCKED)
@@ -1320,6 +1382,8 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +    val lockedMsg = stringResource(R.string.schedule_locked_message)
 +    val noDaysMsg = stringResource(R.string.schedule_error_no_days)
 +    val nothingMsg = stringResource(R.string.schedule_error_nothing)
++    val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
++    var showLongLockConfirm by remember { mutableStateOf(false) }
 +
 +    var showStartPicker by remember { mutableStateOf(false) }
 +    var showEndPicker by remember { mutableStateOf(false) }
@@ -1335,6 +1399,9 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +            SchedulesViewModel.SaveResult.NO_DAYS -> scope.launch { snackbarHostState.showSnackbar(noDaysMsg) }
 +            SchedulesViewModel.SaveResult.NOTHING_TO_BLOCK ->
 +                scope.launch { snackbarHostState.showSnackbar(nothingMsg) }
++            SchedulesViewModel.SaveResult.NO_FREE_TIME ->
++                scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
++            SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
 +        }
 +    }
 +
@@ -1614,6 +1681,17 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +        )
 +    }
 +
++    if (showLongLockConfirm) {
++        LongLockConfirmDialog(
++            windowMinutes = draft.windowMinutes,
++            onConfirm = {
++                showLongLockConfirm = false
++                handleResult(viewModel.saveDraft(confirmedLongLock = true))
++            },
++            onDismiss = { showLongLockConfirm = false }
++        )
++    }
++
 +    if (showDeleteConfirm) {
 +        AlertDialog(
 +            onDismissRequest = { showDeleteConfirm = false },
@@ -1630,6 +1708,43 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +            }
 +        )
 +    }
++}
++
++@Composable
++private fun LongLockConfirmDialog(windowMinutes: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
++    var understood by remember { mutableStateOf(false) }
++    val hours = windowMinutes / 60
++    val minutes = windowMinutes % 60
++    val duration = when {
++        minutes == 0 -> stringResource(R.string.time_hours, hours)
++        else -> stringResource(R.string.time_hours_minutes, hours, minutes)
++    }
++    AlertDialog(
++        onDismissRequest = onDismiss,
++        icon = { Icon(Icons.Outlined.Lock, null) },
++        title = { Text(stringResource(R.string.schedule_long_lock_title, duration)) },
++        text = {
++            Column {
++                Text(stringResource(R.string.schedule_long_lock_message))
++                Row(
++                    verticalAlignment = Alignment.CenterVertically,
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(top = 12.dp)
++                        .clickable { understood = !understood }
++                ) {
++                    Checkbox(checked = understood, onCheckedChange = { understood = it })
++                    Text(stringResource(R.string.schedule_long_lock_checkbox), modifier = Modifier.padding(start = 8.dp))
++                }
++            }
++        },
++        confirmButton = {
++            TextButton(enabled = understood, onClick = onConfirm) { Text(stringResource(R.string.confirm)) }
++        },
++        dismissButton = {
++            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
++        }
++    )
 +}
 +
 +private fun parseWebsites(text: String): Set<String> = text
@@ -1876,8 +1991,8 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
      fun setPrivateDNS(host: String): Int = DeviceOwnerRepository.setPrivateDNS(host)
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt	1970-01-01 00:00:00.000000000 +0000
-+++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt	2026-09-15 09:30:39.167936062 +0000
-@@ -0,0 +1,174 @@
++++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt	2026-09-15 12:10:51.660611844 +0000
+@@ -0,0 +1,191 @@
 +package io.github.warleysr.dechainer.viewmodels
 +
 +import android.os.UserManager
@@ -1888,6 +2003,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +import androidx.lifecycle.viewModelScope
 +import io.github.warleysr.dechainer.DechainerApplication
 +import io.github.warleysr.dechainer.data.AppRepository
++import io.github.warleysr.dechainer.data.LockSafety
 +import io.github.warleysr.dechainer.data.ScheduleEnforcer
 +import io.github.warleysr.dechainer.data.ScheduleRepository
 +import io.github.warleysr.dechainer.models.AppItem
@@ -1904,7 +2020,7 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +class SchedulesViewModel : ViewModel() {
 +    private val context = DechainerApplication.getInstance()
 +
-+    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK }
++    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION }
 +
 +    var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
 +        private set
@@ -2001,7 +2117,10 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +        it.copy(restrictions = if (key in it.restrictions) it.restrictions - key else it.restrictions + key)
 +    }
 +
-+    fun saveDraft(): SaveResult {
++    /**
++     * @param confirmedLongLock the user already accepted the warning for a long locked window.
++     */
++    fun saveDraft(confirmedLongLock: Boolean = false): SaveResult {
 +        val current = draft ?: return SaveResult.OK
 +        // Re-read the stored copy: the window may have opened while the editor was on screen.
 +        val stored = ScheduleRepository.getSchedule(context, current.id)
@@ -2009,6 +2128,15 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +        if (current.days.isEmpty()) return SaveResult.NO_DAYS
 +        if (current.packages.isEmpty() && current.restrictions.isEmpty() && current.websites.isEmpty())
 +            return SaveResult.NOTHING_TO_BLOCK
++
++        if (current.enabled && current.lockWhileActive) {
++            val others = ScheduleRepository.getSchedules(context).filter { it.id != current.id }
++            if (!LockSafety.leavesEnoughFreeTime(others + current)) return SaveResult.NO_FREE_TIME
++            val lockGotLonger = stored == null || !stored.lockWhileActive ||
++                current.windowMinutes > stored.windowMinutes || !current.days.containsAll(stored.days)
++            if (!confirmedLongLock && lockGotLonger && current.windowMinutes > LockSafety.LONG_LOCK_MINUTES)
++                return SaveResult.NEEDS_CONFIRMATION
++        }
 +
 +        ScheduleRepository.upsert(context, current.copy(name = current.name.trim()))
 +        draft = null
@@ -2035,6 +2163,10 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +    fun setEnabled(schedule: BlockSchedule, enabled: Boolean): SaveResult {
 +        val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.OK
 +        if (!enabled && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
++        if (enabled && stored.lockWhileActive) {
++            val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
++            if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME
++        }
 +        ScheduleRepository.upsert(context, stored.copy(enabled = enabled))
 +        applyAndRefresh()
 +        return SaveResult.OK
@@ -2054,8 +2186,8 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/java/io/github/wa
 +}
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/res/values/strings.xml dechainer-main/app/src/main/res/values/strings.xml
 --- dechainer-orig/app/src/main/res/values/strings.xml	2026-09-15 09:02:42.323859459 +0000
-+++ dechainer-main/app/src/main/res/values/strings.xml	2026-09-15 09:30:39.190106215 +0000
-@@ -290,4 +290,48 @@
++++ dechainer-main/app/src/main/res/values/strings.xml	2026-09-15 12:10:51.701478275 +0000
+@@ -290,4 +290,52 @@
      <string name="nsfw_category_hentai">Hentai</string>
      <string name="nsfw_category_porn">Porn</string>
      <string name="nsfw_category_sexy">Sexy / suggestive</string>
@@ -2105,11 +2237,15 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/res/values/string
 +    <string name="schedule_blocked_title">Blocked by schedule</string>
 +    <string name="schedule_blocked_description">%1$s is blocked by \"%2$s\" until %3$s.</string>
 +    <string name="schedule_locked_blocks_removal">A schedule is locked right now. Device Owner can only be removed after its window ends, or through Forced removal.</string>
++    <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
++    <string name="schedule_long_lock_title">Lock this for %1$s?</string>
++    <string name="schedule_long_lock_message">While this window is open you won\'t be able to edit, disable or delete this schedule, not even with your recovery code. The only way out during the window is Forced removal, which takes 48 hours.</string>
++    <string name="schedule_long_lock_checkbox">I understand, lock it</string>
 +</resources>
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/res/values-pt/strings.xml dechainer-main/app/src/main/res/values-pt/strings.xml
 --- dechainer-orig/app/src/main/res/values-pt/strings.xml	2026-09-15 09:02:42.323284969 +0000
-+++ dechainer-main/app/src/main/res/values-pt/strings.xml	2026-09-15 09:30:39.190342365 +0000
-@@ -290,4 +290,48 @@
++++ dechainer-main/app/src/main/res/values-pt/strings.xml	2026-09-15 12:10:51.705540193 +0000
+@@ -290,4 +290,52 @@
      <string name="nsfw_category_hentai">Hentai</string>
      <string name="nsfw_category_porn">Pornografia</string>
      <string name="nsfw_category_sexy">Sensual</string>
@@ -2159,13 +2295,18 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/main/res/values-pt/str
 +    <string name="schedule_blocked_title">Bloqueado pelo agendamento</string>
 +    <string name="schedule_blocked_description">%1$s está bloqueado por \"%2$s\" até %3$s.</string>
 +    <string name="schedule_locked_blocks_removal">Um agendamento está travado agora. O Device Owner só pode ser removido depois que a janela terminar, ou pela Remoção forçada.</string>
++    <string name="schedule_error_no_free_time">Os agendamentos travados cobririam a semana inteira com menos de uma hora livre, então você nunca poderia alterá-los. Encurte uma janela travada ou desative Travar enquanto ativo.</string>
++    <string name="schedule_long_lock_title">Travar por %1$s?</string>
++    <string name="schedule_long_lock_message">Enquanto esta janela estiver aberta, você não poderá editar, desativar ou excluir este agendamento, nem com o código de recuperação. A única saída durante a janela é a Remoção forçada, que leva 48 horas.</string>
++    <string name="schedule_long_lock_checkbox">Entendo, pode travar</string>
 +</resources>
 diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt dechainer-main/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt
 --- dechainer-orig/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt	1970-01-01 00:00:00.000000000 +0000
-+++ dechainer-main/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt	2026-09-15 09:11:10.785558125 +0000
-@@ -0,0 +1,60 @@
++++ dechainer-main/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt	2026-09-15 12:11:31.802488951 +0000
+@@ -0,0 +1,85 @@
 +package io.github.warleysr.dechainer
 +
++import io.github.warleysr.dechainer.data.LockSafety
 +import io.github.warleysr.dechainer.models.BlockSchedule
 +import org.junit.Assert.assertEquals
 +import org.junit.Assert.assertFalse
@@ -2222,5 +2363,29 @@ diff -ruN -x '*.tflite' -x .github dechainer-orig/app/src/test/java/io/github/wa
 +    fun websiteNormalisation() {
 +        assertEquals("instagram.com", BlockSchedule.normaliseWebsite(" https://www.Instagram.com/reels?x=1 "))
 +        assertNull(BlockSchedule.normaliseWebsite("not a site"))
++    }
++
++    @Test
++    fun lockSafetyRejectsPermanentLocks() {
++        val allDays = DayOfWeek.entries.toSet()
++        // 24h window every day, locked: no free time ever.
++        val permanent = BlockSchedule("a", "a", days = allDays, startMinute = 0, endMinute = 0, lockWhileActive = true)
++        assertFalse(LockSafety.leavesEnoughFreeTime(listOf(permanent)))
++
++        // Two locked windows that chain into each other also cover everything.
++        val night = BlockSchedule("b", "b", days = allDays, startMinute = 22 * 60, endMinute = 14 * 60, lockWhileActive = true)
++        val day = BlockSchedule("c", "c", days = allDays, startMinute = 14 * 60, endMinute = 22 * 60, lockWhileActive = true)
++        assertFalse(LockSafety.leavesEnoughFreeTime(listOf(night, day)))
++
++        // Same windows without the lock are fine: they can be edited with the recovery code any time.
++        assertTrue(LockSafety.leavesEnoughFreeTime(listOf(night, day.copy(lockWhileActive = false))))
++
++        // A normal nightly lock leaves plenty of free time.
++        val nightly = BlockSchedule("d", "d", days = allDays, startMinute = 22 * 60, endMinute = 6 * 60, lockWhileActive = true)
++        assertEquals(16 * 60, LockSafety.longestUnlockedGapMinutes(listOf(nightly)))
++
++        // 24h lock on 6 days leaves exactly one free day.
++        val sixDays = permanent.copy(days = allDays - DayOfWeek.SUNDAY)
++        assertEquals(1440, LockSafety.longestUnlockedGapMinutes(listOf(sixDays)))
 +    }
 +}
