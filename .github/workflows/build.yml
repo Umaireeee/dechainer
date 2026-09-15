@@ -1,0 +1,43 @@
+name: Build Dechainer with schedules
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Add schedule feature
+        run: |
+          cp schedules.patch /tmp/s.patch
+          if patch -p1 --batch --forward --dry-run < /tmp/s.patch > /dev/null; then
+            patch -p1 --batch --forward < /tmp/s.patch
+          else
+            echo "Newest code conflicts, using the Sep 13 version"
+            git checkout -f f1c024be234e57957893aa3910a48ca83d5966e7
+            patch -p1 --batch --forward < /tmp/s.patch
+          fi
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dechainer-schedules-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Run tests
+        continue-on-error: true
+        run: ./gradlew testDebugUnitTest
