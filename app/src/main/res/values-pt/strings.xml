@@ -173,6 +173,16 @@
     <string name="used">Usado: %1$s</string>
     <string name="reopen_time">Tempo entre aberturas do mesmo app</string>
     <string name="seconds">Segundos</string>
+    <string name="time_windows">Janelas de horário</string>
+    <string name="time_windows_dialog_title">Janelas de horário para %1$s</string>
+    <string name="time_windows_summary">Permitido: %1$s</string>
+    <string name="no_time_windows">Nenhuma janela definida. O app pode ser usado a qualquer momento, respeitando o limite diário.</string>
+    <string name="add_time_window">Adicionar janela</string>
+    <string name="start_time">Início</string>
+    <string name="end_time">Fim</string>
+    <string name="invalid_time_window">O horário de início e fim não podem ser iguais</string>
+    <string name="outside_time_window_title">Fora do horário permitido</string>
+    <string name="outside_time_window_description">%1$s só pode ser usado dentro das suas janelas de horário permitidas:</string>
     <string name="app_reopening">Aguarde!</string>
     <string name="app_reopening_description">Você abriu o {appName} muito rapidamente desde que o fechou. Aguarde {seconds} segundos para abri-lo novamente.</string>
     <string name="blocked_word">Palavra proibida!</string>

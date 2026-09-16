@@ -25,13 +25,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.concurrent.TimeUnit
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.activities.AccessibilityRequestActivity
 import io.github.warleysr.dechainer.activities.BlockedWordActivity
 import io.github.warleysr.dechainer.activities.NsfwContentBlockedActivity
+import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
 import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
 import io.github.warleysr.dechainer.activities.TimeUpActivity
+import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BrowserRestrictionsManager
 import io.github.warleysr.dechainer.data.PlayStoreRatingFetcher
 import io.github.warleysr.dechainer.data.VisualBlockingSettings
@@ -61,6 +64,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     private lateinit var limitPrefs: SharedPreferences
     private lateinit var usagePrefs: SharedPreferences
     private lateinit var reopenPrefs: SharedPreferences
+    private lateinit var timeWindowPrefs: SharedPreferences
     private lateinit var blockedWordsPrefs: SharedPreferences
     private lateinit var securityPrefs: SharedPreferences
     private lateinit var ratingPrefs: SharedPreferences
@@ -195,6 +199,14 @@ class DechainerAccessibilityService : AccessibilityService() {
                 }
             }
 
+            timeWindowPrefs -> {
+                if (key == currentPackage) {
+                    handler.removeCallbacks(blockRunnable)
+                    handler.removeCallbacks(windowEndRunnable)
+                    currentPackage?.let { startTracking(it) }
+                }
+            }
+
             blockedWordsPrefs -> {
                 updateForbiddenPatterns()
             }
@@ -270,6 +282,10 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val blockRunnable = Runnable {
         executeBlocking()
+    }
+
+    private val windowEndRunnable = Runnable {
+        executeBlocking(outsideWindow = true)
     }
 
     companion object {
@@ -357,6 +373,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         limitPrefs = getSharedPreferences("app_limits", MODE_PRIVATE)
         usagePrefs = getSharedPreferences("internal_usage_stats", MODE_PRIVATE)
         reopenPrefs = getSharedPreferences("reopen_times", MODE_PRIVATE)
+        timeWindowPrefs = getSharedPreferences(AppTimeWindows.PREFS_NAME, MODE_PRIVATE)
         blockedWordsPrefs = getSharedPreferences("blocked_words_prefs", MODE_PRIVATE)
         securityPrefs = getSharedPreferences("security_prefs", MODE_PRIVATE)
         ratingPrefs = getSharedPreferences("app_ratings", MODE_PRIVATE)
@@ -364,6 +381,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         nsfwSuspensionTracker = VisualBlockingSuspensionTracker(applicationContext)
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        timeWindowPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -419,6 +437,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         unregisterReceiver(packageReceiver)
         unregisterReceiver(screenReceiver)
         limitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        timeWindowPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
@@ -461,6 +480,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         handler.removeCallbacks(blockRunnable)
+        handler.removeCallbacks(windowEndRunnable)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -956,6 +976,7 @@ class DechainerAccessibilityService : AccessibilityService() {
             .union(passiveForbiddenPatterns.keys)
             .union(limitPrefs.all.keys)
             .union(reopenPrefs.all.keys)
+            .union(timeWindowPrefs.all.keys)
             .toTypedArray()
     }
 
@@ -1003,6 +1024,20 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     private fun startTracking(pkg: String) {
+        val windows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
+        if (windows.isNotEmpty()) {
+            val nowMinute = currentMinuteOfDay()
+            val activeWindow = windows.firstOrNull { it.contains(nowMinute) }
+            if (activeWindow == null) {
+                executeBlocking(outsideWindow = true)
+                return
+            }
+            handler.postDelayed(
+                windowEndRunnable,
+                TimeUnit.MINUTES.toMillis(activeWindow.minutesUntilEnd(nowMinute).toLong())
+            )
+        }
+
         val limitMinutes = limitPrefs.getInt(pkg, 0)
         val remainingSecondsReopening = getRemainingSecondsToReopen(pkg)
         if (limitMinutes <= 0 && remainingSecondsReopening <= 0) return
@@ -1026,6 +1061,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun stopTrackingAndSave(screenOff: Boolean = false) {
         handler.removeCallbacks(blockRunnable)
+        handler.removeCallbacks(windowEndRunnable)
         val pkg = currentPackage ?: return
 
         if (getRemainingSecondsToReopen(pkg) == 0 && !screenOff)
@@ -1041,7 +1077,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         sessionStartTime = 0
     }
 
-    private fun executeBlocking(reopening: Boolean = false, remainingSeconds: Int = 0) {
+    private fun executeBlocking(reopening: Boolean = false, remainingSeconds: Int = 0, outsideWindow: Boolean = false) {
         val pkg = currentPackage ?: return
 
         stopTrackingAndSave()
@@ -1051,14 +1087,30 @@ class DechainerAccessibilityService : AccessibilityService() {
             packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
         } catch (e: Exception) { pkg }
 
-        val activityClass = if (reopening) ReopeningLimitActivity::class.java else TimeUpActivity::class.java
-        val limit = if (reopening) remainingSeconds else limitPrefs.getInt(pkg, 0)
+        val activityClass = when {
+            outsideWindow -> OutsideTimeWindowActivity::class.java
+            reopening -> ReopeningLimitActivity::class.java
+            else -> TimeUpActivity::class.java
+        }
 
-        startActivity(Intent(this, activityClass).apply {
+        val intent = Intent(this, activityClass).apply {
             flags = FLAG_ACTIVITY_NEW_TASK
             putExtra("appName", appName)
-            putExtra("limit", limit)
-        })
+        }
+
+        if (outsideWindow) {
+            val windows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
+            intent.putStringArrayListExtra("windows", ArrayList(windows.map { it.formatted() }))
+        } else {
+            intent.putExtra("limit", if (reopening) remainingSeconds else limitPrefs.getInt(pkg, 0))
+        }
+
+        startActivity(intent)
+    }
+
+    private fun currentMinuteOfDay(): Int {
+        val now = LocalTime.now()
+        return now.hour * 60 + now.minute
     }
     
     

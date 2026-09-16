@@ -23,14 +23,18 @@ import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.ui.text.font.FontFamily
@@ -63,6 +67,7 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
     var searchQuery by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<AppItem?>(null) }
     var showTimeLimitDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showTimeWindowsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showRestrictionsDialog by remember { mutableStateOf<AppItem?>(null) }
     val recoveryGate = rememberRecoveryGate()
     var showSystemApps by remember { mutableStateOf(false) }
@@ -70,11 +75,12 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
 
     val filteredApps = remember(viewModel.apps, searchQuery, showSystemApps) {
         viewModel.apps.filter {
-            (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked || it.timeLimitMinutes > 0) &&
+            (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked ||
+                it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty()) &&
             (it.name.contains(searchQuery, ignoreCase = true) ||
             it.packageName.contains(searchQuery, ignoreCase = true))
         }
-        .sortedBy { it.timeLimitMinutes == 0 }
+        .sortedBy { it.timeLimitMinutes == 0 && it.timeWindows.isEmpty() }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -149,6 +155,10 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                 showTimeLimitDialog = app
                 selectedApp = null
             },
+            onSetTimeWindows = {
+                showTimeWindowsDialog = app
+                selectedApp = null
+            },
             onManageRestrictions = {
                 showRestrictionsDialog = app
                 selectedApp = null
@@ -166,6 +176,19 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
                 }
                 showTimeLimitDialog = null
+            }
+        )
+    }
+
+    showTimeWindowsDialog?.let { app ->
+        TimeWindowsDialog(
+            app = app,
+            onDismiss = { showTimeWindowsDialog = null },
+            onConfirm = { windows ->
+                recoveryGate.run {
+                    viewModel.setAppTimeWindows(app.packageName, windows)
+                }
+                showTimeWindowsDialog = null
             }
         )
     }
@@ -353,6 +376,17 @@ fun AppRow(app: AppItem, viewModel: AppsViewModel, onClick: () -> Unit) {
                     }
                 }
 
+                if (app.timeWindows.isNotEmpty()) {
+                    Text(
+                        stringResource(
+                            R.string.time_windows_summary,
+                            app.timeWindows.joinToString(", ") { it.formatted() }
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+
                 if (app.hasExplicitContent) {
                     Text(
                         stringResource(R.string.explicit_content),
@@ -418,6 +452,7 @@ fun AppActionDialog(
     onToggleUninstall: () -> Unit,
     onSuspend: () -> Unit,
     onSetTimeLimit: () -> Unit,
+    onSetTimeWindows: () -> Unit,
     onManageRestrictions: () -> Unit
 ) {
     AlertDialog(
@@ -431,6 +466,12 @@ fun AppActionDialog(
                     Icon(Icons.Default.Timer, null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.set_time_limit))
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onSetTimeWindows, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Schedule, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.time_windows))
                 }
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = onSuspend, modifier = Modifier.fillMaxWidth()) {
@@ -521,6 +562,123 @@ fun TimeLimitDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(hours * 60 + minutes, reopeningSeconds) }) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun TimeWindowsDialog(
+    app: AppItem,
+    onDismiss: () -> Unit,
+    onConfirm: (List<TimeWindow>) -> Unit
+) {
+    val windows = remember { mutableStateListOf(*app.timeWindows.toTypedArray()) }
+    var showAddForm by remember { mutableStateOf(false) }
+    var showError by remember { mutableStateOf(false) }
+    var startHour by remember { mutableIntStateOf(18) }
+    var startMinute by remember { mutableIntStateOf(0) }
+    var endHour by remember { mutableIntStateOf(22) }
+    var endMinute by remember { mutableIntStateOf(0) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.time_windows_dialog_title, app.name)) },
+        text = {
+            Column {
+                if (windows.isEmpty() && !showAddForm) {
+                    Text(stringResource(R.string.no_time_windows), style = MaterialTheme.typography.bodySmall)
+                }
+                windows.forEachIndexed { index, window ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(window.formatted(), modifier = Modifier.weight(1f))
+                        IconButton(onClick = { windows.removeAt(index) }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (showAddForm) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.start_time), style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            NumberPickerWheel(
+                                value = startHour,
+                                range = 0..23,
+                                onValueChange = { startHour = it },
+                                label = stringResource(R.string.hours)
+                            )
+                            NumberPickerWheel(
+                                value = startMinute,
+                                range = 0..59,
+                                onValueChange = { startMinute = it },
+                                label = stringResource(R.string.minutes)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(stringResource(R.string.end_time), style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            NumberPickerWheel(
+                                value = endHour,
+                                range = 0..23,
+                                onValueChange = { endHour = it },
+                                label = stringResource(R.string.hours)
+                            )
+                            NumberPickerWheel(
+                                value = endMinute,
+                                range = 0..59,
+                                onValueChange = { endMinute = it },
+                                label = stringResource(R.string.minutes)
+                            )
+                        }
+                        if (showError) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                stringResource(R.string.invalid_time_window),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row {
+                            TextButton(onClick = { showAddForm = false; showError = false }) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                            TextButton(onClick = {
+                                val start = startHour * 60 + startMinute
+                                val end = endHour * 60 + endMinute
+                                if (start == end) {
+                                    showError = true
+                                } else {
+                                    windows.add(TimeWindow(start, end))
+                                    showAddForm = false
+                                    showError = false
+                                }
+                            }) {
+                                Text(stringResource(R.string.confirm))
+                            }
+                        }
+                    }
+                } else {
+                    TextButton(onClick = { showAddForm = true }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.add_time_window))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(windows.toList()) }) {
                 Text(stringResource(R.string.confirm))
             }
         },

@@ -9,6 +9,7 @@ import android.os.Bundle
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.models.TimeWindow
 import java.util.concurrent.TimeUnit
 
 object AppRepository {
@@ -39,6 +40,7 @@ object AppRepository {
         val limitsPrefs = context.getSharedPreferences("app_limits", Context.MODE_PRIVATE)
         val reopenPrefs = context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE)
         val ratingsPrefs = context.getSharedPreferences("app_ratings", Context.MODE_PRIVATE)
+        val timeWindowsPrefs = context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
 
         val installedApps = packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES)
 
@@ -61,6 +63,7 @@ object AppRepository {
                     isUninstallBlocked = isUninstallBlocked,
                     timeLimitMinutes = limitsPrefs.getInt(packageName, 0),
                     reopeningSeconds = reopenPrefs.getInt(packageName, 0),
+                    timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
                     isSuspended = isSuspended,
                     hasExplicitContent = ratingsPrefs.getBoolean(packageName, false)
                 )
@@ -118,6 +121,13 @@ object AppRepository {
 
     fun getAppReopenTime(packageName: String): Int {
         return context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE).getInt(packageName, 0)
+    }
+
+    fun setAppTimeWindows(packageName: String, windows: List<TimeWindow>) {
+        context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE).edit {
+            if (windows.isEmpty()) remove(packageName) else putString(packageName, AppTimeWindows.encode(windows))
+        }
+        updateCachedApp(packageName) { it.copy(timeWindows = windows) }
     }
 
     fun getApplicationRestrictions(packageName: String): Bundle {

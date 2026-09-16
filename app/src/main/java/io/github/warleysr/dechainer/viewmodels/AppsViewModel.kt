@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.models.TimeWindow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,5 +85,10 @@ class AppsViewModel : ViewModel() {
 
     fun getAppReopenTime(packageName: String): Int {
         return AppRepository.getAppReopenTime(packageName)
+    }
+
+    fun setAppTimeWindows(packageName: String, windows: List<TimeWindow>) {
+        AppRepository.setAppTimeWindows(packageName, windows)
+        loadApps()
     }
 }

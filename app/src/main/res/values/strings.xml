@@ -173,6 +173,16 @@
     <string name="used">Used: %1$s</string>
     <string name="reopen_time">Time between app openings</string>
     <string name="seconds">Seconds</string>
+    <string name="time_windows">Time windows</string>
+    <string name="time_windows_dialog_title">Time windows for %1$s</string>
+    <string name="time_windows_summary">Allowed: %1$s</string>
+    <string name="no_time_windows">No time window set. The app can be used anytime, subject to the daily limit.</string>
+    <string name="add_time_window">Add window</string>
+    <string name="start_time">Start</string>
+    <string name="end_time">End</string>
+    <string name="invalid_time_window">Start and end time cannot be the same</string>
+    <string name="outside_time_window_title">Outside allowed time</string>
+    <string name="outside_time_window_description">%1$s can only be used during its allowed time windows:</string>
     <string name="app_reopening">Wait!</string>
     <string name="app_reopening_description">You opened {appName} too quickly since you closed it. Wait {seconds} seconds to open it again.</string>
     <string name="blocked_word">Forbidden word!</string>
