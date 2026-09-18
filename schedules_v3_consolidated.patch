@@ -1,7 +1,7 @@
 diff -ruN dechainer-orig/app/src/main/AndroidManifest.xml dechainer-main/app/src/main/AndroidManifest.xml
 --- dechainer-orig/app/src/main/AndroidManifest.xml	2026-09-15 09:02:42.301925137 +0000
 +++ dechainer-main/app/src/main/AndroidManifest.xml	2026-09-18 10:00:00.000000000 +0000
-@@ -9,6 +9,10 @@
+@@ -9,5 +9,9 @@
      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
      <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 +    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -92,14 +92,14 @@ diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/Dechaine
                      lastForegroundPackage?.let {
                          currentPackage = it
                          sessionStartTime = SystemClock.elapsedRealtime()
-@@ -274,6 +291,7 @@
+@@ -273,6 +290,7 @@
+     }
  
      companion object {
          private const val NSFW_SCAN_INTERVAL_MS = 2000L
 +        private const val SCHEDULE_TICK_MS = 30_000L
  
          // --- Generic, app-agnostic media-detection signals, tried in this order for every app ---
- 
 @@ -362,6 +380,7 @@
          ratingPrefs = getSharedPreferences("app_ratings", MODE_PRIVATE)
          visualBlockingPrefs = getSharedPreferences(VisualBlockingSettings.PREFS_NAME, MODE_PRIVATE)
@@ -253,7 +253,7 @@ diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/Dechaine
 +            ScheduleEnforcer.adopt(ctx, pkg)
 +            return
 +        }
-+        if (nsfwSuspensionTracker.isSuspended(pkg)) return
++        if (nsfwTrackerIsSuspended(pkg)) return
 +        if (SecurityManager.getActiveImpulseSuspension(ctx).contains(pkg)) return
 +        if (timeLimitSuspensionTracker.isDailyLimitSuspended(pkg)) return
 +        if (timeLimitSuspensionTracker.isReopeningSuspended(pkg)) return
@@ -1102,7 +1102,7 @@ diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/data/Tim
 +    }
 +
 +    companion object {
-+        private const val PREFS_NAME = "time_limit_suspensions"
++        const val PREFS_NAME = "time_limit_suspensions"
 +        private const val KEY_DAILY_PREFIX = "daily_"
 +        private const val KEY_REOPEN_PREFIX = "reopen_"
 +    }
@@ -1510,6 +1510,7 @@ diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/screens/
  import androidx.compose.material.icons.outlined.NoAdultContent
 +import androidx.compose.material.icons.outlined.Schedule
  import androidx.compose.material.icons.outlined.VpnKey
+ import androidx.compose.material.icons.outlined.Web
  import androidx.compose.material3.*
 @@ -234,6 +235,23 @@
                  )
@@ -1821,565 +1822,565 @@ diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/screens/
 +        .joinToString(" ") { it.getDisplayName(TextStyle.SHORT, Locale.getDefault()) }
 +}
 +
-+@Composable
-+fun ScheduleEditorScreen(
-+    viewModel: SchedulesViewModel = viewModel(),
-+    navViewModel: NavigationViewModel = viewModel()
-+) {
-+    val draft = viewModel.draft
-+    if (draft == null) {
-+        LaunchedEffect(Unit) { navViewModel.goBack() }
-+        return
-+    }
-+
-+    val snackbarHostState = remember { SnackbarHostState() }
-+    val scope = rememberCoroutineScope()
-+    val lockedMsg = stringResource(R.string.schedule_locked_message)
-+    val noDaysMsg = stringResource(R.string.schedule_error_no_days)
-+    val nothingMsg = stringResource(R.string.schedule_error_nothing)
-+    val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
-+    var showLongLockConfirm by remember { mutableStateOf(false) }
-+
-+    var showStartPicker by remember { mutableStateOf(false) }
-+    var showEndPicker by remember { mutableStateOf(false) }
-+    var showAppPicker by remember { mutableStateOf(false) }
-+    var showServicePicker by remember { mutableStateOf(false) }
-+    var showDeleteConfirm by remember { mutableStateOf(false) }
-+    var websitesText by remember(draft.id) { mutableStateOf(draft.websites.sorted().joinToString("\n")) }
-+
-+    fun handleResult(result: SchedulesViewModel.SaveResult) {
-+        when (result) {
-+            SchedulesViewModel.SaveResult.OK -> navViewModel.goBack()
-+            SchedulesViewModel.SaveResult.LOCKED -> scope.launch { snackbarHostState.showSnackbar(lockedMsg) }
-+            SchedulesViewModel.SaveResult.NO_DAYS -> scope.launch { snackbarHostState.showSnackbar(noDaysMsg) }
-+            SchedulesViewModel.SaveResult.NOTHING_TO_BLOCK ->
-+                scope.launch { snackbarHostState.showSnackbar(nothingMsg) }
-+            SchedulesViewModel.SaveResult.NO_FREE_TIME ->
-+                scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
-+            SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
-+        }
-+    }
-+
-+    Box(modifier = Modifier.fillMaxSize()) {
-+        Column(modifier = Modifier.fillMaxSize()) {
-+            LazyColumn(modifier = Modifier.weight(1f)) {
-+                item {
-+                    OutlinedTextField(
-+                        value = draft.name,
-+                        onValueChange = { value -> viewModel.updateDraft { it.copy(name = value.take(40)) } },
-+                        label = { Text(stringResource(R.string.schedule_name)) },
-+                        singleLine = true,
-+                        modifier = Modifier
-+                            .fillMaxWidth()
-+                            .padding(16.dp)
-+                    )
-+                }
-+
-+                item {
-+                    EditorSectionTitle(stringResource(R.string.schedule_days))
-+                    DaySelector(
-+                        selected = draft.days,
-+                        onToggle = { day ->
-+                            viewModel.updateDraft {
-+                                it.copy(days = if (day in it.days) it.days - day else it.days + day)
-+                            }
-+                        }
-+                    )
-+                    Row(modifier = Modifier.padding(horizontal = 8.dp)) {
-+                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = DayOfWeek.entries.toSet()) } }) {
-+                            Text(stringResource(R.string.schedule_every_day))
-+                        }
-+                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKDAYS) } }) {
-+                            Text(stringResource(R.string.schedule_weekdays))
-+                        }
-+                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKENDS) } }) {
-+                            Text(stringResource(R.string.schedule_weekends))
-+                        }
-+                    }
-+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-+                }
-+
-+                item {
-+                    EditorSectionTitle(stringResource(R.string.schedule_time))
-+                    Row(
-+                        modifier = Modifier
-+                            .fillMaxWidth()
-+                            .padding(horizontal = 16.dp),
-+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-+                    ) {
-+                        TimeBox(
-+                            label = stringResource(R.string.schedule_starts),
-+                            minute = draft.startMinute,
-+                            onClick = { showStartPicker = true },
-+                            modifier = Modifier.weight(1f)
-+                        )
-+                        TimeBox(
-+                            label = stringResource(R.string.schedule_ends),
-+                            minute = draft.endMinute,
-+                            onClick = { showEndPicker = true },
-+                            modifier = Modifier.weight(1f)
-+                        )
-+                    }
-+                    val timeNote = when {
-+                        draft.startMinute == draft.endMinute -> stringResource(R.string.schedule_full_day)
-+                        draft.crossesMidnight -> stringResource(R.string.schedule_crosses_midnight)
-+                        else -> null
-+                    }
-+                    if (timeNote != null) {
-+                        Text(
-+                            timeNote,
-+                            style = MaterialTheme.typography.bodySmall,
-+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-+                        )
-+                    }
-+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-+                }
-+
-+                item {
-+                    ListItem(
-+                        headlineContent = { Text(stringResource(R.string.schedule_apps)) },
-+                        supportingContent = {
-+                            val count = draft.packages.size
-+                            Text(
-+                                if (count == 0) stringResource(R.string.no_apps)
-+                                else draft.packages.map { viewModel.appName(it) }.sorted().joinToString(", "),
-+                                maxLines = 3,
-+                                overflow = TextOverflow.Ellipsis
-+                            )
-+                        },
-+                        leadingContent = { Icon(Icons.Outlined.Apps, null) },
-+                        trailingContent = {
-+                            Button(onClick = { showAppPicker = true }) {
-+                                Text(stringResource(R.string.select_apps))
-+                            }
-+                        }
-+                    )
-+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-+                }
-+
-+                item {
-+                    val context = LocalContext.current
-+                    ListItem(
-+                        headlineContent = { Text(stringResource(R.string.schedule_services)) },
-+                        supportingContent = {
-+                            Column {
-+                                Text(stringResource(R.string.schedule_services_desc))
-+                                if (draft.restrictions.isNotEmpty()) {
-+                                    Text(
-+                                        draft.restrictions.map { restrictionLabel(context, viewModel, it) }
-+                                            .sorted().joinToString(", "),
-+                                        maxLines = 3,
-+                                        overflow = TextOverflow.Ellipsis,
-+                                        fontWeight = FontWeight.Medium
-+                                    )
-+                                }
-+                            }
-+                        },
-+                        leadingContent = { Icon(Icons.Outlined.SettingsSuggest, null) },
-+                        trailingContent = {
-+                            Button(onClick = { showServicePicker = true }) {
-+                                Text(stringResource(R.string.schedule_select_services))
-+                            }
-+                        }
-+                    )
-+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-+                }
-+
-+                item {
-+                    Row(
-+                        verticalAlignment = Alignment.CenterVertically,
-+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
-+                    ) {
-+                        Icon(Icons.Outlined.Public, null)
-+                        Text(
-+                            stringResource(R.string.schedule_websites),
-+                            style = MaterialTheme.typography.titleMedium,
-+                            modifier = Modifier.padding(start = 16.dp)
-+                        )
-+                    }
-+                    Text(
-+                        stringResource(R.string.schedule_websites_desc),
-+                        style = MaterialTheme.typography.bodySmall,
-+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-+                    )
-+                    OutlinedTextField(
-+                        value = websitesText,
-+                        onValueChange = { websitesText = it },
-+                        minLines = 3,
-+                        maxLines = 8,
-+                        placeholder = { Text("instagram.com\ntiktok.com") },
-+                        modifier = Modifier
-+                            .fillMaxWidth()
-+                            .padding(horizontal = 16.dp)
-+                    )
-+                    AssistChip(
-+                        onClick = {
-+                            val merged = (parseWebsites(websitesText) + SOCIAL_MEDIA_SITES).sorted()
-+                            websitesText = merged.joinToString("\n")
-+                        },
-+                        label = { Text(stringResource(R.string.schedule_websites_add_social)) },
-+                        leadingIcon = { Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp)) },
-+                        modifier = Modifier.padding(horizontal = 16.dp)
-+                    )
-+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-+                }
-+
-+                item {
-+                    ListItem(
-+                        headlineContent = { Text(stringResource(R.string.schedule_lock_while_active)) },
-+                        supportingContent = { Text(stringResource(R.string.schedule_lock_while_active_desc)) },
-+                        leadingContent = { Icon(Icons.Outlined.Lock, null) },
-+                        trailingContent = {
-+                            Switch(
-+                                checked = draft.lockWhileActive,
-+                                onCheckedChange = { checked ->
-+                                    viewModel.updateDraft { it.copy(lockWhileActive = checked) }
-+                                }
-+                            )
-+                        }
-+                    )
-+                }
-+
-+                if (!viewModel.isNewDraft) {
-+                    item {
-+                        TextButton(
-+                            onClick = { showDeleteConfirm = true },
-+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-+                            modifier = Modifier.padding(horizontal = 8.dp)
-+                        ) {
-+                            Icon(Icons.Outlined.Delete, null)
-+                            Spacer(Modifier.width(8.dp))
-+                            Text(stringResource(R.string.schedule_delete))
-+                        }
-+                    }
-+                }
-+
-+                item { Spacer(Modifier.height(16.dp)) }
-+            }
-+
-+            Row(
-+                modifier = Modifier
-+                    .fillMaxWidth()
-+                    .padding(16.dp),
-+                horizontalArrangement = Arrangement.spacedBy(12.dp)
-+            ) {
-+                OutlinedButton(
-+                    onClick = {
-+                        viewModel.closeEditor()
-+                        navViewModel.goBack()
-+                    },
-+                    modifier = Modifier.weight(1f)
-+                ) { Text(stringResource(R.string.cancel)) }
-+                Button(
-+                    onClick = {
-+                        viewModel.updateDraft { it.copy(websites = parseWebsites(websitesText)) }
-+                        handleResult(viewModel.saveDraft())
-+                    },
-+                    modifier = Modifier.weight(1f)
-+                ) { Text(stringResource(R.string.schedule_save)) }
-+            }
-+        }
-+
-+        SnackbarHost(
-+            hostState = snackbarHostState,
-+            modifier = Modifier
-+                .align(Alignment.BottomCenter)
-+                .padding(bottom = 80.dp)
-+        )
-+    }
-+
-+    if (showStartPicker) {
-+        ScheduleTimePickerDialog(
-+            initialMinute = draft.startMinute,
-+            onConfirm = { minute ->
-+                viewModel.updateDraft { it.copy(startMinute = minute) }
-+                showStartPicker = false
-+            },
-+            onDismiss = { showStartPicker = false }
-+        )
-+    }
-+
-+    if (showEndPicker) {
-+        ScheduleTimePickerDialog(
-+            initialMinute = draft.endMinute,
-+            onConfirm = { minute ->
-+                viewModel.updateDraft { it.copy(endMinute = minute) }
-+                showEndPicker = false
-+            },
-+            onDismiss = { showEndPicker = false }
-+        )
-+    }
-+
-+    if (showAppPicker) {
-+        AppPickerDialog(
-+            apps = viewModel.apps.filter { it.packageName !in viewModel.protectedPackages },
-+            isLoading = viewModel.isLoadingApps,
-+            isSelected = { draft.packages.contains(it) },
-+            onToggle = { viewModel.toggleDraftPackage(it) },
-+            onDismiss = { showAppPicker = false }
-+        )
-+    }
-+
-+    if (showServicePicker) {
-+        ServicePickerDialog(
-+            viewModel = viewModel,
-+            selected = draft.restrictions,
-+            onToggle = { viewModel.toggleDraftRestriction(it) },
-+            onDismiss = { showServicePicker = false }
-+        )
-+    }
-+
-+    if (showLongLockConfirm) {
-+        LongLockConfirmDialog(
-+            windowMinutes = draft.windowMinutes,
-+            onConfirm = {
-+                showLongLockConfirm = false
-+                handleResult(viewModel.saveDraft(confirmedLongLock = true))
-+            },
-+            onDismiss = { showLongLockConfirm = false }
-+        )
-+    }
-+
-+    if (showDeleteConfirm) {
-+        AlertDialog(
-+            onDismissRequest = { showDeleteConfirm = false },
-+            title = { Text(stringResource(R.string.schedule_delete)) },
-+            text = { Text(stringResource(R.string.schedule_delete_confirm)) },
-+            confirmButton = {
-+                TextButton(onClick = {
-+                    showDeleteConfirm = false
-+                    handleResult(viewModel.deleteDraft())
-+                }) { Text(stringResource(R.string.confirm)) }
-+            },
-+            dismissButton = {
-+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
-+            }
-+        )
-+    }
-+}
-+
-+@Composable
-+private fun LongLockConfirmDialog(windowMinutes: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-+    var understood by remember { mutableStateOf(false) }
-+    val hours = windowMinutes / 60
-+    val minutes = windowMinutes % 60
-+    val duration = when {
-+        minutes == 0 -> stringResource(R.string.time_hours, hours)
-+        else -> stringResource(R.string.time_hours_minutes, hours, minutes)
-+    }
-+    AlertDialog(
-+        onDismissRequest = onDismiss,
-+        icon = { Icon(Icons.Outlined.Lock, null) },
-+        title = { Text(stringResource(R.string.schedule_long_lock_title, duration)) },
-+        text = {
-+            Column {
-+                Text(stringResource(R.string.schedule_long_lock_message))
-+                Row(
-+                    verticalAlignment = Alignment.CenterVertically,
-+                    modifier = Modifier
-+                        .fillMaxWidth()
-+                        .padding(top = 12.dp)
-+                        .clickable { understood = !understood }
-+                ) {
-+                    Checkbox(checked = understood, onCheckedChange = { understood = it })
-+                    Text(stringResource(R.string.schedule_long_lock_checkbox), modifier = Modifier.padding(start = 8.dp))
-+                }
-+            }
-+        },
-+        confirmButton = {
-+            TextButton(enabled = understood, onClick = onConfirm) { Text(stringResource(R.string.confirm)) }
-+        },
-+        dismissButton = {
-+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-+        }
-+    )
-+}
-+
-+private fun parseWebsites(text: String): Set<String> = text
-+    .split('\n', ',', ' ', ';')
-+    .mapNotNull { BlockSchedule.normaliseWebsite(it) }
-+    .toSet()
-+
-+private fun restrictionLabel(
-+    context: android.content.Context,
-+    viewModel: SchedulesViewModel,
-+    key: String
-+): String {
-+    val resId = viewModel.resourceNameFor(key)
-+        ?.let { context.resources.getIdentifier(it, "string", context.packageName) }
-+        ?.takeIf { it != 0 }
-+    return resId?.let { context.getString(it) } ?: key
-+}
-+
-+@Composable
-+private fun EditorSectionTitle(title: String) {
-+    Text(
-+        title,
-+        style = MaterialTheme.typography.titleMedium,
-+        fontWeight = FontWeight.Bold,
-+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-+    )
-+}
-+
-+@Composable
-+private fun DaySelector(selected: Set<DayOfWeek>, onToggle: (DayOfWeek) -> Unit) {
-+    Row(
-+        modifier = Modifier
-+            .fillMaxWidth()
-+            .padding(horizontal = 16.dp),
-+        horizontalArrangement = Arrangement.spacedBy(6.dp)
-+    ) {
-+        DayOfWeek.entries.forEach { day ->
-+            val isOn = day in selected
-+            Box(
-+                contentAlignment = Alignment.Center,
-+                modifier = Modifier
-+                    .weight(1f)
-+                    .aspectRatio(1f)
-+                    .clip(CircleShape)
-+                    .background(
-+                        if (isOn) MaterialTheme.colorScheme.primary
-+                        else MaterialTheme.colorScheme.surfaceVariant
-+                    )
-+                    .clickable { onToggle(day) }
-+            ) {
-+                Text(
-+                    day.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
-+                    fontWeight = FontWeight.Bold,
-+                    color = if (isOn) MaterialTheme.colorScheme.onPrimary
-+                    else MaterialTheme.colorScheme.onSurfaceVariant
-+                )
-+            }
-+        }
-+    }
-+}
-+
-+@Composable
-+private fun TimeBox(label: String, minute: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-+    OutlinedCard(modifier = modifier.clickable(onClick = onClick)) {
-+        Column(modifier = Modifier.padding(12.dp)) {
-+            Row(verticalAlignment = Alignment.CenterVertically) {
-+                Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(16.dp))
-+                Text(
-+                    label,
-+                    style = MaterialTheme.typography.labelMedium,
-+                    modifier = Modifier.padding(start = 6.dp)
-+                )
-+            }
-+            Text(
-+                BlockSchedule.formatMinute(minute),
-+                style = MaterialTheme.typography.headlineSmall,
-+                fontWeight = FontWeight.Bold
-+            )
-+        }
-+    }
-+}
-+
-+@OptIn(ExperimentalMaterial3Api::class)
-+@Composable
-+private fun ScheduleTimePickerDialog(initialMinute: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
-+    val state = rememberTimePickerState(
-+        initialHour = initialMinute / 60,
-+        initialMinute = initialMinute % 60,
-+        is24Hour = true
-+    )
-+    AlertDialog(
-+        onDismissRequest = onDismiss,
-+        text = { TimePicker(state = state) },
-+        confirmButton = {
-+            TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
-+                Text(stringResource(R.string.confirm))
-+            }
-+        },
-+        dismissButton = {
-+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-+        }
-+    )
-+}
-+
-+@Composable
-+private fun ServicePickerDialog(
-+    viewModel: SchedulesViewModel,
-+    selected: Set<String>,
-+    onToggle: (String) -> Unit,
-+    onDismiss: () -> Unit
-+) {
-+    val context = LocalContext.current
-+    var query by remember { mutableStateOf("") }
-+
-+    val labels = remember {
-+        (viewModel.suggestedRestrictions + viewModel.otherRestrictions)
-+            .associateWith { restrictionLabel(context, viewModel, it) }
-+    }
-+
-+    fun matches(key: String) = query.isBlank() ||
-+        labels[key].orEmpty().contains(query, ignoreCase = true) ||
-+        key.contains(query, ignoreCase = true)
-+
-+    val suggested = viewModel.suggestedRestrictions.filter(::matches)
-+    val others = viewModel.otherRestrictions.filter(::matches)
-+
-+    AlertDialog(
-+        onDismissRequest = onDismiss,
-+        title = { Text(stringResource(R.string.schedule_select_services)) },
-+        text = {
-+            Column {
-+                OutlinedTextField(
-+                    value = query,
-+                    onValueChange = { query = it },
-+                    placeholder = { Text(stringResource(R.string.search_restrictions)) },
-+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
-+                    singleLine = true,
-+                    modifier = Modifier
-+                        .fillMaxWidth()
-+                        .padding(bottom = 8.dp)
-+                )
-+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-+                    if (suggested.isNotEmpty()) {
-+                        item { PickerHeader(stringResource(R.string.schedule_suggested)) }
-+                        items(suggested, key = { "s_$it" }) { key ->
-+                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
-+                        }
-+                    }
-+                    if (others.isNotEmpty()) {
-+                        item { PickerHeader(stringResource(R.string.schedule_all_services)) }
-+                        items(others, key = { "o_$it" }) { key ->
-+                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
-+                        }
-+                    }
-+                }
-+            }
-+        },
-+        confirmButton = {
-+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.confirm)) }
-+        }
-+    )
-+}
-+
-+@Composable
-+private fun PickerHeader(text: String) {
-+    Text(
-+        text,
-+        style = MaterialTheme.typography.labelLarge,
-+        color = MaterialTheme.colorScheme.primary,
-+        modifier = Modifier.padding(vertical = 8.dp)
-+    )
-+}
-+
-+@Composable
-+private fun ServiceRow(label: String, checked: Boolean, onClick: () -> Unit) {
-+    Row(
-+        verticalAlignment = Alignment.CenterVertically,
-+        modifier = Modifier
-+            .fillMaxWidth()
-+            .clickable(onClick = onClick)
-+            .padding(vertical = 2.dp)
-+    ) {
-+        Checkbox(checked = checked, onCheckedChange = { onClick() })
-+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
-+    }
-+}
+ @Composable
+ fun ScheduleEditorScreen(
+     viewModel: SchedulesViewModel = viewModel(),
+     navViewModel: NavigationViewModel = viewModel()
+ ) {
+     val draft = viewModel.draft
+     if (draft == null) {
+         LaunchedEffect(Unit) { navViewModel.goBack() }
+         return
+     }
+
+     val snackbarHostState = remember { SnackbarHostState() }
+     val scope = rememberCoroutineScope()
+     val lockedMsg = stringResource(R.string.schedule_locked_message)
+     val noDaysMsg = stringResource(R.string.schedule_error_no_days)
+     val nothingMsg = stringResource(R.string.schedule_error_nothing)
+     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
+     var showLongLockConfirm by remember { mutableStateOf(false) }
+
+     var showStartPicker by remember { mutableStateOf(false) }
+     var showEndPicker by remember { mutableStateOf(false) }
+     var showAppPicker by remember { mutableStateOf(false) }
+     var showServicePicker by remember { mutableStateOf(false) }
+     var showDeleteConfirm by remember { mutableStateOf(false) }
+     var websitesText by remember(draft.id) { mutableStateOf(draft.websites.sorted().joinToString("\n")) }
+
+     fun handleResult(result: SchedulesViewModel.SaveResult) {
+         when (result) {
+             SchedulesViewModel.SaveResult.OK -> navViewModel.goBack()
+             SchedulesViewModel.SaveResult.LOCKED -> scope.launch { snackbarHostState.showSnackbar(lockedMsg) }
+             SchedulesViewModel.SaveResult.NO_DAYS -> scope.launch { snackbarHostState.showSnackbar(noDaysMsg) }
+             SchedulesViewModel.SaveResult.NOTHING_TO_BLOCK ->
+                 scope.launch { snackbarHostState.showSnackbar(nothingMsg) }
+             SchedulesViewModel.SaveResult.NO_FREE_TIME ->
+                 scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
+             SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
+         }
+     }
+
+     Box(modifier = Modifier.fillMaxSize()) {
+         Column(modifier = Modifier.fillMaxSize()) {
+             LazyColumn(modifier = Modifier.weight(1f)) {
+                 item {
+                     OutlinedTextField(
+                         value = draft.name,
+                         onValueChange = { value -> viewModel.updateDraft { it.copy(name = value.take(40)) } },
+                         label = { Text(stringResource(R.string.schedule_name)) },
+                         singleLine = true,
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .padding(16.dp)
+                     )
+                 }
+
+                 item {
+                     EditorSectionTitle(stringResource(R.string.schedule_days))
+                     DaySelector(
+                         selected = draft.days,
+                         onToggle = { day ->
+                             viewModel.updateDraft {
+                                 it.copy(days = if (day in it.days) it.days - day else it.days + day)
+                             }
+                         }
+                     )
+                     Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                         TextButton(onClick = { viewModel.updateDraft { it.copy(days = DayOfWeek.entries.toSet()) } }) {
+                             Text(stringResource(R.string.schedule_every_day))
+                         }
+                         TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKDAYS) } }) {
+                             Text(stringResource(R.string.schedule_weekdays))
+                         }
+                         TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKENDS) } }) {
+                             Text(stringResource(R.string.schedule_weekends))
+                         }
+                     }
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                 }
+
+                 item {
+                     EditorSectionTitle(stringResource(R.string.schedule_time))
+                     Row(
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .padding(horizontal = 16.dp),
+                         horizontalArrangement = Arrangement.spacedBy(12.dp)
+                     ) {
+                         TimeBox(
+                             label = stringResource(R.string.schedule_starts),
+                             minute = draft.startMinute,
+                             onClick = { showStartPicker = true },
+                             modifier = Modifier.weight(1f)
+                         )
+                         TimeBox(
+                             label = stringResource(R.string.schedule_ends),
+                             minute = draft.endMinute,
+                             onClick = { showEndPicker = true },
+                             modifier = Modifier.weight(1f)
+                         )
+                     }
+                     val timeNote = when {
+                         draft.startMinute == draft.endMinute -> stringResource(R.string.schedule_full_day)
+                         draft.crossesMidnight -> stringResource(R.string.schedule_crosses_midnight)
+                         else -> null
+                     }
+                     if (timeNote != null) {
+                         Text(
+                             timeNote,
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                         )
+                     }
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                 }
+
+                 item {
+                     ListItem(
+                         headlineContent = { Text(stringResource(R.string.schedule_apps)) },
+                         supportingContent = {
+                             val count = draft.packages.size
+                             Text(
+                                 if (count == 0) stringResource(R.string.no_apps)
+                                 else draft.packages.map { viewModel.appName(it) }.sorted().joinToString(", "),
+                                 maxLines = 3,
+                                 overflow = TextOverflow.Ellipsis
+                             )
+                         },
+                         leadingContent = { Icon(Icons.Outlined.Apps, null) },
+                         trailingContent = {
+                             Button(onClick = { showAppPicker = true }) {
+                                 Text(stringResource(R.string.select_apps))
+                             }
+                         }
+                     )
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                 }
+
+                 item {
+                     val context = LocalContext.current
+                     ListItem(
+                         headlineContent = { Text(stringResource(R.string.schedule_services)) },
+                         supportingContent = {
+                             Column {
+                                 Text(stringResource(R.string.schedule_services_desc))
+                                 if (draft.restrictions.isNotEmpty()) {
+                                     Text(
+                                         draft.restrictions.map { restrictionLabel(context, viewModel, it) }
+                                             .sorted().joinToString(", "),
+                                         maxLines = 3,
+                                         overflow = TextOverflow.Ellipsis,
+                                         fontWeight = FontWeight.Medium
+                                     )
+                                 }
+                             }
+                         },
+                         leadingContent = { Icon(Icons.Outlined.SettingsSuggest, null) },
+                         trailingContent = {
+                             Button(onClick = { showServicePicker = true }) {
+                                 Text(stringResource(R.string.schedule_select_services))
+                             }
+                         }
+                     )
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                 }
+
+                 item {
+                     Row(
+                         verticalAlignment = Alignment.CenterVertically,
+                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                     ) {
+                         Icon(Icons.Outlined.Public, null)
+                         Text(
+                             stringResource(R.string.schedule_websites),
+                             style = MaterialTheme.typography.titleMedium,
+                             modifier = Modifier.padding(start = 16.dp)
+                         )
+                     }
+                     Text(
+                         stringResource(R.string.schedule_websites_desc),
+                         style = MaterialTheme.typography.bodySmall,
+                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                     )
+                     OutlinedTextField(
+                         value = websitesText,
+                         onValueChange = { websitesText = it },
+                         minLines = 3,
+                         maxLines = 8,
+                         placeholder = { Text("instagram.com\ntiktok.com") },
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .padding(horizontal = 16.dp)
+                     )
+                     AssistChip(
+                         onClick = {
+                             val merged = (parseWebsites(websitesText) + SOCIAL_MEDIA_SITES).sorted()
+                             websitesText = merged.joinToString("\n")
+                         },
+                         label = { Text(stringResource(R.string.schedule_websites_add_social)) },
+                         leadingIcon = { Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp)) },
+                         modifier = Modifier.padding(horizontal = 16.dp)
+                     )
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                 }
+
+                 item {
+                     ListItem(
+                         headlineContent = { Text(stringResource(R.string.schedule_lock_while_active)) },
+                         supportingContent = { Text(stringResource(R.string.schedule_lock_while_active_desc)) },
+                         leadingContent = { Icon(Icons.Outlined.Lock, null) },
+                         trailingContent = {
+                             Switch(
+                                 checked = draft.lockWhileActive,
+                                 onCheckedChange = { checked ->
+                                     viewModel.updateDraft { it.copy(lockWhileActive = checked) }
+                                 }
+                             )
+                         }
+                     )
+                 }
+
+                 if (!viewModel.isNewDraft) {
+                     item {
+                         TextButton(
+                             onClick = { showDeleteConfirm = true },
+                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                             modifier = Modifier.padding(horizontal = 8.dp)
+                         ) {
+                             Icon(Icons.Outlined.Delete, null)
+                             Spacer(Modifier.width(8.dp))
+                             Text(stringResource(R.string.schedule_delete))
+                         }
+                     }
+                 }
+
+                 item { Spacer(Modifier.height(16.dp)) }
+             }
+
+             Row(
+                 modifier = Modifier
+                     .fillMaxWidth()
+                     .padding(16.dp),
+                 horizontalArrangement = Arrangement.spacedBy(12.dp)
+             ) {
+                 OutlinedButton(
+                     onClick = {
+                         viewModel.closeEditor()
+                         navViewModel.goBack()
+                     },
+                     modifier = Modifier.weight(1f)
+                 ) { Text(stringResource(R.string.cancel)) }
+                 Button(
+                     onClick = {
+                         viewModel.updateDraft { it.copy(websites = parseWebsites(websitesText)) }
+                         handleResult(viewModel.saveDraft())
+                     },
+                     modifier = Modifier.weight(1f)
+                 ) { Text(stringResource(R.string.schedule_save)) }
+             }
+         }
+
+         SnackbarHost(
+             hostState = snackbarHostState,
+             modifier = Modifier
+                 .align(Alignment.BottomCenter)
+                 .padding(bottom = 80.dp)
+         )
+     }
+
+     if (showStartPicker) {
+         ScheduleTimePickerDialog(
+             initialMinute = draft.startMinute,
+             onConfirm = { minute ->
+                 viewModel.updateDraft { it.copy(startMinute = minute) }
+                 showStartPicker = false
+             },
+             onDismiss = { showStartPicker = false }
+         )
+     }
+
+     if (showEndPicker) {
+         ScheduleTimePickerDialog(
+             initialMinute = draft.endMinute,
+             onConfirm = { minute ->
+                 viewModel.updateDraft { it.copy(endMinute = minute) }
+                 showEndPicker = false
+             },
+             onDismiss = { showEndPicker = false }
+         )
+     }
+
+     if (showAppPicker) {
+         AppPickerDialog(
+             apps = viewModel.apps.filter { it.packageName !in viewModel.protectedPackages },
+             isLoading = viewModel.isLoadingApps,
+             isSelected = { draft.packages.contains(it) },
+             onToggle = { viewModel.toggleDraftPackage(it) },
+             onDismiss = { showAppPicker = false }
+         )
+     }
+
+     if (showServicePicker) {
+         ServicePickerDialog(
+             viewModel = viewModel,
+             selected = draft.restrictions,
+             onToggle = { viewModel.toggleDraftRestriction(it) },
+             onDismiss = { showServicePicker = false }
+         )
+     }
+
+     if (showLongLockConfirm) {
+         LongLockConfirmDialog(
+             windowMinutes = draft.windowMinutes,
+             onConfirm = {
+                 showLongLockConfirm = false
+                 handleResult(viewModel.saveDraft(confirmedLongLock = true))
+             },
+             onDismiss = { showLongLockConfirm = false }
+         )
+     }
+
+     if (showDeleteConfirm) {
+         AlertDialog(
+             onDismissRequest = { showDeleteConfirm = false },
+             title = { Text(stringResource(R.string.schedule_delete)) },
+             text = { Text(stringResource(R.string.schedule_delete_confirm)) },
+             confirmButton = {
+                 TextButton(onClick = {
+                     showDeleteConfirm = false
+                     handleResult(viewModel.deleteDraft())
+                 }) { Text(stringResource(R.string.confirm)) }
+             },
+             dismissButton = {
+                 TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+             }
+         )
+     }
+ }
+
+@Composable
+private fun LongLockConfirmDialog(windowMinutes: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    var understood by remember { mutableStateOf(false) }
+    val hours = windowMinutes / 60
+    val minutes = windowMinutes % 60
+    val duration = when {
+        minutes == 0 -> stringResource(R.string.time_hours, hours)
+        else -> stringResource(R.string.time_hours_minutes, hours, minutes)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Lock, null) },
+        title = { Text(stringResource(R.string.schedule_long_lock_title, duration)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.schedule_long_lock_message))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .clickable { understood = !understood }
+                ) {
+                    Checkbox(checked = understood, onCheckedChange = { understood = it })
+                    Text(stringResource(R.string.schedule_long_lock_checkbox), modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = understood, onClick = onConfirm) { Text(stringResource(R.string.confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+private fun parseWebsites(text: String): Set<String> = text
+    .split('\n', ',', ' ', ';')
+    .mapNotNull { BlockSchedule.normaliseWebsite(it) }
+    .toSet()
+
+private fun restrictionLabel(
+    context: android.content.Context,
+    viewModel: SchedulesViewModel,
+    key: String
+): String {
+    val resId = viewModel.resourceNameFor(key)
+        ?.let { context.resources.getIdentifier(it, "string", context.packageName) }
+        ?.takeIf { it != 0 }
+    return resId?.let { context.getString(it) } ?: key
+}
+
+@Composable
+private fun EditorSectionTitle(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun DaySelector(selected: Set<DayOfWeek>, onToggle: (DayOfWeek) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        DayOfWeek.entries.forEach { day ->
+            val isOn = day in selected
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f)
+                    .clip(CircleShape)
+                    .background(
+                        if (isOn) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .clickable { onToggle(day) }
+            ) {
+                Text(
+                    day.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                    fontWeight = FontWeight.Bold,
+                    color = if (isOn) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeBox(label: String, minute: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedCard(modifier = modifier.clickable(onClick = onClick)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(16.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+            Text(
+                BlockSchedule.formatMinute(minute),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScheduleTimePickerDialog(initialMinute: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    val state = rememberTimePickerState(
+        initialHour = initialMinute / 60,
+        initialMinute = initialMinute % 60,
+        is24Hour = true
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { TimePicker(state = state) },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun ServicePickerDialog(
+    viewModel: SchedulesViewModel,
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+
+    val labels = remember {
+        (viewModel.suggestedRestrictions + viewModel.otherRestrictions)
+            .associateWith { restrictionLabel(context, viewModel, it) }
+    }
+
+    fun matches(key: String) = query.isBlank() ||
+        labels[key].orEmpty().contains(query, ignoreCase = true) ||
+        key.contains(query, ignoreCase = true)
+
+    val suggested = viewModel.suggestedRestrictions.filter(::matches)
+    val others = viewModel.otherRestrictions.filter(::matches)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.schedule_select_services)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text(stringResource(R.string.search_restrictions)) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    if (suggested.isNotEmpty()) {
+                        item { PickerHeader(stringResource(R.string.schedule_suggested)) }
+                        items(suggested, key = { "s_$it" }) { key ->
+                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
+                        }
+                    }
+                    if (others.isNotEmpty()) {
+                        item { PickerHeader(stringResource(R.string.schedule_all_services)) }
+                        items(others, key = { "o_$it" }) { key ->
+                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.confirm)) }
+        }
+    )
+}
+
+@Composable
+private fun PickerHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun ServiceRow(label: String, checked: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp)
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { onClick() })
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+    }
+}
 diff -ruN dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/security/VoicePlayer.kt dechainer-main/app/src/main/java/io/github/warleysr/dechainer/security/VoicePlayer.kt
 --- dechainer-orig/app/src/main/java/io/github/warleysr/dechainer/security/VoicePlayer.kt	1970-01-01 00:00:00.000000000 +0000
 +++ dechainer-main/app/src/main/java/io/github/warleysr/dechainer/security/VoicePlayer.kt	2026-09-18 10:00:00.000000000 +0000
