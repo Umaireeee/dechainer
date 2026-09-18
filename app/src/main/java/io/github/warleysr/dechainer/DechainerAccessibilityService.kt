@@ -34,11 +34,14 @@ import io.github.warleysr.dechainer.activities.NsfwContentBlockedActivity
 import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
 import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
 import io.github.warleysr.dechainer.activities.TimeUpActivity
+import io.github.warleysr.dechainer.data.AppGroupRepository
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BrowserRestrictionsManager
 import io.github.warleysr.dechainer.data.PlayStoreRatingFetcher
 import io.github.warleysr.dechainer.data.VisualBlockingSettings
 import io.github.warleysr.dechainer.data.VisualBlockingSuspensionTracker
+import io.github.warleysr.dechainer.models.AppGroup
+import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.utils.NsfwContentDetector
 import org.jsoup.HttpStatusException
@@ -65,6 +68,8 @@ class DechainerAccessibilityService : AccessibilityService() {
     private lateinit var usagePrefs: SharedPreferences
     private lateinit var reopenPrefs: SharedPreferences
     private lateinit var timeWindowPrefs: SharedPreferences
+    private lateinit var groupsPrefs: SharedPreferences
+    private lateinit var groupUsagePrefs: SharedPreferences
     private lateinit var blockedWordsPrefs: SharedPreferences
     private lateinit var securityPrefs: SharedPreferences
     private lateinit var ratingPrefs: SharedPreferences
@@ -205,6 +210,12 @@ class DechainerAccessibilityService : AccessibilityService() {
                     handler.removeCallbacks(windowEndRunnable)
                     currentPackage?.let { startTracking(it) }
                 }
+            }
+
+            groupsPrefs -> {
+                handler.removeCallbacks(blockRunnable)
+                handler.removeCallbacks(windowEndRunnable)
+                currentPackage?.let { startTracking(it) }
             }
 
             blockedWordsPrefs -> {
@@ -374,6 +385,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         usagePrefs = getSharedPreferences("internal_usage_stats", MODE_PRIVATE)
         reopenPrefs = getSharedPreferences("reopen_times", MODE_PRIVATE)
         timeWindowPrefs = getSharedPreferences(AppTimeWindows.PREFS_NAME, MODE_PRIVATE)
+        groupsPrefs = getSharedPreferences(AppGroupRepository.PREFS_NAME, MODE_PRIVATE)
+        groupUsagePrefs = getSharedPreferences("group_usage_stats", MODE_PRIVATE)
         blockedWordsPrefs = getSharedPreferences("blocked_words_prefs", MODE_PRIVATE)
         securityPrefs = getSharedPreferences("security_prefs", MODE_PRIVATE)
         ratingPrefs = getSharedPreferences("app_ratings", MODE_PRIVATE)
@@ -382,6 +395,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         timeWindowPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        groupsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -438,6 +452,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         unregisterReceiver(screenReceiver)
         limitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         timeWindowPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
@@ -972,11 +987,16 @@ class DechainerAccessibilityService : AccessibilityService() {
     )
 
     private fun getControlledPackages(): Array<String> {
+        val restrictedGroupPackages = AppGroupRepository.getGroups()
+            .filter { it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty() }
+            .flatMap { it.packageNames }
+
         return targetPackages
             .union(passiveForbiddenPatterns.keys)
             .union(limitPrefs.all.keys)
             .union(reopenPrefs.all.keys)
             .union(timeWindowPrefs.all.keys)
+            .union(restrictedGroupPackages)
             .toTypedArray()
     }
 
@@ -1023,11 +1043,40 @@ class DechainerAccessibilityService : AccessibilityService() {
         showBlockedActivity(forbiddenWord)
     }
 
+    /**
+     * The app's own settings plus its group's, when it belongs to one. A group does not replace
+     * the app's individual limit/windows — it adds another cap alongside them, and whichever of
+     * the two is more restrictive is the one that actually applies (see [startTracking]).
+     */
+    private data class TrackingConfig(
+        val group: AppGroup?,
+        val appLimitMinutes: Int,
+        val groupLimitMinutes: Int,
+        val windows: List<TimeWindow>
+    )
+
+    private fun trackingConfigFor(pkg: String): TrackingConfig {
+        val group = AppGroupRepository.getGroupForPackage(pkg)
+        val appWindows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
+        val appLimitMinutes = limitPrefs.getInt(pkg, 0)
+        return if (group != null) {
+            TrackingConfig(
+                group = group,
+                appLimitMinutes = appLimitMinutes,
+                groupLimitMinutes = group.timeLimitMinutes,
+                windows = TimeWindow.intersect(group.timeWindows, appWindows)
+            )
+        } else {
+            TrackingConfig(null, appLimitMinutes, 0, appWindows)
+        }
+    }
+
     private fun startTracking(pkg: String) {
-        val windows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
-        if (windows.isNotEmpty()) {
+        val config = trackingConfigFor(pkg)
+
+        if (config.windows.isNotEmpty()) {
             val nowMinute = currentMinuteOfDay()
-            val activeWindow = windows.firstOrNull { it.contains(nowMinute) }
+            val activeWindow = config.windows.firstOrNull { it.contains(nowMinute) }
             if (activeWindow == null) {
                 executeBlocking(outsideWindow = true)
                 return
@@ -1038,21 +1087,29 @@ class DechainerAccessibilityService : AccessibilityService() {
             )
         }
 
-        val limitMinutes = limitPrefs.getInt(pkg, 0)
         val remainingSecondsReopening = getRemainingSecondsToReopen(pkg)
-        if (limitMinutes <= 0 && remainingSecondsReopening <= 0) return
+        if (config.appLimitMinutes <= 0 && config.groupLimitMinutes <= 0 && remainingSecondsReopening <= 0) return
 
-        val limitMillis = TimeUnit.MINUTES.toMillis(limitMinutes.toLong())
+        var remainingMillis = Long.MAX_VALUE
+        var limitReached = false
 
-        if (limitMillis > 0) {
-            val alreadyUsedMillis = usagePrefs.getLong(pkg, 0L)
-            val remainingMillis = limitMillis - alreadyUsedMillis
+        if (config.appLimitMinutes > 0) {
+            val remaining = TimeUnit.MINUTES.toMillis(config.appLimitMinutes.toLong()) - usagePrefs.getLong(pkg, 0L)
+            if (remaining <= 0) limitReached = true else remainingMillis = minOf(remainingMillis, remaining)
+        }
 
-            if (remainingMillis <= 0) {
-                executeBlocking()
-                return
-            } else
-                handler.postDelayed(blockRunnable, remainingMillis)
+        if (config.group != null && config.groupLimitMinutes > 0) {
+            val remaining = TimeUnit.MINUTES.toMillis(config.groupLimitMinutes.toLong()) -
+                groupUsagePrefs.getLong(config.group.id, 0L)
+            if (remaining <= 0) limitReached = true else remainingMillis = minOf(remainingMillis, remaining)
+        }
+
+        if (limitReached) {
+            executeBlocking()
+            return
+        }
+        if (remainingMillis != Long.MAX_VALUE) {
+            handler.postDelayed(blockRunnable, remainingMillis)
         }
 
         if (remainingSecondsReopening > 0)
@@ -1068,24 +1125,46 @@ class DechainerAccessibilityService : AccessibilityService() {
             lastClosedTimes[pkg] = SystemClock.elapsedRealtime()
 
         if (sessionStartTime == 0L) return
-        if (limitPrefs.getInt(pkg, 0) == 0) return
 
+        val config = trackingConfigFor(pkg)
         val currentSessionMillis = SystemClock.elapsedRealtime() - sessionStartTime
-        val total = usagePrefs.getLong(pkg, 0L) + currentSessionMillis
 
-        usagePrefs.edit { putLong(pkg, total) }
+        if (config.appLimitMinutes > 0) {
+            usagePrefs.edit { putLong(pkg, usagePrefs.getLong(pkg, 0L) + currentSessionMillis) }
+        }
+        if (config.group != null && config.groupLimitMinutes > 0) {
+            val groupId = config.group.id
+            groupUsagePrefs.edit { putLong(groupId, groupUsagePrefs.getLong(groupId, 0L) + currentSessionMillis) }
+        }
+
         sessionStartTime = 0
     }
 
     private fun executeBlocking(reopening: Boolean = false, remainingSeconds: Int = 0, outsideWindow: Boolean = false) {
         val pkg = currentPackage ?: return
+        val config = trackingConfigFor(pkg)
 
         stopTrackingAndSave()
         currentPackage = null
 
-        val appName = try {
+        val individualAppName = try {
             packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
         } catch (e: Exception) { pkg }
+
+        // For a plain limit block, name and blame whichever cap actually ran out: the app's own,
+        // or (when both are exhausted) the shared group cap, since that's the one still binding.
+        var displayName = individualAppName
+        var displayLimit = config.appLimitMinutes
+        if (!reopening && !outsideWindow && config.group != null && config.groupLimitMinutes > 0) {
+            val groupReached = groupUsagePrefs.getLong(config.group.id, 0L) >=
+                TimeUnit.MINUTES.toMillis(config.groupLimitMinutes.toLong())
+            val appReached = config.appLimitMinutes > 0 &&
+                usagePrefs.getLong(pkg, 0L) >= TimeUnit.MINUTES.toMillis(config.appLimitMinutes.toLong())
+            if (groupReached && !appReached) {
+                displayName = config.group.name
+                displayLimit = config.groupLimitMinutes
+            }
+        }
 
         val activityClass = when {
             outsideWindow -> OutsideTimeWindowActivity::class.java
@@ -1095,14 +1174,13 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         val intent = Intent(this, activityClass).apply {
             flags = FLAG_ACTIVITY_NEW_TASK
-            putExtra("appName", appName)
+            putExtra("appName", displayName)
         }
 
         if (outsideWindow) {
-            val windows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
-            intent.putStringArrayListExtra("windows", ArrayList(windows.map { it.formatted() }))
+            intent.putStringArrayListExtra("windows", ArrayList(config.windows.map { it.formatted() }))
         } else {
-            intent.putExtra("limit", if (reopening) remainingSeconds else limitPrefs.getInt(pkg, 0))
+            intent.putExtra("limit", if (reopening) remainingSeconds else displayLimit)
         }
 
         startActivity(intent)
@@ -1118,6 +1196,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         val today = LocalDate.now().toString()
         if (today != lastCheckDate) {
             usagePrefs.edit { clear() }
+            groupUsagePrefs.edit { clear() }
             lastCheckDate = today
         }
     }

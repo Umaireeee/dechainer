@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +23,7 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Schedule
@@ -69,54 +72,104 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
     var showTimeLimitDialog by remember { mutableStateOf<AppItem?>(null) }
     var showTimeWindowsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showRestrictionsDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showGroupPickerDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showGroupsManagementDialog by remember { mutableStateOf(false) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var showEditGroupDialog by remember { mutableStateOf<AppGroup?>(null) }
+    var selectedGroupFilter by remember { mutableStateOf<String?>(null) }
     val recoveryGate = rememberRecoveryGate()
     var showSystemApps by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
-    val filteredApps = remember(viewModel.apps, searchQuery, showSystemApps) {
+    val restrictedGroupPackages = remember(viewModel.groups) {
+        viewModel.groups.filter { it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty() }
+            .flatMap { it.packageNames }
+            .toSet()
+    }
+
+    val filteredApps = remember(viewModel.apps, viewModel.groups, searchQuery, showSystemApps, selectedGroupFilter) {
         viewModel.apps.filter {
             (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked ||
-                it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty()) &&
+                it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty() ||
+                it.packageName in restrictedGroupPackages) &&
             (it.name.contains(searchQuery, ignoreCase = true) ||
-            it.packageName.contains(searchQuery, ignoreCase = true))
+            it.packageName.contains(searchQuery, ignoreCase = true)) &&
+            (selectedGroupFilter == null ||
+                viewModel.groups.firstOrNull { g -> g.id == selectedGroupFilter }?.packageNames?.contains(it.packageName) == true)
         }
-        .sortedBy { it.timeLimitMinutes == 0 && it.timeWindows.isEmpty() }
+        .sortedBy {
+            it.timeLimitMinutes == 0 && it.timeWindows.isEmpty() && it.packageName !in restrictedGroupPackages
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(tonalElevation = 3.dp) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 8.dp),
-                    placeholder = { Text(stringResource(R.string.search_apps)) },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    singleLine = true
-                )
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, null)
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp),
+                        placeholder = { Text(stringResource(R.string.search_apps)) },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        singleLine = true
+                    )
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, null)
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.show_system_apps)) },
+                                onClick = {
+                                    showSystemApps = !showSystemApps
+                                    showMenu = false
+                                },
+                                trailingIcon = {
+                                    Checkbox(checked = showSystemApps, onCheckedChange = null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.manage_groups)) },
+                                leadingIcon = { Icon(Icons.Default.Group, null) },
+                                onClick = {
+                                    showGroupsManagementDialog = true
+                                    showMenu = false
+                                }
+                            )
+                        }
                     }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                }
+
+                if (viewModel.groups.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.show_system_apps)) },
-                            onClick = {
-                                showSystemApps = !showSystemApps
-                                showMenu = false
-                            },
-                            trailingIcon = {
-                                Checkbox(checked = showSystemApps, onCheckedChange = null)
-                            }
-                        )
+                        item {
+                            FilterChip(
+                                selected = selectedGroupFilter == null,
+                                onClick = { selectedGroupFilter = null },
+                                label = { Text(stringResource(R.string.all_apps_filter)) }
+                            )
+                        }
+                        items(viewModel.groups, key = { it.id }) { group ->
+                            FilterChip(
+                                selected = selectedGroupFilter == group.id,
+                                onClick = {
+                                    selectedGroupFilter = if (selectedGroupFilter == group.id) null else group.id
+                                },
+                                label = { Text(group.name) }
+                            )
+                        }
                     }
                 }
             }
@@ -159,6 +212,11 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                 showTimeWindowsDialog = app
                 selectedApp = null
             },
+            onSetGroup = {
+                showGroupPickerDialog = app
+                selectedApp = null
+            },
+            currentGroupName = viewModel.groupFor(app.packageName)?.name,
             onManageRestrictions = {
                 showRestrictionsDialog = app
                 selectedApp = null
@@ -182,7 +240,8 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
 
     showTimeWindowsDialog?.let { app ->
         TimeWindowsDialog(
-            app = app,
+            title = stringResource(R.string.time_windows_dialog_title, app.name),
+            initialWindows = app.timeWindows,
             onDismiss = { showTimeWindowsDialog = null },
             onConfirm = { windows ->
                 recoveryGate.run {
@@ -203,6 +262,69 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                     deviceOwnerViewModel.setApplicationRestrictions(app.packageName, restrictions)
                 }
                 showRestrictionsDialog = null
+            }
+        )
+    }
+
+    showGroupPickerDialog?.let { app ->
+        AppGroupPickerDialog(
+            app = app,
+            groups = viewModel.groups,
+            currentGroupId = viewModel.groupFor(app.packageName)?.id,
+            onDismiss = { showGroupPickerDialog = null },
+            onSelect = { groupId ->
+                recoveryGate.run { viewModel.setPackageGroup(app.packageName, groupId) }
+                showGroupPickerDialog = null
+            },
+            onCreateNew = {
+                showGroupPickerDialog = null
+                showCreateGroupDialog = true
+            }
+        )
+    }
+
+    if (showGroupsManagementDialog) {
+        GroupsManagementDialog(
+            groups = viewModel.groups,
+            onDismiss = { showGroupsManagementDialog = false },
+            onCreateGroup = {
+                showGroupsManagementDialog = false
+                showCreateGroupDialog = true
+            },
+            onSelectGroup = { group ->
+                showGroupsManagementDialog = false
+                showEditGroupDialog = group
+            }
+        )
+    }
+
+    if (showCreateGroupDialog) {
+        CreateGroupDialog(
+            onDismiss = { showCreateGroupDialog = false },
+            onConfirm = { name ->
+                recoveryGate.run { viewModel.createGroup(name) }
+                showCreateGroupDialog = false
+            }
+        )
+    }
+
+    showEditGroupDialog?.let { group ->
+        EditGroupDialog(
+            group = group,
+            allApps = viewModel.apps,
+            onDismiss = { showEditGroupDialog = null },
+            onSave = { name, limitMinutes, windows, packageNames ->
+                recoveryGate.run {
+                    if (name != group.name) viewModel.renameGroup(group.id, name)
+                    viewModel.setGroupTimeLimit(group.id, limitMinutes)
+                    viewModel.setGroupTimeWindows(group.id, windows)
+                    viewModel.setGroupPackages(group.id, packageNames)
+                }
+                showEditGroupDialog = null
+            },
+            onDelete = {
+                recoveryGate.run { viewModel.deleteGroup(group.id) }
+                showEditGroupDialog = null
             }
         )
     }
@@ -342,45 +464,81 @@ fun AppRestrictionsDialog(
 }
 
 @Composable
+fun LimitUsageRow(
+    limitMinutes: Int,
+    usedMinutes: Long,
+    @androidx.annotation.StringRes limitLabelRes: Int,
+    @androidx.annotation.StringRes usedLabelRes: Int
+) {
+    val h = limitMinutes / 60
+    val m = limitMinutes % 60
+    val fmtLimit = "${if (h > 0) "${h}h " else ""}${if (m > 0) "${m}min" else ""}"
+
+    val usedH = usedMinutes / 60
+    val usedM = usedMinutes % 60
+    val fmtUsed = "${if (usedH > 0) "${usedH}h " else ""}${if (usedM > 0) "${usedM}min" else ""}"
+
+    Row {
+        Text(
+            stringResource(limitLabelRes, fmtLimit),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        if (usedMinutes > 0) {
+            Spacer(Modifier.width(4.dp))
+            Text(
+                stringResource(usedLabelRes, fmtUsed),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+@Composable
 fun AppRow(app: AppItem, viewModel: AppsViewModel, onClick: () -> Unit) {
+    val group = remember(app.packageName, viewModel.groups) { viewModel.groupFor(app.packageName) }
+
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = { Text(app.name) },
-        supportingContent = { 
+        supportingContent = {
             Column {
                 Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                if (app.timeLimitMinutes > 0) {
-                    val h = app.timeLimitMinutes / 60
-                    val m = app.timeLimitMinutes % 60
-                    val fmtLimit = "${if (h > 0) "${h}h " else ""}${if (m > 0) "${m}min" else ""}"
 
-                    val used = viewModel.getAppUsage(app.packageName, inMinutes = true)
-                    val usedH = used / 60
-                    val usedM = used % 60
-                    val fmtUsed = "${if (usedH > 0) "${usedH}h " else ""}${if (usedM > 0) "${usedM}min" else ""}"
-
-                    Row {
-                        Text(
-                            stringResource(R.string.limit, fmtLimit),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        if (used > 0) {
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.used, fmtUsed),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
+                if (group != null) {
+                    Text(
+                        stringResource(R.string.group_label, group.name),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
                 }
 
-                if (app.timeWindows.isNotEmpty()) {
+                if (app.timeLimitMinutes > 0) {
+                    LimitUsageRow(
+                        limitMinutes = app.timeLimitMinutes,
+                        usedMinutes = viewModel.getAppUsage(app.packageName, inMinutes = true),
+                        limitLabelRes = R.string.limit,
+                        usedLabelRes = R.string.used
+                    )
+                }
+
+                if (group != null && group.timeLimitMinutes > 0) {
+                    LimitUsageRow(
+                        limitMinutes = group.timeLimitMinutes,
+                        usedMinutes = viewModel.getGroupUsage(group.id, inMinutes = true),
+                        limitLabelRes = R.string.group_limit,
+                        usedLabelRes = R.string.group_used
+                    )
+                }
+
+                val effectiveWindows = if (group != null) TimeWindow.intersect(group.timeWindows, app.timeWindows)
+                                       else app.timeWindows
+                if (effectiveWindows.isNotEmpty()) {
                     Text(
                         stringResource(
                             R.string.time_windows_summary,
-                            app.timeWindows.joinToString(", ") { it.formatted() }
+                            effectiveWindows.joinToString(", ") { it.formatted() }
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiary
@@ -453,6 +611,8 @@ fun AppActionDialog(
     onSuspend: () -> Unit,
     onSetTimeLimit: () -> Unit,
     onSetTimeWindows: () -> Unit,
+    onSetGroup: () -> Unit,
+    currentGroupName: String?,
     onManageRestrictions: () -> Unit
 ) {
     AlertDialog(
@@ -462,6 +622,12 @@ fun AppActionDialog(
             Column {
                 Text(stringResource(R.string.manage_restrictions, app.packageName))
                 Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onSetGroup, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Group, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(currentGroupName?.let { stringResource(R.string.group_label, it) } ?: stringResource(R.string.app_group))
+                }
+                Spacer(Modifier.height(4.dp))
                 TextButton(onClick = onSetTimeLimit, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Timer, null)
                     Spacer(Modifier.width(8.dp))
@@ -575,11 +741,12 @@ fun TimeLimitDialog(
 
 @Composable
 fun TimeWindowsDialog(
-    app: AppItem,
+    title: String,
+    initialWindows: List<TimeWindow>,
     onDismiss: () -> Unit,
     onConfirm: (List<TimeWindow>) -> Unit
 ) {
-    val windows = remember { mutableStateListOf(*app.timeWindows.toTypedArray()) }
+    val windows = remember { mutableStateListOf(*initialWindows.toTypedArray()) }
     var showAddForm by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var startHour by remember { mutableIntStateOf(18) }
@@ -589,7 +756,7 @@ fun TimeWindowsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.time_windows_dialog_title, app.name)) },
+        title = { Text(title) },
         text = {
             Column {
                 if (windows.isEmpty() && !showAddForm) {
