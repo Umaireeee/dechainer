@@ -11,6 +11,7 @@ data class AppItem(
     val isUninstallBlocked: Boolean = false,
     val timeLimitMinutes: Int = 0,
     val reopeningSeconds: Int = 0,
+    val timeWindows: List<TimeWindow> = emptyList(),
     val isSuspended: Boolean = false,
     val hasExplicitContent: Boolean = false
 )

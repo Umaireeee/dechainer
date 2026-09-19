@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,15 +23,21 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.ui.text.font.FontFamily
@@ -63,54 +70,106 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
     var searchQuery by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<AppItem?>(null) }
     var showTimeLimitDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showTimeWindowsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showRestrictionsDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showGroupPickerDialog by remember { mutableStateOf<AppItem?>(null) }
+    var showGroupsManagementDialog by remember { mutableStateOf(false) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var showEditGroupDialog by remember { mutableStateOf<AppGroup?>(null) }
+    var selectedGroupFilter by remember { mutableStateOf<String?>(null) }
     val recoveryGate = rememberRecoveryGate()
     var showSystemApps by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
-    val filteredApps = remember(viewModel.apps, searchQuery, showSystemApps) {
+    val restrictedGroupPackages = remember(viewModel.groups) {
+        viewModel.groups.filter { it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty() }
+            .flatMap { it.packageNames }
+            .toSet()
+    }
+
+    val filteredApps = remember(viewModel.apps, viewModel.groups, searchQuery, showSystemApps, selectedGroupFilter) {
         viewModel.apps.filter {
-            (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked || it.timeLimitMinutes > 0) &&
+            (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked ||
+                it.timeLimitMinutes > 0 || it.timeWindows.isNotEmpty() ||
+                it.packageName in restrictedGroupPackages) &&
             (it.name.contains(searchQuery, ignoreCase = true) ||
-            it.packageName.contains(searchQuery, ignoreCase = true))
+            it.packageName.contains(searchQuery, ignoreCase = true)) &&
+            (selectedGroupFilter == null ||
+                viewModel.groups.firstOrNull { g -> g.id == selectedGroupFilter }?.packageNames?.contains(it.packageName) == true)
         }
-        .sortedBy { it.timeLimitMinutes == 0 }
+        .sortedBy {
+            it.timeLimitMinutes == 0 && it.timeWindows.isEmpty() && it.packageName !in restrictedGroupPackages
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(tonalElevation = 3.dp) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 8.dp),
-                    placeholder = { Text(stringResource(R.string.search_apps)) },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    singleLine = true
-                )
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, null)
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp),
+                        placeholder = { Text(stringResource(R.string.search_apps)) },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        singleLine = true
+                    )
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, null)
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.show_system_apps)) },
+                                onClick = {
+                                    showSystemApps = !showSystemApps
+                                    showMenu = false
+                                },
+                                trailingIcon = {
+                                    Checkbox(checked = showSystemApps, onCheckedChange = null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.manage_groups)) },
+                                leadingIcon = { Icon(Icons.Default.Group, null) },
+                                onClick = {
+                                    showGroupsManagementDialog = true
+                                    showMenu = false
+                                }
+                            )
+                        }
                     }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                }
+
+                if (viewModel.groups.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.show_system_apps)) },
-                            onClick = {
-                                showSystemApps = !showSystemApps
-                                showMenu = false
-                            },
-                            trailingIcon = {
-                                Checkbox(checked = showSystemApps, onCheckedChange = null)
-                            }
-                        )
+                        item {
+                            FilterChip(
+                                selected = selectedGroupFilter == null,
+                                onClick = { selectedGroupFilter = null },
+                                label = { Text(stringResource(R.string.all_apps_filter)) }
+                            )
+                        }
+                        items(viewModel.groups, key = { it.id }) { group ->
+                            FilterChip(
+                                selected = selectedGroupFilter == group.id,
+                                onClick = {
+                                    selectedGroupFilter = if (selectedGroupFilter == group.id) null else group.id
+                                },
+                                label = { Text(group.name) }
+                            )
+                        }
                     }
                 }
             }
@@ -149,6 +208,15 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                 showTimeLimitDialog = app
                 selectedApp = null
             },
+            onSetTimeWindows = {
+                showTimeWindowsDialog = app
+                selectedApp = null
+            },
+            onSetGroup = {
+                showGroupPickerDialog = app
+                selectedApp = null
+            },
+            currentGroupName = viewModel.groupFor(app.packageName)?.name,
             onManageRestrictions = {
                 showRestrictionsDialog = app
                 selectedApp = null
@@ -170,6 +238,20 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
         )
     }
 
+    showTimeWindowsDialog?.let { app ->
+        TimeWindowsDialog(
+            title = stringResource(R.string.time_windows_dialog_title, app.name),
+            initialWindows = app.timeWindows,
+            onDismiss = { showTimeWindowsDialog = null },
+            onConfirm = { windows ->
+                recoveryGate.run {
+                    viewModel.setAppTimeWindows(app.packageName, windows)
+                }
+                showTimeWindowsDialog = null
+            }
+        )
+    }
+
     showRestrictionsDialog?.let { app ->
         AppRestrictionsDialog(
             app = app,
@@ -180,6 +262,69 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
                     deviceOwnerViewModel.setApplicationRestrictions(app.packageName, restrictions)
                 }
                 showRestrictionsDialog = null
+            }
+        )
+    }
+
+    showGroupPickerDialog?.let { app ->
+        AppGroupPickerDialog(
+            app = app,
+            groups = viewModel.groups,
+            currentGroupId = viewModel.groupFor(app.packageName)?.id,
+            onDismiss = { showGroupPickerDialog = null },
+            onSelect = { groupId ->
+                recoveryGate.run { viewModel.setPackageGroup(app.packageName, groupId) }
+                showGroupPickerDialog = null
+            },
+            onCreateNew = {
+                showGroupPickerDialog = null
+                showCreateGroupDialog = true
+            }
+        )
+    }
+
+    if (showGroupsManagementDialog) {
+        GroupsManagementDialog(
+            groups = viewModel.groups,
+            onDismiss = { showGroupsManagementDialog = false },
+            onCreateGroup = {
+                showGroupsManagementDialog = false
+                showCreateGroupDialog = true
+            },
+            onSelectGroup = { group ->
+                showGroupsManagementDialog = false
+                showEditGroupDialog = group
+            }
+        )
+    }
+
+    if (showCreateGroupDialog) {
+        CreateGroupDialog(
+            onDismiss = { showCreateGroupDialog = false },
+            onConfirm = { name ->
+                recoveryGate.run { viewModel.createGroup(name) }
+                showCreateGroupDialog = false
+            }
+        )
+    }
+
+    showEditGroupDialog?.let { group ->
+        EditGroupDialog(
+            group = group,
+            allApps = viewModel.apps,
+            onDismiss = { showEditGroupDialog = null },
+            onSave = { name, limitMinutes, windows, packageNames ->
+                recoveryGate.run {
+                    if (name != group.name) viewModel.renameGroup(group.id, name)
+                    viewModel.setGroupTimeLimit(group.id, limitMinutes)
+                    viewModel.setGroupTimeWindows(group.id, windows)
+                    viewModel.setGroupPackages(group.id, packageNames)
+                }
+                showEditGroupDialog = null
+            },
+            onDelete = {
+                recoveryGate.run { viewModel.deleteGroup(group.id) }
+                showEditGroupDialog = null
             }
         )
     }
@@ -319,38 +464,85 @@ fun AppRestrictionsDialog(
 }
 
 @Composable
+fun LimitUsageRow(
+    limitMinutes: Int,
+    usedMinutes: Long,
+    @androidx.annotation.StringRes limitLabelRes: Int,
+    @androidx.annotation.StringRes usedLabelRes: Int
+) {
+    val h = limitMinutes / 60
+    val m = limitMinutes % 60
+    val fmtLimit = "${if (h > 0) "${h}h " else ""}${if (m > 0) "${m}min" else ""}"
+
+    val usedH = usedMinutes / 60
+    val usedM = usedMinutes % 60
+    val fmtUsed = "${if (usedH > 0) "${usedH}h " else ""}${if (usedM > 0) "${usedM}min" else ""}"
+
+    Row {
+        Text(
+            stringResource(limitLabelRes, fmtLimit),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        if (usedMinutes > 0) {
+            Spacer(Modifier.width(4.dp))
+            Text(
+                stringResource(usedLabelRes, fmtUsed),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+@Composable
 fun AppRow(app: AppItem, viewModel: AppsViewModel, onClick: () -> Unit) {
+    val group = remember(app.packageName, viewModel.groups) { viewModel.groupFor(app.packageName) }
+
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = { Text(app.name) },
-        supportingContent = { 
+        supportingContent = {
             Column {
                 Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+
+                if (group != null) {
+                    Text(
+                        stringResource(R.string.group_label, group.name),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+
                 if (app.timeLimitMinutes > 0) {
-                    val h = app.timeLimitMinutes / 60
-                    val m = app.timeLimitMinutes % 60
-                    val fmtLimit = "${if (h > 0) "${h}h " else ""}${if (m > 0) "${m}min" else ""}"
+                    LimitUsageRow(
+                        limitMinutes = app.timeLimitMinutes,
+                        usedMinutes = viewModel.getAppUsage(app.packageName, inMinutes = true),
+                        limitLabelRes = R.string.limit,
+                        usedLabelRes = R.string.used
+                    )
+                }
 
-                    val used = viewModel.getAppUsage(app.packageName, inMinutes = true)
-                    val usedH = used / 60
-                    val usedM = used % 60
-                    val fmtUsed = "${if (usedH > 0) "${usedH}h " else ""}${if (usedM > 0) "${usedM}min" else ""}"
+                if (group != null && group.timeLimitMinutes > 0) {
+                    LimitUsageRow(
+                        limitMinutes = group.timeLimitMinutes,
+                        usedMinutes = viewModel.getGroupUsage(group.id, inMinutes = true),
+                        limitLabelRes = R.string.group_limit,
+                        usedLabelRes = R.string.group_used
+                    )
+                }
 
-                    Row {
-                        Text(
-                            stringResource(R.string.limit, fmtLimit),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        if (used > 0) {
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.used, fmtUsed),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
+                val effectiveWindows = if (group != null) TimeWindow.intersect(group.timeWindows, app.timeWindows)
+                                       else app.timeWindows
+                if (effectiveWindows.isNotEmpty()) {
+                    Text(
+                        stringResource(
+                            R.string.time_windows_summary,
+                            effectiveWindows.joinToString(", ") { it.formatted() }
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
                 }
 
                 if (app.hasExplicitContent) {
@@ -418,6 +610,9 @@ fun AppActionDialog(
     onToggleUninstall: () -> Unit,
     onSuspend: () -> Unit,
     onSetTimeLimit: () -> Unit,
+    onSetTimeWindows: () -> Unit,
+    onSetGroup: () -> Unit,
+    currentGroupName: String?,
     onManageRestrictions: () -> Unit
 ) {
     AlertDialog(
@@ -427,10 +622,22 @@ fun AppActionDialog(
             Column {
                 Text(stringResource(R.string.manage_restrictions, app.packageName))
                 Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onSetGroup, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Group, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(currentGroupName?.let { stringResource(R.string.group_label, it) } ?: stringResource(R.string.app_group))
+                }
+                Spacer(Modifier.height(4.dp))
                 TextButton(onClick = onSetTimeLimit, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Timer, null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.set_time_limit))
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onSetTimeWindows, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Schedule, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.time_windows))
                 }
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = onSuspend, modifier = Modifier.fillMaxWidth()) {
@@ -521,6 +728,124 @@ fun TimeLimitDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(hours * 60 + minutes, reopeningSeconds) }) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun TimeWindowsDialog(
+    title: String,
+    initialWindows: List<TimeWindow>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<TimeWindow>) -> Unit
+) {
+    val windows = remember { mutableStateListOf(*initialWindows.toTypedArray()) }
+    var showAddForm by remember { mutableStateOf(false) }
+    var showError by remember { mutableStateOf(false) }
+    var startHour by remember { mutableIntStateOf(18) }
+    var startMinute by remember { mutableIntStateOf(0) }
+    var endHour by remember { mutableIntStateOf(22) }
+    var endMinute by remember { mutableIntStateOf(0) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                if (windows.isEmpty() && !showAddForm) {
+                    Text(stringResource(R.string.no_time_windows), style = MaterialTheme.typography.bodySmall)
+                }
+                windows.forEachIndexed { index, window ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(window.formatted(), modifier = Modifier.weight(1f))
+                        IconButton(onClick = { windows.removeAt(index) }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (showAddForm) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(stringResource(R.string.start_time), style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            NumberPickerWheel(
+                                value = startHour,
+                                range = 0..23,
+                                onValueChange = { startHour = it },
+                                label = stringResource(R.string.hours)
+                            )
+                            NumberPickerWheel(
+                                value = startMinute,
+                                range = 0..59,
+                                onValueChange = { startMinute = it },
+                                label = stringResource(R.string.minutes)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(stringResource(R.string.end_time), style = MaterialTheme.typography.labelSmall)
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            NumberPickerWheel(
+                                value = endHour,
+                                range = 0..23,
+                                onValueChange = { endHour = it },
+                                label = stringResource(R.string.hours)
+                            )
+                            NumberPickerWheel(
+                                value = endMinute,
+                                range = 0..59,
+                                onValueChange = { endMinute = it },
+                                label = stringResource(R.string.minutes)
+                            )
+                        }
+                        if (showError) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                stringResource(R.string.invalid_time_window),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row {
+                            TextButton(onClick = { showAddForm = false; showError = false }) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                            TextButton(onClick = {
+                                val start = startHour * 60 + startMinute
+                                val end = endHour * 60 + endMinute
+                                if (start == end) {
+                                    showError = true
+                                } else {
+                                    windows.add(TimeWindow(start, end))
+                                    showAddForm = false
+                                    showError = false
+                                }
+                            }) {
+                                Text(stringResource(R.string.confirm))
+                            }
+                        }
+                    }
+                } else {
+                    TextButton(onClick = { showAddForm = true }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.add_time_window))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(windows.toList()) }) {
                 Text(stringResource(R.string.confirm))
             }
         },
