@@ -138,7 +138,10 @@ jobs:
           # The window is computed HERE, after Device Owner, not before it. Computed earlier, a
           # slow retry loop (up to ~155s) could eat most of a 3-minute window before the
           # during-window assertions even ran, failing a build for no reason.
-          H=$(sh_ date +%H); M=$(sh_ date +%M); S=$(sh_ date +%S)
+          # One adb call, not three. Three separate reads can straddle an hour boundary and pair
+          # an old hour with a new minute (12 from 12:59:59, then 00 from 13:00:00), putting the
+          # whole test window an hour in the past.
+          read -r H M S <<< "$(sh_ date '+%H %M %S')"
           NOW=$((10#$H * 60 + 10#$M))
           START=$(( (NOW + 1440 - 2) % 1440 ))
           END=$(( (NOW + 4) % 1440 ))
@@ -269,7 +272,6 @@ jobs:
 
           if sh_ run-as $PKG id | grep -qi "not debuggable"; then ok "App data is protected (not debuggable)"; else bad "App data is readable with run-as"; fi
           if sh_ dumpsys package $PKG | grep -q "USE_EXACT_ALARM: granted=true"; then ok "Exact alarm permission granted"; else bad "Exact alarm permission missing"; fi
-          # v7 only - delete these two lines until the pet widget is actually in the build.
           if sh_ pm dump $PKG | grep -q "PetWidgetProvider"; then ok "Pet widget registered"; else bad "Pet widget receiver missing from manifest"; fi
           if sh_ pm dump $PKG | grep -q "ScheduleReceiver"; then ok "Schedule boundary receiver registered"; else bad "ScheduleReceiver missing from manifest"; fi
 
