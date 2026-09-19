@@ -1,88 +1,102 @@
-# Déchaîner
-<img src="https://i.imgur.com/oEDcaTf.png" width="200px" alt="Déchaîner" align="right">
+<div align="center">
 
-> **Caution:** This software implements deep system-level modifications. It is designed to be difficult to bypass. Proceed only if you fully understand the implications of Device Owner privileges.
+# ⏳ Déchaîner
+### *Schedules & System-Level Focus Engine*
 
+[![Android](https://img.shields.io/badge/Android-11%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://android.com)
+[![Setup](https://img.shields.io/badge/Root-Not%20Required-blue?style=flat-square)](#requirements)
+[![Privilege](https://img.shields.io/badge/Engine-Device%20Owner-orange?style=flat-square)](#how-it-works)
+[![License](https://img.shields.io/badge/License-GPL--3.0-lightgrey?style=flat-square)](LICENSE)
 
-## Overview
-**Déchaîner** (pronounced [/de.ʃɛ.ne/](https://en.wiktionary.org/wiki/d%C3%A9cha%C3%AEner)) is a French verb that means to unleash, unchain, or let loose. It is an Android app designed to function as a hard-to-bypass barrier against pornography and digital addiction, combining Device Owner privileges, an Accessibility Service, and an on-device machine learning model.
+An unofficial build of [Déchaîner](https://github.com/warleysr/dechainer) by **@warleysr**, engineered with recurring time windows and system-level app suspension[span_0](start_span)[span_0](end_span).
 
-
-## How It Works
-Déchaîner runs with **Device Owner** privileges, which let it enforce restrictions at the OS level and prevent its own removal without a recovery code. Most of the active blocking (word detection, visual content scanning, activity interception, time limits, torrent detection) is driven by an **Accessibility Service**, which is enabled separately from inside the app and is itself protected against being turned off.
-
-
-## Features
-
-### System Restrictions (Device Owner)
-- Every Android system restriction (`UserManager` policy) can be toggled on. Three are pre-selected as recommended: block VPN configuration, block private DNS configuration, and block factory reset. Dozens of others are available in a searchable list (blocking app installs/uninstalls, safe boot, USB/ADB debugging, adding accounts, and more, depending on Android version).
-- Per-app restriction editor: any restriction an individual app declares (via `RestrictionsManager`) can be inspected and applied to that app specifically.
-
-### Browser and Network
-- Forces a family-safe private DNS provider (Cloudflare Family, AdGuard DNS Family, CleanBrowsing, or a custom host).
-- Applies `URLBlocklist` and `ForceGoogleSafeSearch` policies to browsers that support them.
-- Any newly installed browser that doesn't support these policies is suspended outright instead of being left unrestricted.
-
-### App Management
-- Hide/block or instantly suspend individual apps.
-- Block uninstallation on a per-app basis.
-- Set a daily usage time limit per app, with a lock screen once the limit is reached.
-- Set a minimum cooldown before an app can be reopened.
-- Automatically suspends apps rated 18+ or flagged with explicit content, checked against the Play Store's content rating page when an app is installed or first opened.
-- Automatically blocks torrent apps (detected by their ability to handle magnet links or `.torrent` files).
-
-### Word Blocking
-- Active blocking: erases a forbidden word as it's typed into a selected app and shows a block screen.
-- Passive blocking: scans on-screen text (not just typed input) per app, useful for search results and feeds, and closes the app when a configured word appears anywhere on screen.
-
-### Visual Blocking (on-device machine learning)
-- A local TensorFlow Lite model (MobileNetV2) classifies on-screen images and video into drawings, hentai, neutral, porn, and sexy — no data leaves the device.
-- The Accessibility Service scans the screen of selected apps for likely media regions, captures them, and runs the classifier; the app is closed when the combined score for the selected categories crosses a configurable threshold.
-- Optional escalation: after a set number of blocks within a time window, the app is suspended for a configurable duration instead of just being closed.
-
-### Activity Blocker
-- Blocks specific Android screens (activities) by class name, with a log of recently accessed activities to help identify which ones to block.
-
-### Impulse Lock (panic button)
-- A panic button on the lock screen, reachable even before authenticating: starts a 15-minute to 6-hour lock on Déchaîner itself, optionally also suspending a user-chosen list of apps for the same duration.
-- The timer resists system clock changes and survives the app or its service being restarted.
-- Opening Déchaîner normally requires biometric or device authentication, plus an optional extra challenge before entry: a 5-problem arithmetic quiz, or typing 32 words correctly in a row.
-
-### Other Safeguards
-- Optional shuffled keypad, so the recovery code can't be memorized by watching finger position.
-- Any configuration change requires the recovery code, which unlocks a 10-minute session so it isn't asked for on every single action.
-
-
-## Installation and Configuration
-The elevation to Device Owner status requires a bridge between user-space and system-space. Follow these steps precisely:
-
-1.  **Environment Setup**: Install the [Shizuku](https://shizuku.rikka.app/) application. This is required to execute the necessary ADB commands.
-2.  **Developer Authorization**: Enable **Wireless Debugging** in your Android Developer Options and pair it with Shizuku.
-3.  **Application Pairing**: Open Déchaîner and grant it permission to access the Shizuku service.
-4.  **Privilege Elevation**: Navigate to the Settings tab in Déchaîner and follow the prompts to register the application as the **Device Owner**. This will execute the required `dpm set-device-owner` command via the Shizuku bridge.
-5.  **Accessibility Service**: Still in the Settings tab, enable the Accessibility Service (also applied through Shizuku). This is required for word blocking, visual blocking, activity blocking, torrent blocking, and usage time limits — app installation itself is blocked while this service is off, to prevent installing an unrestricted browser in the meantime.
-
-
-## Recovery and Safety Protocol
-Upon configuration, Déchaîner generates a unique **16-character recovery code**. This key is the only ordinary way to disable restrictions or uninstall the application without a complete device wipe (if a wipe is even permitted by your active settings).
-
-### Mandatory Safety Steps:
-*   **Physical Record**: You must manually write this key on a physical piece of paper.
-*   **Secure Storage**: Store the paper in a physical location that is difficult to access (e.g. a high shelf or a separate building).
-*   **Digital Prohibition**: Do **not** save this key in digital notes, emails, or cloud storage. You may inadvertently block access to the very tools needed to retrieve it.
-
-### If the Code Is Lost
-The Settings tab offers a **forced removal** option as a deliberate last resort: it starts a 48-hour timer, and once it expires, Device Owner privileges can be removed without the recovery code. The delay exists so this can't be used as a quick bypass — it can also be cancelled at any time before it completes.
-
-
-## Critical Security Advisory
-**Déchaîner is designed to be uncompromising.**
-
-The activation of full system restrictions combined with the loss of your Recovery Code may result in a **permanent inability** to modify system parameters or restore the device to its original state before the 48-hour forced removal timer completes.
-
-*   **Self-Lockout Risk**: This is an intentional feature designed to stop "your future self" from relapsing.
-*   **No Other Backdoors**: Besides the recovery code and the 48-hour forced removal timer, there is no alternative recovery method.
+[**Download APK**](https://github.com) • [**Full User Manual**](USER-GUIDE.md)[span_1](start_span)[span_1](end_span)
 
 ---
 
-**Disclaimer**: This software is provided "as is" without warranty of any kind. The developers are not liable for any data loss, system instability, or permanent device lockouts resulting from the use of Device Owner privileges.
+</div>
+
+### 💡 How It Works
+
+Most digital blockers politely ask you to close an app, leaving easy bypasses open[span_2](start_span)[span_2](end_span). 
+
+**Déchaîner** adopts Android's enterprise **Device Owner** role—the same protocol corporate IT departments use on managed hardware[span_3](start_span)[span_3](end_span). When a schedule or restriction triggers, Android suspends the target applications directly in the operating system: icons grey out and cannot launch[span_4](start_span)[span_4](end_span). Everything stays strictly on your device—no accounts, no cloud sync, and no tracking[span_5](start_span)[span_5](end_span).
+
+---
+
+> [!CAUTION]
+> ### 🛑 Crucial Safety Rules (Read First)
+> 
+> * **Pen & Paper Required:** Write your uppercase recovery code on physical paper[span_6](start_span)[span_6](end_span). There is no reset email, no cloud sync, and no support desk[span_7](start_span)[span_7](end_span). Lose it, and your only recourse is an irreversible 48-hour cooldown[span_8](start_span)[span_8](end_span).
+> * **Account Clearance:** Android security policies require removing all accounts (Google, Samsung, Xiaomi) during the initial setup handshake[span_9](start_span)[span_9](end_span). You can log back into them immediately after Device Owner status is confirmed[span_10](start_span)[span_10](end_span).
+> * **Leave "Lock While Active" Off Initially:** A locked schedule cannot be overridden, edited, or removed—even with your master recovery code[span_11](start_span)[span_11](end_span). Run your routines unlocked for a week before engaging hard locks[span_12](start_span)[span_12](end_span).
+
+---
+
+### 📋 Prerequisites
+
+| Requirement | Specification |
+| :--- | :--- |
+| **Operating System** | Android 11 or newer[span_13](start_span)[span_13](end_span) |
+| **Bridge Utility** | [Shizuku](https://shizuku.rikka.app/) (Free via Play Store or GitHub)[span_14](start_span)[span_14](end_span) |
+| **Time Needed** | ~15 minutes[span_15](start_span)[span_15](end_span) |
+| **Root Status** | **Not required** (works cleanly via Wireless Debugging)[span_16](start_span)[span_16](end_span) |
+
+---
+
+### 🚀 Setup Guide
+
+#### 1. Prepare Shizuku
+1. Install **Shizuku** from Google Play or GitHub[span_17](start_span)[span_17](end_span).
+2. Open Shizuku and start it via **Wireless Debugging** in your phone's Developer Options[span_18](start_span)[span_18](end_span).
+3. Ensure Shizuku displays the status banner: **"Shizuku is running"**[span_19](start_span)[span_19](end_span).
+
+#### 2. Clear Existing Accounts
+1. Launch **Déchaîner** and navigate to **Config** *(bottom right)* → **Owner privileges**[span_20](start_span)[span_20](end_span).
+2. Tap the account alert to jump into System Settings and remove all synced accounts[span_21](start_span)[span_21](end_span).
+
+#### 3. Authorize Device Owner
+1. Return to Déchaîner's **Owner privileges** checklist until all indicators show ready[span_22](start_span)[span_22](end_span).
+2. Tap **Grant privileges**[span_23](start_span)[span_23](end_span).
+3. Generate your **Recovery Code** and **write it on paper now**[span_24](start_span)[span_24](end_span).
+4. Enable the **Accessibility Service** when prompted to allow on-screen keyword filtering and in-app sub-screen blocking[span_25](start_span)[span_25](end_span).
+
+#### 4. Reconnect Accounts
+> [!IMPORTANT]
+> Head straight to your phone's native **Settings → Accounts** and sign back into Google, email, and messaging services **now**, before turning on any account-locking restrictions[span_26](start_span)[span_26](end_span).
+
+---
+
+### 🛡️ Your First 15 Minutes
+
+Avoid over-configuring immediately. Follow this simple baseline[span_27](start_span)[span_27](end_span):
+
+* [ ] **Plug the Reinstall Loop:** Head to **Restrictions** and enable **Disallow install apps** and **Disallow add user**[span_28](start_span)[span_28](end_span).
+* [ ] **Suspend One Target:** Open **Apps**, tap your primary source of mindless scrolling, and toggle **Suspend**[span_29](start_span)[span_29](end_span).
+* [ ] **Live With It:** Spend 48 to 72 hours adapting to the friction before scheduling multi-app lockouts[span_30](start_span)[span_30](end_span).
+
+---
+
+### ⏳ The 48-Hour Emergency Exit
+
+If you lose your code or encounter an unresolvable conflict:
+
+1. Open **Config → Forced removal**[span_31](start_span)[span_31](end_span).
+2. Confirm the prompt to trigger a mandatory **48-hour delay**[span_32](start_span)[span_32](end_span).
+3. After 48 hours elapses, the system drops Device Owner status and uninstalls cleanly[span_33](start_span)[span_33](end_span).
+
+The deliberate waiting period eliminates late-night impulse bypasses while guaranteeing you can never permanently brick your device[span_34](start_span)[span_34](end_span).
+
+---
+
+### 📚 Documentation & Reference
+
+For advanced features including Chromium URL blocklists, group allowances, keyword filters, and recurring time windows, read the comprehensive [USER-GUIDE.md](USER-GUIDE.md)[span_35](start_span)[span_35](end_span).
+
+<details>
+<summary><b>Credits & Upstream</b></summary>
+<br>
+
+* Original core engine and architecture by [**@warleysr**](https://github.com/warleysr)[span_36](start_span)[span_36](end_span).
+* Recurring schedules engine and system-level process suspension modifications developed in this repository fork[span_37](start_span)[span_37](end_span).
+</details>
