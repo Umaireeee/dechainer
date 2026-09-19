@@ -103,8 +103,8 @@ jobs:
           PKG=io.github.warleysr.dechainer
           APK=$(ls apk/*.apk | head -1)
           PASS=0; FAIL=0
-          ok()  { echo "âœ… PASS: $1"; PASS=$((PASS+1)); }
-          bad() { echo "âŒ FAIL: $1"; FAIL=$((FAIL+1)); }
+          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
           sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
           mkdir -p test-results
 
@@ -257,8 +257,8 @@ jobs:
           PKG=io.github.warleysr.dechainer
           APK=apk/dechainer-schedules-release.apk
           PASS=0; FAIL=0
-          ok()  { echo "âœ… PASS: $1"; PASS=$((PASS+1)); }
-          bad() { echo "âŒ FAIL: $1"; FAIL=$((FAIL+1)); }
+          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
           sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
           mkdir -p test-results
 
