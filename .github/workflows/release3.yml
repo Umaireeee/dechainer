@@ -103,8 +103,8 @@ jobs:
           PKG=io.github.warleysr.dechainer
           APK=$(ls apk/*.apk | head -1)
           PASS=0; FAIL=0
-          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
-          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+          ok()  { echo "âœ… PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "âŒ FAIL: $1"; FAIL=$((FAIL+1)); }
           sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
           mkdir -p test-results
 
@@ -138,10 +138,18 @@ jobs:
           # The window is computed HERE, after Device Owner, not before it. Computed earlier, a
           # slow retry loop (up to ~155s) could eat most of a 3-minute window before the
           # during-window assertions even ran, failing a build for no reason.
-          # One adb call, not three. Three separate reads can straddle an hour boundary and pair
-          # an old hour with a new minute (12 from 12:59:59, then 00 from 13:00:00), putting the
-          # whole test window an hour in the past.
-          read -r H M S <<< "$(sh_ date '+%H %M %S')"
+          # One adb call, not three: three separate reads can straddle an hour boundary and pair
+          # an old hour with a new minute (12 from 12:59:59, then 00 from 13:00:00).
+          #
+          # The format string must contain NO SPACES. adb shell joins its arguments and hands them
+          # to the device's own shell, which re-splits them, so `date '+%H %M %S'` arrives on the
+          # device as three separate arguments and date honours only the first - you get the hour
+          # and nothing else. A colon-separated format survives the round trip intact.
+          TS=$(sh_ date +%H:%M:%S)
+          if ! echo "$TS" | grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2}$'; then
+            echo "Unexpected device time output: '$TS'"; exit 1
+          fi
+          IFS=: read -r H M S <<< "$TS"
           NOW=$((10#$H * 60 + 10#$M))
           START=$(( (NOW + 1440 - 2) % 1440 ))
           END=$(( (NOW + 4) % 1440 ))
@@ -249,8 +257,8 @@ jobs:
           PKG=io.github.warleysr.dechainer
           APK=apk/dechainer-schedules-release.apk
           PASS=0; FAIL=0
-          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
-          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+          ok()  { echo "âœ… PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "âŒ FAIL: $1"; FAIL=$((FAIL+1)); }
           sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
           mkdir -p test-results
 
