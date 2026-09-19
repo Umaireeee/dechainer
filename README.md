@@ -248,10 +248,5 @@ Yes. System-level restrictions, schedules, and app suspensions operate via Devic
 ## 15. Building It Yourself
 
 This repository builds the upstream project with an integrated patch file applied during compilation:
-* `schedules_v10.patch`: Adds recurring schedules and low-level system suspension.
+* `schedules.patch`: Adds recurring schedules and low-level system suspension.
 * `.github/workflows/release3.yml`: Automation script for compiling and testing.
-
-```bash
-# Build locally
-patch -p1 < schedules_v10.patch
-./gradlew assembleDebug
