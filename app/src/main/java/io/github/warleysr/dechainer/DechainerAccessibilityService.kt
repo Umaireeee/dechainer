@@ -35,13 +35,17 @@ import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
 import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
 import io.github.warleysr.dechainer.activities.TimeUpActivity
 import io.github.warleysr.dechainer.data.AppGroupRepository
+import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BrowserRestrictionsManager
 import io.github.warleysr.dechainer.data.PlayStoreRatingFetcher
+import io.github.warleysr.dechainer.data.UsageWarningSettings
 import io.github.warleysr.dechainer.data.VisualBlockingSettings
 import io.github.warleysr.dechainer.data.VisualBlockingSuspensionTracker
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.TimeWindow
+import io.github.warleysr.dechainer.models.UsageAlertStage
+import io.github.warleysr.dechainer.notifications.UsageWarningNotifier
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.utils.NsfwContentDetector
 import org.jsoup.HttpStatusException
@@ -74,6 +78,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     private lateinit var securityPrefs: SharedPreferences
     private lateinit var ratingPrefs: SharedPreferences
     private lateinit var visualBlockingPrefs: SharedPreferences
+    private lateinit var usageWarningPrefs: SharedPreferences
 
     private var forbiddenPatterns: Map<String, Regex> = emptyMap()
     private var passiveForbiddenPatterns: Map<String, Map<String, Regex>> = emptyMap()
@@ -105,6 +110,13 @@ class DechainerAccessibilityService : AccessibilityService() {
     // Sliding-window block counter + persisted deadlines of the timed suspensions above.
     private lateinit var nsfwSuspensionTracker: VisualBlockingSuspensionTracker
 
+    private var usageWarningEnabled: Boolean = UsageWarningSettings.DEFAULT_ENABLED
+    private var usageWarningStages: List<UsageAlertStage> = emptyList()
+
+    private var currentWarnKey: String? = null
+
+    private var activeStageId: String? = null
+
     // Pending "lift the suspension" callbacks, keyed by package so a new suspension of the same
     // app replaces the previous timer instead of racing it.
     private val nsfwSuspensionReleases = HashMap<String, Runnable>()
@@ -128,6 +140,11 @@ class DechainerAccessibilityService : AccessibilityService() {
             if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
             val packageName = intent.data?.encodedSchemeSpecificPart ?: return
 
+            val isUpdate = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            if (!isUpdate) {
+                AppRepository.reapplyHiddenIfNeeded(packageName)
+            }
+
             val manager = BrowserRestrictionsManager(applicationContext)
             val isBrowser = manager.isBrowser(packageName)
 
@@ -146,7 +163,6 @@ class DechainerAccessibilityService : AccessibilityService() {
                     suspendPackage(packageName)
             }
 
-            val isUpdate = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
             if (!isUpdate) {
                 serviceScope.launch(Dispatchers.IO) {
                     try {
@@ -226,6 +242,14 @@ class DechainerAccessibilityService : AccessibilityService() {
                 updateVisualBlockingSettings()
             }
 
+            usageWarningPrefs -> {
+                updateUsageWarningSettings()
+                if (!usageWarningEnabled) {
+                    cancelActiveUsageWarning()
+                }
+                currentPackage?.let { startTracking(it) }
+            }
+
             securityPrefs -> {
                 // Written by SecurityManager both when the panic button starts a block and when
                 // the block is found to have run out.
@@ -260,6 +284,20 @@ class DechainerAccessibilityService : AccessibilityService() {
             VisualBlockingSettings.KEY_SUSPEND_DURATION_MINUTES,
             VisualBlockingSettings.DEFAULT_SUSPEND_DURATION_MINUTES
         )
+    }
+
+    private fun updateUsageWarningSettings() {
+        usageWarningEnabled = usageWarningPrefs.getBoolean(
+            UsageWarningSettings.KEY_ENABLED, UsageWarningSettings.DEFAULT_ENABLED
+        )
+        usageWarningStages = UsageWarningSettings.loadOrSeedStages(usageWarningPrefs)
+            .sortedByDescending { it.minutesBefore }
+    }
+
+    private fun cancelActiveUsageWarning() {
+        val key = currentWarnKey ?: return
+        val stageId = activeStageId ?: return
+        UsageWarningNotifier.cancel(applicationContext, key, stageId)
     }
 
     private fun updateForbiddenPatterns() {
@@ -299,8 +337,14 @@ class DechainerAccessibilityService : AccessibilityService() {
         executeBlocking(outsideWindow = true)
     }
 
+    private val warnTickRunnable = Runnable {
+        tickUsageWarning()
+    }
+
     companion object {
         private const val NSFW_SCAN_INTERVAL_MS = 2000L
+
+        private const val USAGE_WARNING_TICK_INTERVAL_MS = 2000L
 
         // --- Generic, app-agnostic media-detection signals, tried in this order for every app ---
 
@@ -391,6 +435,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         securityPrefs = getSharedPreferences("security_prefs", MODE_PRIVATE)
         ratingPrefs = getSharedPreferences("app_ratings", MODE_PRIVATE)
         visualBlockingPrefs = getSharedPreferences(VisualBlockingSettings.PREFS_NAME, MODE_PRIVATE)
+        usageWarningPrefs = getSharedPreferences(UsageWarningSettings.PREFS_NAME, MODE_PRIVATE)
         nsfwSuspensionTracker = VisualBlockingSuspensionTracker(applicationContext)
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -398,10 +443,12 @@ class DechainerAccessibilityService : AccessibilityService() {
         groupsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        usageWarningPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         updateForbiddenPatterns()
         updateVisualBlockingSettings()
+        updateUsageWarningSettings()
 
         val blockedPackages = getControlledPackages()
         suspendPackages(blockedPackages, false)
@@ -434,6 +481,10 @@ class DechainerAccessibilityService : AccessibilityService() {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
                     disablingService = true
+                    context.getSharedPreferences("security_prefs", MODE_PRIVATE).edit {
+                        putBoolean(SecurityManager.DEBUG_AUTO_START_SESSION_KEY, true)
+                    }
+                    SecurityManager.suspendUnknownSourcesRestrictionForDebugInstall(context)
                     disableSelf()
                 }
             }
@@ -455,6 +506,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         blockedWordsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         visualBlockingPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        usageWarningPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
@@ -496,6 +548,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         handler.removeCallbacks(blockRunnable)
         handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(warnTickRunnable)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -1072,6 +1125,8 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     private fun startTracking(pkg: String) {
+        handler.removeCallbacks(warnTickRunnable)
+
         val config = trackingConfigFor(pkg)
 
         if (config.windows.isNotEmpty()) {
@@ -1090,35 +1145,130 @@ class DechainerAccessibilityService : AccessibilityService() {
         val remainingSecondsReopening = getRemainingSecondsToReopen(pkg)
         if (config.appLimitMinutes <= 0 && config.groupLimitMinutes <= 0 && remainingSecondsReopening <= 0) return
 
-        var remainingMillis = Long.MAX_VALUE
+        var appRemaining: Long? = null
+        var groupRemaining: Long? = null
         var limitReached = false
 
         if (config.appLimitMinutes > 0) {
             val remaining = TimeUnit.MINUTES.toMillis(config.appLimitMinutes.toLong()) - usagePrefs.getLong(pkg, 0L)
-            if (remaining <= 0) limitReached = true else remainingMillis = minOf(remainingMillis, remaining)
+            if (remaining <= 0) limitReached = true else appRemaining = remaining
         }
 
         if (config.group != null && config.groupLimitMinutes > 0) {
             val remaining = TimeUnit.MINUTES.toMillis(config.groupLimitMinutes.toLong()) -
                 groupUsagePrefs.getLong(config.group.id, 0L)
-            if (remaining <= 0) limitReached = true else remainingMillis = minOf(remainingMillis, remaining)
+            if (remaining <= 0) limitReached = true else groupRemaining = remaining
         }
 
         if (limitReached) {
             executeBlocking()
             return
         }
-        if (remainingMillis != Long.MAX_VALUE) {
+        val remainingMillis = listOfNotNull(appRemaining, groupRemaining).minOrNull()
+        if (remainingMillis != null) {
             handler.postDelayed(blockRunnable, remainingMillis)
         }
+
+        scheduleUsageWarning(pkg, config, appRemaining, groupRemaining)
 
         if (remainingSecondsReopening > 0)
             executeBlocking(reopening = true, remainingSeconds = remainingSecondsReopening)
     }
 
+    private fun scheduleUsageWarning(pkg: String, config: TrackingConfig, appRemaining: Long?, groupRemaining: Long?) {
+        currentWarnKey = null
+        activeStageId = null
+        if (!usageWarningEnabled || usageWarningStages.isEmpty()) return
+
+        val useGroup = groupRemaining != null && config.group != null &&
+            (appRemaining == null || groupRemaining < appRemaining)
+        val key = when {
+            useGroup -> config.group!!.id
+            appRemaining != null -> pkg
+            else -> return
+        }
+        val remaining = if (useGroup) groupRemaining!! else appRemaining!!
+
+        currentWarnKey = key
+
+        val farthestMillis = stageMillis(usageWarningStages.first())
+        if (remaining > farthestMillis) {
+            Timber.d("UsageWarning: schedule($key) - outside every stage, entering farthest in ${remaining - farthestMillis}ms")
+            handler.postDelayed(warnTickRunnable, remaining - farthestMillis)
+        } else {
+            tickUsageWarning()
+        }
+    }
+
+    private fun stageMillis(stage: UsageAlertStage) = (stage.minutesBefore * 60_000).toLong()
+
+    private fun tickUsageWarning() {
+        handler.removeCallbacks(warnTickRunnable)
+        val pkg = currentPackage ?: return
+        val key = currentWarnKey ?: return
+        if (usageWarningStages.isEmpty()) return
+
+        val config = trackingConfigFor(pkg)
+        val elapsed = SystemClock.elapsedRealtime() - sessionStartTime
+        val isGroupKey = config.group?.id == key
+
+        val remaining = when {
+            isGroupKey && config.groupLimitMinutes > 0 ->
+                TimeUnit.MINUTES.toMillis(config.groupLimitMinutes.toLong()) - groupUsagePrefs.getLong(key, 0L) - elapsed
+            !isGroupKey && config.appLimitMinutes > 0 ->
+                TimeUnit.MINUTES.toMillis(config.appLimitMinutes.toLong()) - usagePrefs.getLong(pkg, 0L) - elapsed
+            else -> return
+        }
+        Timber.d("UsageWarning: tick($key) pkg=$pkg elapsed=${elapsed}ms remaining=${remaining}ms")
+
+        if (remaining <= 0) {
+            activeStageId?.let { UsageWarningNotifier.cancel(applicationContext, key, it) }
+            activeStageId = null
+            return
+        }
+
+        val enteredStage = usageWarningStages.lastOrNull { remaining <= stageMillis(it) }
+
+        if (enteredStage == null) {
+            activeStageId?.let { staleId ->
+                UsageWarningNotifier.cancel(applicationContext, key, staleId)
+                UsageWarningNotifier.reset(applicationContext, key, staleId)
+            }
+            activeStageId = null
+            val farthestMillis = stageMillis(usageWarningStages.first())
+            handler.postDelayed(warnTickRunnable, (remaining - farthestMillis).coerceAtLeast(500L))
+            return
+        }
+
+        if (enteredStage.id != activeStageId) {
+            activeStageId?.let { UsageWarningNotifier.cancel(applicationContext, key, it) }
+            activeStageId = enteredStage.id
+        }
+
+        if (!UsageWarningNotifier.isDismissed(applicationContext, key, enteredStage.id)) {
+            if (!UsageWarningNotifier.hasBeenShown(applicationContext, key, enteredStage.id)) {
+                UsageWarningNotifier.markShown(applicationContext, key, enteredStage.id)
+            }
+            val displayName = if (isGroupKey) config.group?.name ?: key else appLabel(pkg)
+            val barMillis = stageMillis(usageWarningStages.first())
+            UsageWarningNotifier.showOrUpdate(
+                applicationContext, key, enteredStage, displayName, remaining, barMillis
+            )
+        }
+
+        handler.postDelayed(warnTickRunnable, USAGE_WARNING_TICK_INTERVAL_MS)
+    }
+
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
+    } catch (e: Exception) {
+        pkg
+    }
+
     private fun stopTrackingAndSave(screenOff: Boolean = false) {
         handler.removeCallbacks(blockRunnable)
         handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(warnTickRunnable)
         val pkg = currentPackage ?: return
 
         if (getRemainingSecondsToReopen(pkg) == 0 && !screenOff)
@@ -1147,9 +1297,14 @@ class DechainerAccessibilityService : AccessibilityService() {
         stopTrackingAndSave()
         currentPackage = null
 
-        val individualAppName = try {
-            packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
-        } catch (e: Exception) { pkg }
+        if (!reopening && !outsideWindow) {
+            usageWarningStages.forEach { stage ->
+                UsageWarningNotifier.cancel(applicationContext, pkg, stage.id)
+                config.group?.let { UsageWarningNotifier.cancel(applicationContext, it.id, stage.id) }
+            }
+        }
+
+        val individualAppName = appLabel(pkg)
 
         // For a plain limit block, name and blame whichever cap actually ran out: the app's own,
         // or (when both are exhausted) the shared group cap, since that's the one still binding.
@@ -1197,6 +1352,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         if (today != lastCheckDate) {
             usagePrefs.edit { clear() }
             groupUsagePrefs.edit { clear() }
+            cancelActiveUsageWarning()
+            activeStageId = null
+            UsageWarningNotifier.resetAll(applicationContext)
             lastCheckDate = today
         }
     }

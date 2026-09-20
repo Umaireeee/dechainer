@@ -321,4 +321,25 @@
     <string name="nsfw_category_hentai">Hentai</string>
     <string name="nsfw_category_porn">Pornografia</string>
     <string name="nsfw_category_sexy">Sensual</string>
+
+    <string name="usage_warning_channel_silent">Aviso de uso (silencioso)</string>
+    <string name="usage_warning_channel_sound">Aviso de uso (som)</string>
+    <string name="usage_warning_channel_vibrate">Aviso de uso (vibrar x%1$d)</string>
+    <string name="usage_warning_channel_desc">Notifica quando um app ou grupo está perto de atingir o limite de tempo</string>
+    <string name="usage_warning_title">Tempo quase acabando</string>
+    <string name="usage_warning_message">Restam %1$s para %2$s</string>
+    <string name="usage_warning_settings">Aviso de tempo de uso</string>
+    <string name="usage_warning_settings_desc">Mostra uma notificação antes de o tempo diário de um app ou grupo acabar, com quantos estágios você quiser.</string>
+    <string name="usage_warning_enable">Ativar notificações de aviso</string>
+    <string name="usage_warning_permission_denied">Permissão de notificação negada — o aviso não pode ser exibido</string>
+    <string name="usage_warning_stages_section">Estágios de alerta</string>
+    <string name="usage_warning_stages_desc">Adicione um estágio para cada marca (ex: 15 min silencioso, 5 min com som, 1 min vibrando)</string>
+    <string name="usage_warning_add_stage">Adicionar estágio</string>
+    <string name="usage_warning_no_stages">Nenhum estágio configurado — o aviso não vai aparecer</string>
+    <string name="usage_warning_stage_minutes_label">Minutos de antecedência</string>
+    <string name="usage_warning_stage_type_silent">Silencioso</string>
+    <string name="usage_warning_stage_type_sound">Som</string>
+    <string name="usage_warning_stage_type_vibrate">Vibrar</string>
+    <string name="usage_warning_stage_vibration_count">Vibrações</string>
+    <string name="usage_warning_remove_stage">Remover estágio</string>
 </resources>

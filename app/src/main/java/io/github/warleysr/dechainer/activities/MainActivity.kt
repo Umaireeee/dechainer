@@ -1,10 +1,16 @@
 package io.github.warleysr.dechainer.activities
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,10 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.UsageWarningSettings
 import io.github.warleysr.dechainer.screens.setup.SetupDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.setup.SetupRecovery
 import io.github.warleysr.dechainer.screens.tabs.*
@@ -41,6 +50,8 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SecurityManager.consumeDebugAutoStartSession(this)
+        SecurityManager.consumeDebugRestoreUnknownSourcesRestriction(this)
         enableEdgeToEdge()
         setContent {
             DechainerTheme {
@@ -60,6 +71,28 @@ class MainActivity : ComponentActivity() {
                     while (true) {
                         currentTime = System.currentTimeMillis()
                         delay(1000)
+                    }
+                }
+
+                val context = LocalContext.current
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) {}
+                LaunchedEffect(authenticated.value) {
+                    if (!authenticated.value) return@LaunchedEffect
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
+
+                    val warningPrefs = context.getSharedPreferences(UsageWarningSettings.PREFS_NAME, Context.MODE_PRIVATE)
+                    val warningEnabled = warningPrefs.getBoolean(
+                        UsageWarningSettings.KEY_ENABLED, UsageWarningSettings.DEFAULT_ENABLED
+                    )
+                    if (!warningEnabled) return@LaunchedEffect
+
+                    val granted = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!granted) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
 
@@ -105,7 +138,7 @@ class MainActivity : ComponentActivity() {
                         val selectedBaseTab = when (currentScreen) {
                             "restrictions" -> "restrictions"
                             "apps" -> "apps"
-                            "config", "setup_device_owner", "activity_blocker", "browser_restrictions", "blocked_words", "visual_blocking", "impulse_lock" -> "config"
+                            "config", "setup_device_owner", "activity_blocker", "browser_restrictions", "blocked_words", "visual_blocking", "impulse_lock", "usage_warning" -> "config"
                             else -> "restrictions"
                         }
 
@@ -151,6 +184,7 @@ class MainActivity : ComponentActivity() {
                                     "blocked_words" -> BlockedWordsScreen()
                                     "visual_blocking" -> VisualBlockingScreen()
                                     "impulse_lock" -> ImpulseLockScreen()
+                                    "usage_warning" -> UsageWarningScreen()
                                 }
                             }
                     }

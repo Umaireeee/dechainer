@@ -321,4 +321,25 @@
     <string name="nsfw_category_hentai">Hentai</string>
     <string name="nsfw_category_porn">Porn</string>
     <string name="nsfw_category_sexy">Sexy / suggestive</string>
+
+    <string name="usage_warning_channel_silent">Usage warning (silent)</string>
+    <string name="usage_warning_channel_sound">Usage warning (sound)</string>
+    <string name="usage_warning_channel_vibrate">Usage warning (vibrate x%1$d)</string>
+    <string name="usage_warning_channel_desc">Notifies when an app or group is about to reach its time limit</string>
+    <string name="usage_warning_title">Time almost up</string>
+    <string name="usage_warning_message">%1$s left for %2$s</string>
+    <string name="usage_warning_settings">Usage time warning</string>
+    <string name="usage_warning_settings_desc">Shows a notification before an app or group\'s daily time limit runs out, using as many stages as you want.</string>
+    <string name="usage_warning_enable">Enable warning notifications</string>
+    <string name="usage_warning_permission_denied">Notification permission denied — the warning can\'t be shown</string>
+    <string name="usage_warning_stages_section">Alert stages</string>
+    <string name="usage_warning_stages_desc">Add one stage per checkpoint (e.g. 15 min silent, 5 min with sound, 1 min vibrating)</string>
+    <string name="usage_warning_add_stage">Add stage</string>
+    <string name="usage_warning_no_stages">No stages configured — the warning won\'t show</string>
+    <string name="usage_warning_stage_minutes_label">Minutes before</string>
+    <string name="usage_warning_stage_type_silent">Silent</string>
+    <string name="usage_warning_stage_type_sound">Sound</string>
+    <string name="usage_warning_stage_type_vibrate">Vibrate</string>
+    <string name="usage_warning_stage_vibration_count">Vibrations</string>
+    <string name="usage_warning_remove_stage">Remove stage</string>
 </resources>

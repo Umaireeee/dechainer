@@ -2,10 +2,13 @@ package io.github.warleysr.dechainer.security
 
 import android.content.Context
 import android.os.SystemClock
+import android.os.UserManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.warleysr.dechainer.BuildConfig
+import io.github.warleysr.dechainer.data.DeviceAdmin
 import java.security.SecureRandom
 import androidx.core.content.edit
 
@@ -30,6 +33,11 @@ class SecurityManager {
         const val IMPULSE_MIN_DURATION_MINUTES = 15
         const val IMPULSE_MAX_DURATION_MINUTES = 360
         const val IMPULSE_DEFAULT_DURATION_MINUTES = 60
+
+        const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
+
+        private const val DEBUG_RESTORE_UNKNOWN_SOURCES_KEY = "debug_restore_unknown_sources_restriction"
+
         private val isRecoveryKeySet = mutableStateOf(false)
         
         var sessionEndTime by mutableLongStateOf(0L)
@@ -43,6 +51,48 @@ class SecurityManager {
 
         fun endSession() {
             sessionEndTime = 0L
+        }
+
+        fun consumeDebugAutoStartSession(context: Context) {
+            if (!BuildConfig.DEBUG) return
+
+            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
+            if (prefs.getBoolean(DEBUG_AUTO_START_SESSION_KEY, false)) {
+                prefs.edit { remove(DEBUG_AUTO_START_SESSION_KEY) }
+                startSession()
+            }
+        }
+
+        fun suspendUnknownSourcesRestrictionForDebugInstall(context: Context) {
+            if (!BuildConfig.DEBUG) return
+
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (!dpm.isAdminActive(admin)) return
+
+            val wasActive = dpm.getUserRestrictions(admin)
+                .getBoolean(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            if (wasActive) {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            }
+
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit {
+                putBoolean(DEBUG_RESTORE_UNKNOWN_SOURCES_KEY, wasActive)
+            }
+        }
+
+        fun consumeDebugRestoreUnknownSourcesRestriction(context: Context) {
+            if (!BuildConfig.DEBUG) return
+
+            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(DEBUG_RESTORE_UNKNOWN_SOURCES_KEY, false)) return
+            prefs.edit { remove(DEBUG_RESTORE_UNKNOWN_SOURCES_KEY) }
+
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (dpm.isAdminActive(admin)) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
+            }
         }
 
         fun isShuffleKeyboardEnabled(context: Context): Boolean {
