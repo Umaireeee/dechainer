@@ -6,6 +6,7 @@ import android.content.RestrictionsManager
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.models.AppItem
@@ -13,10 +14,16 @@ import io.github.warleysr.dechainer.models.TimeWindow
 import java.util.concurrent.TimeUnit
 
 object AppRepository {
+    private const val HIDDEN_APPS_PREFS = "hidden_apps_prefs"
+    private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
+
     private val context = DechainerApplication.getInstance()
     private val packageManager = context.packageManager
     private val dpm get() = DeviceAdmin.policyManager
     private val adminName get() = DeviceAdmin.component
+
+    private val hiddenAppsPrefs
+        get() = context.getSharedPreferences(HIDDEN_APPS_PREFS, Context.MODE_PRIVATE)
 
     @Volatile
     private var cachedApps: List<AppItem>? = null
@@ -85,8 +92,47 @@ object AppRepository {
     }
 
     fun setAppHidden(packageName: String, hidden: Boolean) {
-        dpm.setApplicationHidden(adminName, packageName, hidden)
+        val success = dpm.setApplicationHidden(adminName, packageName, hidden)
+        // `success` reflects the real PackageManager state at the time of the call
+        // (DevicePolicyManagerService double-checks isApplicationHidden() before
+        // returning). Only persist the new state locally when it's true - otherwise
+        // the cache/prefs would drift from reality and invert the next toggle.
+        Log.d("DechainerPolicyUpdate", "setApplicationHidden request: package=$packageName hidden=$hidden accepted=$success")
+        if (!success) {
+            invalidateCache()
+            return
+        }
+
         updateCachedApp(packageName) { it.copy(isHidden = hidden) }
+
+        hiddenAppsPrefs.edit {
+            if (hidden) {
+                putStringSet(
+                    KEY_HIDDEN_PACKAGES,
+                    (hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet()) ?: emptySet()) + packageName
+                )
+            } else {
+                putStringSet(
+                    KEY_HIDDEN_PACKAGES,
+                    (hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet()) ?: emptySet()) - packageName
+                )
+            }
+        }
+    }
+
+    fun reapplyHiddenIfNeeded(packageName: String) {
+        val wasHidden = hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet())
+            ?.contains(packageName) == true
+        Log.d("DechainerPolicyUpdate", "reapplyHiddenIfNeeded: package=$packageName wasHidden=$wasHidden")
+        if (!wasHidden) return
+
+        val success = dpm.setApplicationHidden(adminName, packageName, true)
+        Log.d("DechainerPolicyUpdate", "reapplyHiddenIfNeeded request: package=$packageName accepted=$success")
+        if (success) {
+            updateCachedApp(packageName) { it.copy(isHidden = true) }
+        } else {
+            invalidateCache()
+        }
     }
 
     fun setAppSuspended(packageName: String, suspended: Boolean) {

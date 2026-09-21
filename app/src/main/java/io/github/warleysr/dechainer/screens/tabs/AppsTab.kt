@@ -51,6 +51,12 @@ import android.os.Bundle
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.window.Dialog
 
 @Composable
 fun AppsTab(
@@ -206,20 +212,16 @@ fun AppsScreen(viewModel: AppsViewModel, deviceOwnerViewModel: DeviceOwnerViewMo
             },
             onSetTimeLimit = {
                 showTimeLimitDialog = app
-                selectedApp = null
             },
             onSetTimeWindows = {
                 showTimeWindowsDialog = app
-                selectedApp = null
             },
             onSetGroup = {
                 showGroupPickerDialog = app
-                selectedApp = null
             },
             currentGroupName = viewModel.groupFor(app.packageName)?.name,
             onManageRestrictions = {
                 showRestrictionsDialog = app
-                selectedApp = null
             }
         )
     }
@@ -615,55 +617,102 @@ fun AppActionDialog(
     currentGroupName: String?,
     onManageRestrictions: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(app.name) },
-        text = {
-            Column {
-                Text(stringResource(R.string.manage_restrictions, app.packageName))
-                Spacer(Modifier.height(16.dp))
-                TextButton(onClick = onSetGroup, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Group, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(currentGroupName?.let { stringResource(R.string.group_label, it) } ?: stringResource(R.string.app_group))
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val iconBitmap = remember(app.packageName) { app.icon.toBitmap().asImageBitmap() }
+                    Image(
+                        bitmap = iconBitmap,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(app.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            app.packageName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onSetTimeLimit, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Timer, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.set_time_limit))
-                }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onSetTimeWindows, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Schedule, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.time_windows))
-                }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onSuspend, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Pause, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (app.isSuspended) stringResource(R.string.unsuspend) else stringResource(R.string.suspend))
-                }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onManageRestrictions, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Block, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.manage_app_restrictions))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onBlock) {
-                Text(if (app.isHidden) stringResource(R.string.unblock) else stringResource(R.string.block))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onToggleUninstall) {
-                Text(if (app.isUninstallBlocked) stringResource(R.string.allow_uninstall) else stringResource(R.string.prevent_uninstall))
+
+                HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp))
+
+                AppActionItem(
+                    icon = Icons.Default.Group,
+                    label = currentGroupName?.let { stringResource(R.string.group_label, it) } ?: stringResource(R.string.app_group),
+                    onClick = onSetGroup
+                )
+                AppActionItem(
+                    icon = Icons.Default.Timer,
+                    label = stringResource(R.string.set_time_limit),
+                    onClick = onSetTimeLimit
+                )
+                AppActionItem(
+                    icon = Icons.Default.Schedule,
+                    label = stringResource(R.string.time_windows),
+                    onClick = onSetTimeWindows
+                )
+                AppActionItem(
+                    icon = Icons.Default.Block,
+                    label = stringResource(R.string.manage_app_restrictions),
+                    onClick = onManageRestrictions
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                AppActionItem(
+                    icon = if (app.isSuspended) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    label = if (app.isSuspended) stringResource(R.string.unsuspend) else stringResource(R.string.suspend),
+                    onClick = onSuspend
+                )
+                AppActionItem(
+                    icon = if (app.isUninstallBlocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                    label = if (app.isUninstallBlocked) stringResource(R.string.allow_uninstall) else stringResource(R.string.prevent_uninstall),
+                    onClick = onToggleUninstall
+                )
+                AppActionItem(
+                    icon = if (app.isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    label = if (app.isHidden) stringResource(R.string.unblock) else stringResource(R.string.block),
+                    onClick = onBlock
+                )
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun AppActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(20.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
 }
 
 @Composable

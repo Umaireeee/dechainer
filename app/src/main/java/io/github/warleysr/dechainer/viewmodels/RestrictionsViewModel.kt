@@ -19,6 +19,7 @@ class RestrictionsViewModel : ViewModel() {
         UserManager.DISALLOW_CONFIG_VPN,
         UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
         UserManager.DISALLOW_FACTORY_RESET,
+        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY
     )
 
     private val restrictionFieldNames: Map<String, String> = UserManager::class.java.fields
