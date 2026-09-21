@@ -1,0 +1,3757 @@
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/README.md main/README.md
+--- orig/README.md	2026-09-21 03:23:56.711977054 +0000
++++ main/README.md	2026-09-21 03:25:19.585817834 +0000
+@@ -73,6 +73,23 @@
+ 
+ ---
+ 
++## Schedules
++
++Config → **Schedules** lets you create recurring block windows (e.g. 22:00–06:00 on weekdays). While a window is open, Déchaîner:
++
++- **Suspends the selected apps** (Device Owner package suspension, so it works even if the accessibility service is off).
++- **Applies the selected services** (any Android user restriction, e.g. installing apps, Bluetooth, VPN config).
++- **Adds the selected websites** to the managed browser `URLBlocklist`, so the web version of a blocked app is blocked too.
++
++When the window closes, only what the schedule itself applied is released — manual suspensions and permanent restrictions are left alone. Windows repeat on the selected days until the schedule is disabled or deleted.
++
++Protection:
++
++- Editing, disabling or deleting a schedule requires the recovery code. Creating one or enabling one never does (it only adds blocking).
++- **Lock while active**: the schedule can't be changed at all while its window is open, not even with the recovery code.
++- **Lock date and time** (on by default): forces automatic time and blocks date/time settings while any schedule is enabled, so a window can't be skipped by changing the clock.
++- Enforcement runs from an exact alarm at every boundary, on boot, on clock/time-zone changes, on app update, and every 30s from the accessibility service. If a blocked app is reinstalled mid-window, it's sent back to the home screen and re-suspended.
++
+ ## 3. Pre-Flight Checklist
+ 
+ Before starting, complete these setup requirements:
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/AndroidManifest.xml main/app/src/main/AndroidManifest.xml
+--- orig/app/src/main/AndroidManifest.xml	2026-09-21 03:23:56.712155567 +0000
++++ main/app/src/main/AndroidManifest.xml	2026-09-21 03:25:00.359494965 +0000
+@@ -9,6 +9,10 @@
+     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
+     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
++    <!-- Exact alarms so schedule and time-window boundaries fire on time: auto-granted on 31-32, USE_EXACT_ALARM from 33 on. -->
++    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
++    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+ 
+     <queries>
+         <intent>
+@@ -81,6 +85,15 @@
+             android:noHistory="true"
+             android:launchMode="singleInstance"
+             android:taskAffinity="" />
++
++        <activity
++            android:name=".activities.ScheduleBlockedActivity"
++            android:showOnLockScreen="true"
++            android:theme="@style/Theme.Dechainer"
++            android:excludeFromRecents="true"
++            android:noHistory="true"
++            android:launchMode="singleInstance"
++            android:taskAffinity="" />
+         <activity
+             android:name=".activities.AccessibilityRequestActivity"
+             android:theme="@style/Theme.Dechainer"
+@@ -101,6 +114,18 @@
+             </intent-filter>
+         </receiver>
+ 
++        <receiver
++            android:name=".ScheduleReceiver"
++            android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.BOOT_COMPLETED" />
++                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
++                <action android:name="android.intent.action.TIME_SET" />
++                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
++                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
++            </intent-filter>
++        </receiver>
++
+         <receiver
+             android:name=".DechainerPolicyUpdateReceiver"
+             android:exported="true"
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/DechainerAccessibilityService.kt main/app/src/main/java/io/github/warleysr/dechainer/DechainerAccessibilityService.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/DechainerAccessibilityService.kt	2026-09-21 03:23:56.719059109 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/DechainerAccessibilityService.kt	2026-09-21 03:24:32.846059156 +0000
+@@ -33,13 +33,17 @@
+ import io.github.warleysr.dechainer.activities.NsfwContentBlockedActivity
+ import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
+ import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
++import io.github.warleysr.dechainer.activities.ScheduleBlockedActivity
+ import io.github.warleysr.dechainer.activities.TimeUpActivity
+ import io.github.warleysr.dechainer.data.AppGroupRepository
+ import io.github.warleysr.dechainer.data.AppRepository
+ import io.github.warleysr.dechainer.data.AppTimeWindows
+ import io.github.warleysr.dechainer.data.BrowserRestrictionsManager
+ import io.github.warleysr.dechainer.data.PlayStoreRatingFetcher
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
++import io.github.warleysr.dechainer.data.TimeLimitSuspensionTracker
+ import io.github.warleysr.dechainer.data.UsageWarningSettings
++import io.github.warleysr.dechainer.data.WindowEnforcer
+ import io.github.warleysr.dechainer.data.VisualBlockingSettings
+ import io.github.warleysr.dechainer.data.VisualBlockingSuspensionTracker
+ import io.github.warleysr.dechainer.models.AppGroup
+@@ -121,9 +125,29 @@
+     // app replaces the previous timer instead of racing it.
+     private val nsfwSuspensionReleases = HashMap<String, Runnable>()
+ 
++    // Suspension-based enforcement for the time-limit feature (see executeBlocking): a daily
++    // limit is suspended until the next calendar day, a reopening cooldown until a deadline.
++    // Persisted the same way NSFW suspensions are, so a killed-and-recreated service can't be
++    // used to skip either one.
++    private lateinit var timeLimitSuspensionTracker: TimeLimitSuspensionTracker
++    private val timeLimitReopenReleases = HashMap<String, Runnable>()
++
+     // Same idea for the impulse block, which suspends its whole app list as one unit.
+     private var impulseReleaseRunnable: Runnable? = null
+ 
++    // Periodic safety net for schedules: the alarm handles window boundaries, this catches apps
++    // (re)installed mid-window and restrictions lifted by other code paths.
++    private val scheduleTick = object : Runnable {
++        override fun run() {
++            ScheduleEnforcer.sync(applicationContext)
++            WindowEnforcer.sync(applicationContext)
++            handler.postDelayed(this, SCHEDULE_TICK_MS)
++        }
++    }
++
++    // Avoids stacking blocked screens when an app fires several window events in a row.
++    private var lastScheduleBlockElapsed = 0L
++
+     // NsfwContentDetector may use a GPU delegate, which LiteRT requires to be created and
+     // driven from the same thread — this dedicated single-thread dispatcher is what gives it
+     // that guarantee across scans (Dispatchers.Default alone doesn't pin coroutines to a thread).
+@@ -200,6 +224,8 @@
+                 }
+ 
+                 Intent.ACTION_SCREEN_ON -> {
++                    ScheduleEnforcer.sync(applicationContext)
++                    WindowEnforcer.sync(applicationContext)
+                     lastForegroundPackage?.let {
+                         currentPackage = it
+                         sessionStartTime = SystemClock.elapsedRealtime()
+@@ -343,6 +369,7 @@
+ 
+     companion object {
+         private const val NSFW_SCAN_INTERVAL_MS = 2000L
++        private const val SCHEDULE_TICK_MS = 30_000L
+ 
+         private const val USAGE_WARNING_TICK_INTERVAL_MS = 2000L
+ 
+@@ -437,6 +464,7 @@
+         visualBlockingPrefs = getSharedPreferences(VisualBlockingSettings.PREFS_NAME, MODE_PRIVATE)
+         usageWarningPrefs = getSharedPreferences(UsageWarningSettings.PREFS_NAME, MODE_PRIVATE)
+         nsfwSuspensionTracker = VisualBlockingSuspensionTracker(applicationContext)
++        timeLimitSuspensionTracker = TimeLimitSuspensionTracker(applicationContext)
+ 
+         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+         timeWindowPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+@@ -457,6 +485,7 @@
+         // still serving a visual-blocking suspension or an impulse block.
+         restoreNsfwSuspensions()
+         syncImpulseSuspension()
++        restoreTimeLimitSuspensions()
+ 
+         val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+         val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
+@@ -464,6 +493,10 @@
+             dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
+         }
+ 
++        // Last, so open schedule windows win over the un-suspend and the restriction cleared above.
++        handler.removeCallbacks(scheduleTick)
++        handler.post(scheduleTick)
++
+         val packageFilter = IntentFilter().apply {
+             addAction(Intent.ACTION_PACKAGE_ADDED)
+             addDataScheme("package")
+@@ -508,6 +541,7 @@
+         visualBlockingPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+         usageWarningPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+         securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
++        handler.removeCallbacks(scheduleTick)
+         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
+         impulseReleaseRunnable = null
+         // Drop the pending release timers: with the service gone the block below re-suspends the
+@@ -515,6 +549,10 @@
+         // The deadlines stay persisted, so restoreNsfwSuspensions() picks them up on reconnect.
+         nsfwSuspensionReleases.values.forEach { handler.removeCallbacks(it) }
+         nsfwSuspensionReleases.clear()
++        // Same reasoning: the deadlines are persisted, restoreTimeLimitSuspensions() picks them
++        // up on reconnect, and the daily ones don't use a timer at all.
++        timeLimitReopenReleases.values.forEach { handler.removeCallbacks(it) }
++        timeLimitReopenReleases.clear()
+         stopTrackingAndSave()
+         // Close on the same thread that created/drove it (GPU delegate requirement), then let
+         // that queued close finish before shutting the dispatcher's executor down.
+@@ -569,6 +607,11 @@
+                 || className.contains("SoftInputWindow", ignoreCase = true)
+             ) return
+ 
++            ScheduleEnforcer.activeBlockFor(applicationContext, newPackage)?.let { block ->
++                showScheduleBlocked(newPackage, block)
++                return
++            }
++
+             if (newPackage != currentPackage) {
+                 stopTrackingAndSave()
+                 currentPackage = newPackage
+@@ -675,6 +718,26 @@
+         }
+     }
+ 
++    private fun showScheduleBlocked(pkg: String, block: ScheduleEnforcer.ActiveBlock) {
++        performGlobalAction(GLOBAL_ACTION_HOME)
++        ScheduleEnforcer.sync(applicationContext)
++
++        val now = SystemClock.elapsedRealtime()
++        if (now - lastScheduleBlockElapsed < 1500L) return
++        lastScheduleBlockElapsed = now
++
++        val appName = try {
++            packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
++        } catch (_: Exception) { pkg }
++
++        startActivity(Intent(this, ScheduleBlockedActivity::class.java).apply {
++            flags = FLAG_ACTIVITY_NEW_TASK
++            putExtra(ScheduleBlockedActivity.EXTRA_APP_NAME, appName)
++            putExtra(ScheduleBlockedActivity.EXTRA_SCHEDULE_NAME, block.scheduleName)
++            putExtra(ScheduleBlockedActivity.EXTRA_ENDS_AT, block.endsAtMillis)
++        })
++    }
++
+     /**
+      * Kicks off [NsfwContentDetector]'s one-time setup (mmap the model + build the interpreter,
+      * including XNNPACK delegate compilation) as soon as the user opens a monitored app, instead
+@@ -938,6 +1001,15 @@
+         val release = Runnable {
+             nsfwSuspensionReleases.remove(pkg)
+             nsfwSuspensionTracker.endSuspension(pkg)
++            // A schedule window still wants it blocked: keep it suspended and let the schedule lift it.
++            if (ScheduleEnforcer.isHeldBySchedule(applicationContext, pkg)) {
++                ScheduleEnforcer.adopt(applicationContext, pkg)
++                return@Runnable
++            }
++            // Same for an app that separately hit its time limit or a reopening cooldown.
++            if (timeLimitSuspensionTracker.isDailyLimitSuspended(pkg) ||
++                timeLimitSuspensionTracker.isReopeningSuspended(pkg)
++            ) return@Runnable
+             suspendPackage(pkg, suspend = false)
+             Timber.d("NSFW scan: suspension of $pkg lifted")
+         }
+@@ -1020,7 +1092,14 @@
+ 
+         // A package can be serving a visual-blocking suspension at the same time; releasing it
+         // here would cut that one short, so those are left alone for their own timer to lift.
+-        val releasable = suspended.filterNot { nsfwSuspensionTracker.isSuspended(it) }
++        // Same for apps an open schedule window still needs blocked: the schedule takes them over.
++        val heldBySchedule = suspended.filter { ScheduleEnforcer.isHeldBySchedule(ctx, it) }
++        heldBySchedule.forEach { ScheduleEnforcer.adopt(ctx, it) }
++        val releasable = suspended.filterNot {
++            nsfwSuspensionTracker.isSuspended(it) || it in heldBySchedule ||
++                timeLimitSuspensionTracker.isDailyLimitSuspended(it) ||
++                timeLimitSuspensionTracker.isReopeningSuspended(it)
++        }
+         if (releasable.isNotEmpty()) suspendPackages(releasable.toTypedArray(), false)
+ 
+         SecurityManager.clearActiveImpulseSuspension(ctx)
+@@ -1308,19 +1387,63 @@
+ 
+         // For a plain limit block, name and blame whichever cap actually ran out: the app's own,
+         // or (when both are exhausted) the shared group cap, since that's the one still binding.
++        val group = config.group
+         var displayName = individualAppName
+         var displayLimit = config.appLimitMinutes
+-        if (!reopening && !outsideWindow && config.group != null && config.groupLimitMinutes > 0) {
+-            val groupReached = groupUsagePrefs.getLong(config.group.id, 0L) >=
++        var groupLimitReached = false
++        if (!reopening && !outsideWindow && group != null && config.groupLimitMinutes > 0) {
++            groupLimitReached = groupUsagePrefs.getLong(group.id, 0L) >=
+                 TimeUnit.MINUTES.toMillis(config.groupLimitMinutes.toLong())
+             val appReached = config.appLimitMinutes > 0 &&
+                 usagePrefs.getLong(pkg, 0L) >= TimeUnit.MINUTES.toMillis(config.appLimitMinutes.toLong())
+-            if (groupReached && !appReached) {
+-                displayName = config.group.name
++            if (groupLimitReached && !appReached) {
++                displayName = group.name
+                 displayLimit = config.groupLimitMinutes
+             }
+         }
+ 
++        // Close the app out of the foreground before anything else. A screen brought to front
++        // with startActivity can still sit behind, or alongside, a floating/mini window that a
++        // separate "draw over other apps" permission keeps alive - going home first means there's
++        // nothing left in the foreground for such a window to attach to.
++        performGlobalAction(GLOBAL_ACTION_HOME)
++
++        // The real enforcement: suspend the package itself, the same mechanism ScheduleEnforcer
++        // uses, so a floating window has nothing to show even if one manages to stay on screen -
++        // the OS refuses to launch a suspended app at all. The activity below stays as an
++        // explanation of *why*, not as the thing doing the blocking.
++        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
++        val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
++        if (dpm.isAdminActive(admin)) {
++            val protectedPkgs = ScheduleEnforcer.protectedPackages(applicationContext)
++            when {
++                // Windows have their own engine with its own release deadline (the next opening
++                // time) and its own alarm, so hand off rather than duplicating the decision here.
++                outsideWindow -> WindowEnforcer.sync(applicationContext)
++
++                reopening -> if (pkg !in protectedPkgs) {
++                    suspendPackage(pkg, suspend = true)
++                    val until = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(remainingSeconds.toLong())
++                    timeLimitSuspensionTracker.startReopeningSuspension(pkg, until)
++                    scheduleTimeLimitReopeningRelease(pkg, until)
++                }
++
++                else -> {
++                    // A shared group cap has to suspend the WHOLE group. Suspending only the app
++                    // that happened to be open leaves every sibling one tap away, blocked solely
++                    // by this service noticing it - which is exactly the accessibility-dependent
++                    // enforcement being removed. Released together at the day rollover.
++                    val targets =
++                        (if (groupLimitReached && group != null) group.packageNames else setOf(pkg)) - protectedPkgs
++                    val today = LocalDate.now().toString()
++                    targets.forEach { target ->
++                        suspendPackage(target, suspend = true)
++                        timeLimitSuspensionTracker.addDailyLimitSuspension(target, today)
++                    }
++                }
++            }
++        }
++
+         val activityClass = when {
+             outsideWindow -> OutsideTimeWindowActivity::class.java
+             reopening -> ReopeningLimitActivity::class.java
+@@ -1355,10 +1478,90 @@
+             cancelActiveUsageWarning()
+             activeStageId = null
+             UsageWarningNotifier.resetAll(applicationContext)
++            releaseTimeLimitDailySuspensions(today)
+             lastCheckDate = today
+         }
+     }
+ 
++    /**
++     * Un-suspends every app that was suspended for a *previous* day's time limit, now that the
++     * day has rolled over. Called from [checkDateReset], so it fires in step with the usage
++     * counters resetting rather than on a separate schedule.
++     */
++    private fun releaseTimeLimitDailySuspensions(today: String) {
++        timeLimitSuspensionTracker.dailyLimitSuspensions().forEach { (pkg, suspendedOn) ->
++            if (suspendedOn == today) return@forEach
++            timeLimitSuspensionTracker.endDailyLimitSuspension(pkg)
++            releaseTimeLimitHold(pkg)
++        }
++    }
++
++    /**
++     * Un-suspends [pkg] unless another feature still needs it blocked, handing ownership over to
++     * that feature instead of lifting the suspension out from under it. Mirrors the equivalent
++     * check already done in [releaseImpulseSuspension] and [scheduleNsfwSuspensionRelease], kept
++     * separate so those two don't have to know about the time-limit tracker's storage shape.
++     */
++    private fun releaseTimeLimitHold(pkg: String) {
++        val ctx = applicationContext
++        if (ScheduleEnforcer.isHeldBySchedule(ctx, pkg)) {
++            ScheduleEnforcer.adopt(ctx, pkg)
++            return
++        }
++        // The day rolled over but the app's window is still shut: hand ownership to the window
++        // engine instead of freeing it, or a daily cap would quietly unlock the hours as well.
++        if (WindowEnforcer.isBlockedRightNow(ctx, pkg)) {
++            WindowEnforcer.adopt(ctx, pkg)
++            return
++        }
++        if (nsfwSuspensionTracker.isSuspended(pkg)) return
++        if (SecurityManager.getActiveImpulseSuspension(ctx).contains(pkg)) return
++        if (timeLimitSuspensionTracker.isDailyLimitSuspended(pkg)) return
++        if (timeLimitSuspensionTracker.isReopeningSuspended(pkg)) return
++        suspendPackage(pkg, suspend = false)
++    }
++
++    /**
++     * Re-applies the suspensions recorded by [TimeLimitSuspensionTracker] after the service is
++     * recreated. Must run after the blanket un-suspend in [onServiceConnected], for the same
++     * reason [restoreNsfwSuspensions] does.
++     */
++    private fun restoreTimeLimitSuspensions() {
++        val today = LocalDate.now().toString()
++        timeLimitSuspensionTracker.dailyLimitSuspensions().forEach { (pkg, suspendedOn) ->
++            if (suspendedOn == today) {
++                suspendPackage(pkg)
++            } else {
++                // A day boundary was crossed while nothing was running to catch it.
++                timeLimitSuspensionTracker.endDailyLimitSuspension(pkg)
++                releaseTimeLimitHold(pkg)
++            }
++        }
++
++        val now = System.currentTimeMillis()
++        timeLimitSuspensionTracker.reopeningSuspensions().forEach { (pkg, until) ->
++            if (until <= now) {
++                timeLimitSuspensionTracker.endReopeningSuspension(pkg)
++                releaseTimeLimitHold(pkg)
++            } else {
++                suspendPackage(pkg)
++                scheduleTimeLimitReopeningRelease(pkg, until)
++            }
++        }
++    }
++
++    private fun scheduleTimeLimitReopeningRelease(pkg: String, until: Long) {
++        timeLimitReopenReleases.remove(pkg)?.let { handler.removeCallbacks(it) }
++
++        val release = Runnable {
++            timeLimitReopenReleases.remove(pkg)
++            timeLimitSuspensionTracker.endReopeningSuspension(pkg)
++            releaseTimeLimitHold(pkg)
++        }
++        timeLimitReopenReleases[pkg] = release
++        handler.postDelayed(release, (until - System.currentTimeMillis()).coerceAtLeast(0L))
++    }
++
+     private fun getRemainingSecondsToReopen(pkg: String): Int {
+         val reopenSeconds = reopenPrefs.getInt(pkg, 0)
+         val lastClosedTime = lastClosedTimes.getOrDefault(pkg, 0L)
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/DechainerApplication.kt main/app/src/main/java/io/github/warleysr/dechainer/DechainerApplication.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/DechainerApplication.kt	2026-09-21 03:23:56.719089579 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/DechainerApplication.kt	2026-09-21 03:24:21.861965274 +0000
+@@ -6,6 +6,8 @@
+ import android.content.Intent
+ import android.content.IntentFilter
+ import io.github.warleysr.dechainer.data.AppRepository
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
++import io.github.warleysr.dechainer.data.WindowEnforcer
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.SupervisorJob
+@@ -50,5 +52,12 @@
+         applicationScope.launch {
+             AppRepository.getApps()
+         }
++
++        // Covers process restarts (app update, crash, being killed): re-applies any open schedule
++        // window or closed time window, and re-arms both boundary alarms.
++        applicationScope.launch {
++            ScheduleEnforcer.sync(this@DechainerApplication)
++            WindowEnforcer.sync(this@DechainerApplication)
++        }
+     }
+ }
+\ No newline at end of file
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/ScheduleReceiver.kt main/app/src/main/java/io/github/warleysr/dechainer/ScheduleReceiver.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/ScheduleReceiver.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/ScheduleReceiver.kt	2026-09-21 03:24:21.869251711 +0000
+@@ -0,0 +1,22 @@
++package io.github.warleysr.dechainer
++
++import android.content.BroadcastReceiver
++import android.content.Context
++import android.content.Intent
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
++import io.github.warleysr.dechainer.data.WindowEnforcer
++import timber.log.Timber
++
++/**
++ * Wakes the schedule engine at every window boundary (alarm armed by [ScheduleEnforcer]) and
++ * whenever something could have invalidated the current state: a reboot, an app update, or the
++ * clock / time zone being changed, plus the boundaries of app/group time windows. The work is a
++ * pair of quick, idempotent syncs.
++ */
++class ScheduleReceiver : BroadcastReceiver() {
++    override fun onReceive(context: Context, intent: Intent) {
++        Timber.d("ScheduleReceiver: ${intent.action}")
++        ScheduleEnforcer.sync(context)
++        WindowEnforcer.sync(context)
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/activities/MainActivity.kt main/app/src/main/java/io/github/warleysr/dechainer/activities/MainActivity.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/activities/MainActivity.kt	2026-09-21 03:23:56.719177181 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/activities/MainActivity.kt	2026-09-21 03:29:04.663827470 +0000
+@@ -138,7 +138,7 @@
+                         val selectedBaseTab = when (currentScreen) {
+                             "restrictions" -> "restrictions"
+                             "apps" -> "apps"
+-                            "config", "setup_device_owner", "activity_blocker", "browser_restrictions", "blocked_words", "visual_blocking", "impulse_lock", "usage_warning" -> "config"
++                            "config", "setup_device_owner", "activity_blocker", "browser_restrictions", "blocked_words", "visual_blocking", "impulse_lock", "usage_warning", "schedules", "schedule_editor", "status" -> "config"
+                             else -> "restrictions"
+                         }
+ 
+@@ -185,6 +185,9 @@
+                                     "visual_blocking" -> VisualBlockingScreen()
+                                     "impulse_lock" -> ImpulseLockScreen()
+                                     "usage_warning" -> UsageWarningScreen()
++                                    "schedules" -> SchedulesScreen()
++                                    "schedule_editor" -> ScheduleEditorScreen()
++                                    "status" -> StatusScreen()
+                                 }
+                             }
+                     }
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/activities/ScheduleBlockedActivity.kt main/app/src/main/java/io/github/warleysr/dechainer/activities/ScheduleBlockedActivity.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/activities/ScheduleBlockedActivity.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/activities/ScheduleBlockedActivity.kt	2026-09-21 03:24:21.872981613 +0000
+@@ -0,0 +1,91 @@
++package io.github.warleysr.dechainer.activities
++
++import android.os.Bundle
++import android.view.WindowManager
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.EventBusy
++import androidx.compose.material3.Button
++import androidx.compose.material3.Icon
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.unit.dp
++import io.github.warleysr.dechainer.R
++import io.github.warleysr.dechainer.ui.theme.DechainerTheme
++import java.text.DateFormat
++import java.util.Date
++
++/** Shown when an app that belongs to an open schedule window is brought to the foreground. */
++class ScheduleBlockedActivity : ComponentActivity() {
++
++    companion object {
++        const val EXTRA_APP_NAME = "appName"
++        const val EXTRA_SCHEDULE_NAME = "scheduleName"
++        const val EXTRA_ENDS_AT = "endsAt"
++    }
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
++
++        val endsAt = intent.getLongExtra(EXTRA_ENDS_AT, 0L)
++        val endsAtText = if (endsAt > 0) DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(endsAt)) else ""
++
++        setContent {
++            DechainerTheme {
++                ScheduleBlockedScreen(
++                    appName = intent.getStringExtra(EXTRA_APP_NAME) ?: "",
++                    scheduleName = intent.getStringExtra(EXTRA_SCHEDULE_NAME) ?: "",
++                    endsAt = endsAtText,
++                    onClose = { finishAfterTransition() }
++                )
++            }
++        }
++    }
++}
++
++@Composable
++fun ScheduleBlockedScreen(appName: String, scheduleName: String, endsAt: String, onClose: () -> Unit) {
++    Surface(
++        modifier = Modifier.fillMaxSize(),
++        color = MaterialTheme.colorScheme.errorContainer
++    ) {
++        Column(
++            modifier = Modifier.padding(24.dp),
++            verticalArrangement = Arrangement.Center,
++            horizontalAlignment = Alignment.CenterHorizontally
++        ) {
++            Icon(Icons.Outlined.EventBusy, contentDescription = null, modifier = Modifier.size(64.dp))
++            Spacer(modifier = Modifier.height(16.dp))
++            Text(
++                stringResource(R.string.schedule_blocked_title),
++                style = MaterialTheme.typography.headlineMedium,
++                textAlign = TextAlign.Center
++            )
++            Spacer(modifier = Modifier.height(8.dp))
++            Text(
++                stringResource(R.string.schedule_blocked_description, appName, scheduleName, endsAt),
++                textAlign = TextAlign.Center,
++                style = MaterialTheme.typography.bodyLarge
++            )
++            Spacer(modifier = Modifier.height(32.dp))
++            Button(onClick = onClose) {
++                Text(stringResource(R.string.close))
++            }
++        }
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/BlockStatus.kt main/app/src/main/java/io/github/warleysr/dechainer/data/BlockStatus.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/BlockStatus.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/BlockStatus.kt	2026-09-21 03:28:12.525978985 +0000
+@@ -0,0 +1,157 @@
++package io.github.warleysr.dechainer.data
++
++import android.Manifest
++import android.app.AlarmManager
++import android.content.Context
++import android.content.pm.PackageManager
++import android.graphics.drawable.Drawable
++import android.os.Build
++import android.os.PowerManager
++import androidx.core.content.ContextCompat
++import io.github.warleysr.dechainer.security.SecurityManager
++import timber.log.Timber
++
++/**
++ * Answers two questions the rest of the app can't: *why is this app blocked*, and *is blocking
++ * actually working on this phone*.
++ *
++ * Six different features can suspend an app — schedules, time windows, daily limits, reopening
++ * cooldowns, impulse lock and visual blocking — and each keeps its own record. Nothing ever put
++ * those records side by side, so a greyed-out app gave no clue which feature was holding it or
++ * when it would come back. This reads every record and says so.
++ *
++ * Read-only by design. Nothing here can change a block, so the screen showing it can never
++ * become a way around one.
++ */
++object BlockStatus {
++
++    /** One reason an app is blocked. An app can have several at once. */
++    sealed interface Reason {
++        class Schedule(val name: String, val untilMillis: Long) : Reason
++        class OutsideWindow(val opensAtMillis: Long?) : Reason
++        object DailyLimit : Reason
++        class Cooldown(val untilMillis: Long) : Reason
++        object Impulse : Reason
++        class ExplicitContent(val untilMillis: Long) : Reason
++        /** Suspended, but by no feature — the person did it from the Apps tab. */
++        object Manual : Reason
++        object Hidden : Reason
++    }
++
++    class BlockedApp(
++        val packageName: String,
++        val name: String,
++        val icon: Drawable,
++        val reasons: List<Reason>
++    )
++
++    enum class CheckKind { DEVICE_OWNER, ACCESSIBILITY, EXACT_ALARMS, BATTERY, NOTIFICATIONS }
++
++    class Check(val kind: CheckKind, val ok: Boolean)
++
++    /**
++     * Assembles the reasons for one app from the facts each feature records. Pure, so it is
++     * unit-tested directly.
++     *
++     * "Suspended by you" is reported only when no feature claims the suspension. Otherwise a
++     * schedule-held app would also claim to be manual, and the one fact the person needs — what
++     * is holding it and until when — would be buried.
++     */
++    internal fun reasonsFor(
++        isSuspended: Boolean,
++        isHidden: Boolean,
++        scheduleName: String?,
++        scheduleUntil: Long?,
++        windowClosed: Boolean,
++        windowOpensAt: Long?,
++        dailyLimit: Boolean,
++        cooldownUntil: Long?,
++        impulse: Boolean,
++        explicitUntil: Long?
++    ): List<Reason> {
++        val reasons = mutableListOf<Reason>()
++        if (scheduleName != null && scheduleUntil != null) reasons += Reason.Schedule(scheduleName, scheduleUntil)
++        if (windowClosed) reasons += Reason.OutsideWindow(windowOpensAt)
++        if (dailyLimit) reasons += Reason.DailyLimit
++        if (cooldownUntil != null) reasons += Reason.Cooldown(cooldownUntil)
++        if (impulse) reasons += Reason.Impulse
++        if (explicitUntil != null) reasons += Reason.ExplicitContent(explicitUntil)
++        if (isSuspended && reasons.isEmpty()) reasons += Reason.Manual
++        if (isHidden) reasons += Reason.Hidden
++        return reasons
++    }
++
++    /** Every suspended or hidden app, with every reason it's blocked. Call off the main thread. */
++    fun blockedApps(context: Context): List<BlockedApp> {
++        val ctx = context.applicationContext
++        return try {
++            val now = System.currentTimeMillis()
++            val timeLimits = TimeLimitSuspensionTracker(ctx)
++            val daily = timeLimits.dailyLimitSuspensions().keys
++            val cooldowns = timeLimits.reopeningSuspensions().filterValues { it > now }
++            val impulse = SecurityManager.getActiveImpulseSuspension(ctx)
++            val explicit = VisualBlockingSuspensionTracker(ctx).activeSuspensions().filterValues { it > now }
++            val closedWindows = WindowEnforcer.closedWindows(ctx)
++
++            AppRepository.getApps(forceRefresh = true)
++                .filter { it.isSuspended || it.isHidden }
++                .map { app ->
++                    val pkg = app.packageName
++                    val schedule = ScheduleEnforcer.activeBlockFor(ctx, pkg)
++                    BlockedApp(
++                        packageName = pkg,
++                        name = app.name,
++                        icon = app.icon,
++                        reasons = reasonsFor(
++                            isSuspended = app.isSuspended,
++                            isHidden = app.isHidden,
++                            scheduleName = schedule?.scheduleName,
++                            scheduleUntil = schedule?.endsAtMillis,
++                            windowClosed = pkg in closedWindows,
++                            windowOpensAt = closedWindows[pkg],
++                            dailyLimit = pkg in daily,
++                            cooldownUntil = cooldowns[pkg],
++                            impulse = pkg in impulse,
++                            explicitUntil = explicit[pkg]
++                        )
++                    )
++                }
++                .sortedBy { it.name.lowercase() }
++        } catch (e: Exception) {
++            Timber.e(e, "Could not collect block status")
++            emptyList()
++        }
++    }
++
++    /**
++     * The conditions blocking depends on. Each one failing breaks something specific:
++     * no Device Owner and nothing can be suspended at all; no exact alarms and windows open and
++     * close late; battery optimisation and the whole app can be put to sleep between boundaries.
++     */
++    fun healthChecks(context: Context): List<Check> {
++        val ctx = context.applicationContext
++        val exactAlarms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++            (ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
++        } else true
++        val battery = (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager)
++            .isIgnoringBatteryOptimizations(ctx.packageName)
++        val notifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
++            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
++            PackageManager.PERMISSION_GRANTED
++
++        return listOf(
++            Check(CheckKind.DEVICE_OWNER, safe { DeviceOwnerRepository.isDeviceOwner() }),
++            Check(CheckKind.ACCESSIBILITY, safe { DeviceOwnerRepository.isAccessibilityGranted() }),
++            Check(CheckKind.EXACT_ALARMS, exactAlarms),
++            Check(CheckKind.BATTERY, battery),
++            Check(CheckKind.NOTIFICATIONS, notifications)
++        )
++    }
++
++    private inline fun safe(block: () -> Boolean): Boolean = try {
++        block()
++    } catch (e: Exception) {
++        Timber.w(e, "Health check failed")
++        false
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/BrowserRestrictionsManager.kt main/app/src/main/java/io/github/warleysr/dechainer/data/BrowserRestrictionsManager.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/BrowserRestrictionsManager.kt	2026-09-21 03:23:56.719297063 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/BrowserRestrictionsManager.kt	2026-09-21 03:24:21.877121235 +0000
+@@ -9,9 +9,14 @@
+ import android.content.pm.PackageManager
+ import android.net.Uri
+ import androidx.core.net.toUri
++import androidx.core.content.edit
+ 
+ class BrowserRestrictionsManager(private val context: Context) {
+ 
++    private companion object {
++        const val KEY_SCHEDULED_APPLIED = "scheduled_sites_applied"
++    }
++
+     fun getPossibleBrowsers(): List<ResolveInfo> {
+         val pm = context.packageManager
+         val resolvedPackages = mutableSetOf<String>()
+@@ -76,10 +81,13 @@
+ 
+     fun applyRestrictions(installed: Boolean = false) {
+         val prefs = context.getSharedPreferences("browser_prefs", Context.MODE_PRIVATE)
+-        val json = prefs.getString("blocked_lists_json", null) ?: return
++        val json = prefs.getString("blocked_lists_json", null)
++        // Sites blocked only while a schedule window is open are merged into the permanent lists.
++        val scheduledSites = ScheduleEnforcer.getActiveScheduledSites(context)
++        if (json == null && scheduledSites.isEmpty() && !prefs.getBoolean(KEY_SCHEDULED_APPLIED, false)) return
+ 
+         val allSites = mutableSetOf<String>()
+-        try {
++        if (json != null) try {
+             val array = JSONArray(json)
+             for (i in 0 until array.length()) {
+                 val sitesArray = array.getJSONObject(i).getJSONArray("sites")
+@@ -88,6 +96,8 @@
+                 }
+             }
+         } catch (e: Exception) { e.printStackTrace() }
++        allSites.addAll(scheduledSites)
++        prefs.edit { putBoolean(KEY_SCHEDULED_APPLIED, scheduledSites.isNotEmpty()) }
+ 
+         val urlRestrictions = Bundle().apply {
+             putStringArray("URLBlocklist", allSites.toTypedArray())
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt main/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/LockSafety.kt	2026-09-21 03:24:21.880612222 +0000
+@@ -0,0 +1,48 @@
++package io.github.warleysr.dechainer.data
++
++import io.github.warleysr.dechainer.models.BlockSchedule
++
++/**
++ * Guards against "Lock while active" turning into a permanent lockout. A locked schedule can't be
++ * edited while its window is open, so if the locked windows of all schedules together cover the
++ * whole week (e.g. a 24h window every day, or two windows that chain into each other), there
++ * would never be a moment to change them — only Forced removal would get the user out.
++ */
++object LockSafety {
++    /** Locked windows must leave at least this much free time somewhere in the week. */
++    const val MIN_FREE_MINUTES = 60
++
++    /** Locked windows longer than this ask for explicit confirmation before saving. */
++    const val LONG_LOCK_MINUTES = 6 * 60
++
++    private const val WEEK_MINUTES = 7 * 1440
++
++    /** Longest stretch of the week (wrapping Sunday -> Monday) not covered by any locked window. */
++    fun longestUnlockedGapMinutes(schedules: List<BlockSchedule>): Int {
++        val locked = BooleanArray(WEEK_MINUTES)
++        schedules.filter { it.enabled && it.lockWhileActive }.forEach { schedule ->
++            schedule.days.forEach { day ->
++                val windowStart = (day.value - 1) * 1440 + schedule.startMinute
++                for (m in 0 until schedule.windowMinutes) locked[(windowStart + m) % WEEK_MINUTES] = true
++            }
++        }
++        val firstLocked = locked.indexOfFirst { it }
++        if (firstLocked == -1) return WEEK_MINUTES
++
++        var best = 0
++        var run = 0
++        // Start right after a locked minute so a gap that wraps around the week is counted whole.
++        for (i in 1..WEEK_MINUTES) {
++            if (!locked[(firstLocked + i) % WEEK_MINUTES]) {
++                run++
++                if (run > best) best = run
++            } else {
++                run = 0
++            }
++        }
++        return best
++    }
++
++    fun leavesEnoughFreeTime(schedules: List<BlockSchedule>): Boolean =
++        longestUnlockedGapMinutes(schedules) >= MIN_FREE_MINUTES
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleEnforcer.kt	2026-09-21 03:24:21.884299001 +0000
+@@ -0,0 +1,331 @@
++package io.github.warleysr.dechainer.data
++
++import android.app.AlarmManager
++import android.app.PendingIntent
++import android.app.admin.DevicePolicyManager
++import android.content.ComponentName
++import android.content.Context
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.os.Build
++import android.os.UserManager
++import android.telecom.TelecomManager
++import androidx.core.content.edit
++import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
++import io.github.warleysr.dechainer.ScheduleReceiver
++import io.github.warleysr.dechainer.models.BlockSchedule
++import io.github.warleysr.dechainer.security.SecurityManager
++import timber.log.Timber
++import java.time.ZonedDateTime
++
++/**
++ * Brings the device in line with the schedules that are open *right now*. Every call to [sync] is
++ * idempotent and computes the full desired state from scratch, so it is safe to call from anywhere
++ * and as often as needed: the alarm at each window boundary, boot, clock/time-zone changes, the
++ * accessibility service's periodic tick, and every edit made in the UI.
++ *
++ * Ownership: a package or restriction is only released at the end of a window if the schedule is
++ * the one that applied it. Anything that was already suspended/restricted before the window opened
++ * (a manual suspension, a permanent restriction) is left untouched when it closes.
++ */
++object ScheduleEnforcer {
++    private const val STATE_PREFS = "schedule_state"
++    private const val KEY_OWNED_APPS = "owned_apps"
++    private const val KEY_OWNED_RESTRICTIONS = "owned_restrictions"
++    private const val KEY_ACTIVE_SITES = "active_sites"
++
++    const val ACTION_BOUNDARY = "io.github.warleysr.dechainer.SCHEDULE_BOUNDARY"
++
++    /** Re-check at least this often even when no boundary is near, to self-heal after clock jumps. */
++    private const val MAX_CACHE_MS = 5 * 60 * 1000L
++
++    data class ActiveBlock(val scheduleName: String, val endsAtMillis: Long)
++
++    private val lock = Any()
++
++    @Volatile
++    private var activeBlocks: Map<String, ActiveBlock> = emptyMap()
++
++    @Volatile
++    private var cacheValidUntil = 0L
++
++    private fun state(context: Context) =
++        context.applicationContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
++
++    fun sync(context: Context) {
++        val ctx = context.applicationContext
++        synchronized(lock) {
++            try {
++                syncLocked(ctx)
++            } catch (e: Exception) {
++                Timber.e(e, "Schedule sync failed")
++                // Retry on the next app switch or tick instead of trusting a half-applied state.
++                cacheValidUntil = 0L
++            }
++        }
++    }
++
++    private fun syncLocked(ctx: Context) {
++        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
++        val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
++        val schedules = ScheduleRepository.getSchedules(ctx)
++        val now = ZonedDateTime.now()
++        val nowLocal = now.toLocalDateTime()
++
++        if (!dpm.isDeviceOwnerApp(ctx.packageName)) {
++            activeBlocks = emptyMap()
++            cacheValidUntil = System.currentTimeMillis() + MAX_CACHE_MS
++            armNextBoundary(ctx, schedules, now)
++            return
++        }
++
++        val active = schedules.filter { it.isActiveAt(nowLocal) }
++        val protectedPkgs = protectedPackages(ctx)
++
++        val desiredApps = active.flatMap { it.packages }.toSet() - protectedPkgs
++        val desiredRestrictions = active.flatMap { it.restrictions }.toMutableSet()
++        val desiredSites = active.flatMap { it.websites }.toSet()
++
++        if (ScheduleRepository.isAntiTamperEnabled(ctx) && schedules.any { it.enabled }) {
++            desiredRestrictions += UserManager.DISALLOW_CONFIG_DATE_TIME
++            try {
++                dpm.setAutoTimeEnabled(admin, true)
++                dpm.setAutoTimeZoneEnabled(admin, true)
++            } catch (e: Exception) {
++                Timber.w(e, "Could not force automatic time")
++            }
++        }
++
++        applyApps(ctx, dpm, admin, desiredApps)
++        applyRestrictions(ctx, dpm, admin, desiredRestrictions)
++        applySites(ctx, desiredSites)
++
++        activeBlocks = buildMap<String, ActiveBlock> {
++            active.forEach { schedule ->
++                val end = schedule.currentWindowEnd(nowLocal)
++                    ?.atZone(now.zone)?.toInstant()?.toEpochMilli() ?: return@forEach
++                schedule.packages.forEach { pkg ->
++                    val existing = get(pkg)
++                    // With overlapping schedules the app stays blocked until the last one ends.
++                    if (existing == null || end > existing.endsAtMillis) put(pkg, ActiveBlock(schedule.name, end))
++                }
++            }
++        }.filterKeys { it !in protectedPkgs }
++
++        val next = armNextBoundary(ctx, schedules, now)
++        val cap = System.currentTimeMillis() + MAX_CACHE_MS
++        cacheValidUntil = if (next != null) minOf(next, cap) else cap
++    }
++
++    private fun applyApps(
++        ctx: Context,
++        dpm: DevicePolicyManager,
++        admin: ComponentName,
++        desired: Set<String>
++    ) {
++        val prefs = state(ctx)
++        val initiallyOwned = prefs.getStringSet(KEY_OWNED_APPS, emptySet())?.toSet() ?: emptySet()
++        val owned = initiallyOwned.toMutableSet()
++
++        // Suspend what should be blocked and isn't yet. Uninstalled packages are skipped here and
++        // caught on a later sync if they get (re)installed while the window is still open.
++        val toSuspend = desired.filter { pkg ->
++            try {
++                !dpm.isPackageSuspended(admin, pkg)
++            } catch (_: PackageManager.NameNotFoundException) {
++                false
++            }
++        }
++        if (toSuspend.isNotEmpty()) {
++            val failed = dpm.setPackagesSuspended(admin, toSuspend.toTypedArray(), true).toSet()
++            if (failed.isNotEmpty()) Timber.w("Schedule: could not suspend $failed")
++            owned += toSuspend - failed
++        }
++
++        // Release what this schedule applied but is no longer wanted — unless another feature
++        // (impulse block, visual-blocking escalation) still needs it suspended.
++        val toRelease = owned - desired
++        if (toRelease.isNotEmpty()) {
++            val timeLimitTracker = TimeLimitSuspensionTracker(ctx)
++            val heldElsewhere = SecurityManager.getActiveImpulseSuspension(ctx) +
++                VisualBlockingSuspensionTracker(ctx).activeSuspensions()
++                    .filterValues { it > System.currentTimeMillis() }.keys +
++                timeLimitTracker.dailyLimitSuspensions().keys +
++                timeLimitTracker.reopeningSuspensions().keys +
++                WindowEnforcer.ownedApps(ctx)
++            val releasable = (toRelease - heldElsewhere).filter { pkg ->
++                try {
++                    ctx.packageManager.getPackageInfo(pkg, 0); true
++                } catch (_: PackageManager.NameNotFoundException) {
++                    false
++                }
++            }
++            if (releasable.isNotEmpty()) dpm.setPackagesSuspended(admin, releasable.toTypedArray(), false)
++            owned -= toRelease
++        }
++
++        // Only touch disk when something changed — this runs every 30s from the service's tick.
++        if (owned != initiallyOwned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned) }
++        if (toSuspend.isNotEmpty() || toRelease.isNotEmpty()) AppRepository.invalidateCache()
++    }
++
++    private fun applyRestrictions(
++        ctx: Context,
++        dpm: DevicePolicyManager,
++        admin: ComponentName,
++        desired: Set<String>
++    ) {
++        val prefs = state(ctx)
++        val initiallyOwned = prefs.getStringSet(KEY_OWNED_RESTRICTIONS, emptySet())?.toSet() ?: emptySet()
++        val owned = initiallyOwned.toMutableSet()
++        val current = dpm.getUserRestrictions(admin)
++
++        desired.forEach { key ->
++            // Re-applied even when already owned: other code paths (e.g. the accessibility
++            // service clearing DISALLOW_INSTALL_APPS on connect) may have lifted it mid-window.
++            if (!current.getBoolean(key)) {
++                try {
++                    dpm.addUserRestriction(admin, key)
++                    owned += key
++                } catch (e: Exception) {
++                    Timber.w(e, "Schedule: could not add restriction $key")
++                }
++            }
++        }
++
++        (owned - desired).forEach { key ->
++            try {
++                dpm.clearUserRestriction(admin, key)
++            } catch (e: Exception) {
++                Timber.w(e, "Schedule: could not clear restriction $key")
++            }
++            owned -= key
++        }
++
++        if (owned != initiallyOwned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_RESTRICTIONS, owned) }
++    }
++
++    private fun applySites(ctx: Context, desired: Set<String>) {
++        val prefs = state(ctx)
++        val previous = prefs.getStringSet(KEY_ACTIVE_SITES, emptySet()) ?: emptySet()
++        if (previous == desired) return
++        prefs.edit(commit = true) { putStringSet(KEY_ACTIVE_SITES, desired) }
++        try {
++            BrowserRestrictionsManager(ctx).applyRestrictions()
++        } catch (e: Exception) {
++            Timber.w(e, "Schedule: could not update browser blocklist")
++        }
++    }
++
++    /** Websites blocked by schedules that are open right now — merged into the browser blocklist. */
++    fun getActiveScheduledSites(context: Context): Set<String> =
++        state(context).getStringSet(KEY_ACTIVE_SITES, emptySet()) ?: emptySet()
++
++    /**
++     * Fast check used by the accessibility service on every app switch. Returns the block if
++     * [pkg] belongs to an open window — a second line of defence for apps the system refused to
++     * suspend, or for the few seconds between a reinstall and the next sync.
++     */
++    fun activeBlockFor(context: Context, pkg: String): ActiveBlock? {
++        if (System.currentTimeMillis() >= cacheValidUntil) sync(context)
++        return activeBlocks[pkg]
++    }
++
++    fun isHeldBySchedule(context: Context, pkg: String): Boolean = activeBlockFor(context, pkg) != null
++
++    /** True while any schedule is inside a window it was told to lock. */
++    fun isAnyScheduleLocked(context: Context): Boolean =
++        ScheduleRepository.getSchedules(context).any { ScheduleRepository.isLockedNow(it) }
++
++    /**
++     * Called when another feature is about to release [pkg] while a schedule still wants it
++     * blocked: the suspension stays, and the schedule takes over responsibility for lifting it.
++     */
++    fun adopt(context: Context, pkg: String) = synchronized(lock) {
++        val prefs = state(context)
++        val owned = (prefs.getStringSet(KEY_OWNED_APPS, emptySet()) ?: emptySet()) + pkg
++        prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned) }
++    }
++
++    /** Called when the user manually suspends [pkg], so a window closing won't undo that. */
++    fun disown(context: Context, pkg: String) = synchronized(lock) {
++        val prefs = state(context)
++        val owned = (prefs.getStringSet(KEY_OWNED_APPS, emptySet()) ?: emptySet()) - pkg
++        prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned) }
++    }
++
++    /** Lifts everything schedules applied. Used right before Device Owner is removed. */
++    fun releaseAll(context: Context) {
++        val ctx = context.applicationContext
++        synchronized(lock) {
++            try {
++                val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
++                val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
++                if (dpm.isDeviceOwnerApp(ctx.packageName)) {
++                    applyApps(ctx, dpm, admin, emptySet())
++                    applyRestrictions(ctx, dpm, admin, emptySet())
++                }
++                applySites(ctx, emptySet())
++                activeBlocks = emptyMap()
++                cancelAlarm(ctx)
++            } catch (e: Exception) {
++                Timber.e(e, "Schedule releaseAll failed")
++            }
++        }
++    }
++
++    /**
++     * Apps that must never be blocked: Dechainer itself, the launcher (the "go home" fallback would
++     * loop), System UI, and the phone app so emergency calls always work.
++     */
++    fun protectedPackages(context: Context): Set<String> {
++        val pm = context.packageManager
++        val result = mutableSetOf(context.packageName, "com.android.systemui", "com.android.phone")
++        try {
++            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
++            pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
++                .forEach { result += it.activityInfo.packageName }
++        } catch (_: Exception) { }
++        // minSdk is 30, so getSystemDialerPackage() (API 29) is always present and the
++        // NoSuchMethodError some reviewers warn about cannot occur here. Kept null-safe and
++        // Throwable-safe anyway: this runs on the boot path, where dying is expensive.
++        try {
++            val telecom = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
++            telecom?.defaultDialerPackage?.let { result += it }
++            telecom?.systemDialerPackage?.let { result += it }
++        } catch (_: Throwable) { }
++        return result
++    }
++
++    private fun pendingIntent(ctx: Context): PendingIntent = PendingIntent.getBroadcast(
++        ctx,
++        0,
++        Intent(ctx, ScheduleReceiver::class.java).setAction(ACTION_BOUNDARY),
++        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
++    )
++
++    private fun cancelAlarm(ctx: Context) {
++        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
++        am.cancel(pendingIntent(ctx))
++    }
++
++    /** Arms an alarm one second after the next window start/end. Returns that boundary, if any. */
++    private fun armNextBoundary(ctx: Context, schedules: List<BlockSchedule>, now: ZonedDateTime): Long? {
++        val next = schedules.flatMap { it.boundariesAfter(now) }.minOrNull()
++        if (next == null) {
++            cancelAlarm(ctx)
++            return null
++        }
++        val triggerAt = next.toInstant().toEpochMilli() + 1000L
++        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
++        val pi = pendingIntent(ctx)
++        try {
++            val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
++            if (canExact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++        } catch (e: SecurityException) {
++            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++        }
++        return triggerAt
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleRepository.kt main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleRepository.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleRepository.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/ScheduleRepository.kt	2026-09-21 03:24:21.887802712 +0000
+@@ -0,0 +1,67 @@
++package io.github.warleysr.dechainer.data
++
++import android.content.Context
++import androidx.core.content.edit
++import io.github.warleysr.dechainer.models.BlockSchedule
++import org.json.JSONArray
++import java.time.LocalDateTime
++
++/**
++ * Stores the user's [BlockSchedule]s in `schedule_prefs`. Only persistence lives here — applying
++ * a schedule to the device is [ScheduleEnforcer]'s job, which must be re-run after every change.
++ */
++object ScheduleRepository {
++    const val PREFS_NAME = "schedule_prefs"
++    private const val KEY_SCHEDULES = "schedules_json"
++    private const val KEY_ANTI_TAMPER = "anti_tamper_enabled"
++
++    private fun prefs(context: Context) =
++        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
++
++    fun getSchedules(context: Context): List<BlockSchedule> {
++        val json = prefs(context).getString(KEY_SCHEDULES, null) ?: return emptyList()
++        return try {
++            val array = JSONArray(json)
++            (0 until array.length()).map { BlockSchedule.fromJson(array.getJSONObject(it)) }
++        } catch (e: Exception) {
++            e.printStackTrace()
++            emptyList()
++        }
++    }
++
++    fun getSchedule(context: Context, id: String): BlockSchedule? =
++        getSchedules(context).firstOrNull { it.id == id }
++
++    private fun saveAll(context: Context, schedules: List<BlockSchedule>) {
++        val array = JSONArray()
++        schedules.forEach { array.put(it.toJson()) }
++        // commit() rather than apply(): the enforcer reads this right after, possibly from another thread.
++        prefs(context).edit(commit = true) { putString(KEY_SCHEDULES, array.toString()) }
++    }
++
++    fun upsert(context: Context, schedule: BlockSchedule) {
++        val list = getSchedules(context).toMutableList()
++        val index = list.indexOfFirst { it.id == schedule.id }
++        if (index >= 0) list[index] = schedule else list.add(schedule)
++        saveAll(context, list)
++    }
++
++    fun delete(context: Context, id: String) {
++        saveAll(context, getSchedules(context).filterNot { it.id == id })
++    }
++
++    /** True while [schedule]'s window is open and it was set to lock itself during that time. */
++    fun isLockedNow(schedule: BlockSchedule, now: LocalDateTime = LocalDateTime.now()): Boolean =
++        schedule.lockWhileActive && schedule.isActiveAt(now)
++
++    /**
++     * Anti-tamper forces automatic date/time and blocks changing it while any schedule is enabled,
++     * so a window can't be skipped by moving the clock. On by default.
++     */
++    fun isAntiTamperEnabled(context: Context): Boolean =
++        prefs(context).getBoolean(KEY_ANTI_TAMPER, true)
++
++    fun setAntiTamperEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit(commit = true) { putBoolean(KEY_ANTI_TAMPER, enabled) }
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/TimeLimitSuspensionTracker.kt main/app/src/main/java/io/github/warleysr/dechainer/data/TimeLimitSuspensionTracker.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/TimeLimitSuspensionTracker.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/TimeLimitSuspensionTracker.kt	2026-09-21 03:24:21.891164409 +0000
+@@ -0,0 +1,70 @@
++package io.github.warleysr.dechainer.data
++
++import android.content.Context
++import android.content.SharedPreferences
++import androidx.core.content.edit
++
++/**
++ * Bookkeeping for the two suspension-based enforcements of the time-limit feature, mirroring
++ * [VisualBlockingSuspensionTracker]'s reasoning: the accessibility service can be killed and
++ * recreated at any moment, and for this feature that isn't just a cosmetic gap — a block that only
++ * lives in the service's memory can be escaped simply by restarting the service. Persisting it
++ * closes that off, the same way suspending the package (instead of only showing a screen over it)
++ * closes off a floating/mini-window from remaining usable underneath.
++ *
++ * - **Daily limit** ([addDailyLimitSuspension]/[dailyLimitSuspensions]): released at the next
++ *   calendar-day rollover, not a fixed instant — [DechainerAccessibilityService] lifts these from
++ *   [checkDateReset], in step with the usage counters resetting.
++ * - **Reopening cooldown** ([startReopeningSuspension]/[reopeningSuspensions]): released at a
++ *   specific wall-clock deadline, restored the same way [VisualBlockingSuspensionTracker] restores
++ *   its own suspensions on reconnect.
++ */
++class TimeLimitSuspensionTracker(context: Context) {
++
++    private val prefs: SharedPreferences =
++        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
++
++    fun addDailyLimitSuspension(pkg: String, today: String) {
++        prefs.edit { putString(KEY_DAILY_PREFIX + pkg, today) }
++    }
++
++    fun endDailyLimitSuspension(pkg: String) = prefs.edit { remove(KEY_DAILY_PREFIX + pkg) }
++
++    fun isDailyLimitSuspended(pkg: String): Boolean = prefs.contains(KEY_DAILY_PREFIX + pkg)
++
++    /** Every package suspended for a day's limit, mapped to the calendar day it was suspended on. */
++    fun dailyLimitSuspensions(): Map<String, String> {
++        val result = mutableMapOf<String, String>()
++        prefs.all.forEach { (key, value) ->
++            if (!key.startsWith(KEY_DAILY_PREFIX)) return@forEach
++            val day = value as? String ?: return@forEach
++            result[key.removePrefix(KEY_DAILY_PREFIX)] = day
++        }
++        return result
++    }
++
++    fun startReopeningSuspension(pkg: String, until: Long) {
++        prefs.edit { putLong(KEY_REOPEN_PREFIX + pkg, until) }
++    }
++
++    fun endReopeningSuspension(pkg: String) = prefs.edit { remove(KEY_REOPEN_PREFIX + pkg) }
++
++    fun isReopeningSuspended(pkg: String): Boolean = prefs.contains(KEY_REOPEN_PREFIX + pkg)
++
++    /** Every package with a recorded reopening suspension, mapped to its deadline. */
++    fun reopeningSuspensions(): Map<String, Long> {
++        val result = mutableMapOf<String, Long>()
++        prefs.all.forEach { (key, value) ->
++            if (!key.startsWith(KEY_REOPEN_PREFIX)) return@forEach
++            val until = value as? Long ?: return@forEach
++            result[key.removePrefix(KEY_REOPEN_PREFIX)] = until
++        }
++        return result
++    }
++
++    companion object {
++        const val PREFS_NAME = "time_limit_suspensions"
++        private const val KEY_DAILY_PREFIX = "daily_"
++        private const val KEY_REOPEN_PREFIX = "reopen_"
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/data/WindowEnforcer.kt main/app/src/main/java/io/github/warleysr/dechainer/data/WindowEnforcer.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/data/WindowEnforcer.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/data/WindowEnforcer.kt	2026-09-21 03:27:52.370606023 +0000
+@@ -0,0 +1,278 @@
++package io.github.warleysr.dechainer.data
++
++import android.app.AlarmManager
++import android.app.PendingIntent
++import android.app.admin.DevicePolicyManager
++import android.content.ComponentName
++import android.content.Context
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.os.Build
++import androidx.core.content.edit
++import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
++import io.github.warleysr.dechainer.ScheduleReceiver
++import io.github.warleysr.dechainer.models.TimeWindow
++import io.github.warleysr.dechainer.security.SecurityManager
++import timber.log.Timber
++import java.time.ZonedDateTime
++
++/**
++ * Enforces per-app and per-group time windows at the operating-system level, by suspending the
++ * package outside its allowed hours.
++ *
++ * Upstream enforces windows purely by putting an explanation screen in front of the app when the
++ * accessibility service notices it in the foreground. That is a prompt, not a block: turn the
++ * accessibility service off, or find any launch path the service doesn't observe, and the app
++ * opens normally. Suspension is enforced by the OS itself, so it holds with the service stopped,
++ * with the app relaunched from a widget or notification, and across reboots.
++ *
++ * Deliberately built as a twin of [ScheduleEnforcer] rather than something new: [sync] recomputes
++ * the whole desired state from scratch and is idempotent, so it is safe to call from the boundary
++ * alarm, from boot, from clock changes, from the service's periodic tick and after every edit in
++ * the UI. The screen upstream shows is kept — it explains *why* the app won't open.
++ *
++ * Ownership works exactly as in [ScheduleEnforcer]: a package is only released when the windows
++ * are the reason it was suspended. Anything suspended manually, by a schedule, by impulse lock,
++ * by visual blocking or by a time limit is left alone.
++ */
++object WindowEnforcer {
++    private const val STATE_PREFS = "window_state"
++    private const val KEY_OWNED_APPS = "owned_apps"
++
++    const val ACTION_BOUNDARY = "io.github.warleysr.dechainer.WINDOW_BOUNDARY"
++
++    /** Re-check at least this often even when no boundary is near, to self-heal after clock jumps. */
++    private const val MAX_CACHE_MS = 5 * 60 * 1000L
++
++    private val lock = Any()
++
++    private fun state(context: Context) =
++        context.applicationContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
++
++    fun sync(context: Context) {
++        val ctx = context.applicationContext
++        synchronized(lock) {
++            try {
++                syncLocked(ctx)
++            } catch (e: Exception) {
++                Timber.e(e, "Window sync failed")
++            }
++        }
++    }
++
++    /** Packages this enforcer currently has suspended, so other features don't release them. */
++    fun ownedApps(context: Context): Set<String> =
++        state(context).getStringSet(KEY_OWNED_APPS, emptySet())?.toSet() ?: emptySet()
++
++    fun isHeldByWindow(context: Context, pkg: String): Boolean = pkg in ownedApps(context)
++
++    /**
++     * Whether [pkg] is outside its allowed hours *right now*, recomputed from the stored settings
++     * rather than read from the last sync — callers use this to decide whether releasing a
++     * suspension for some other reason would wrongly open the app outside its window.
++     */
++    fun isBlockedRightNow(context: Context, pkg: String): Boolean {
++        val ctx = context.applicationContext
++        return try {
++            val windows = effectiveWindows(ctx)[pkg] ?: return false
++            val now = ZonedDateTime.now()
++            val nowMinute = now.hour * 60 + now.minute
++            windows.none { it.contains(nowMinute) }
++        } catch (e: Exception) {
++            Timber.w(e, "Window check failed for %s", pkg)
++            false
++        }
++    }
++
++    /**
++     * Every package outside its allowed hours right now, mapped to when its next window opens
++     * (epoch millis). Computed in one pass so a screen listing many apps doesn't rebuild the
++     * group and window tables once per app.
++     */
++    fun closedWindows(context: Context): Map<String, Long?> {
++        val ctx = context.applicationContext
++        return try {
++            val now = ZonedDateTime.now()
++            val nowMinute = now.hour * 60 + now.minute
++            val startOfDay = now.toLocalDate().atStartOfDay(now.zone)
++            effectiveWindows(ctx)
++                .filterValues { list -> list.none { it.contains(nowMinute) } }
++                .mapValues { (_, list) ->
++                    list.map { w ->
++                        val opening = startOfDay.plusMinutes(w.startMinute.toLong())
++                        if (opening.isAfter(now)) opening else opening.plusDays(1)
++                    }.minOrNull()?.toInstant()?.toEpochMilli()
++                }
++        } catch (e: Exception) {
++            Timber.w(e, "Could not compute closed windows")
++            emptyMap()
++        }
++    }
++
++    /**
++     * Takes ownership of a package that is already suspended for another reason, so that when that
++     * other reason ends the app stays blocked until its window opens. The mirror of
++     * [ScheduleEnforcer.adopt].
++     */
++    fun adopt(context: Context, pkg: String) {
++        val prefs = state(context)
++        val owned = ownedApps(context)
++        if (pkg !in owned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned + pkg) }
++    }
++
++    /** Gives up ownership without un-suspending — used when the person suspends an app by hand. */
++    fun disown(context: Context, pkg: String) {
++        val prefs = state(context)
++        val owned = ownedApps(context)
++        if (pkg in owned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned - pkg) }
++    }
++
++    /**
++     * The windows that actually apply to each package right now, keyed by package.
++     *
++     * Matches the accessibility service's own resolution exactly (see `trackingConfigFor`): a
++     * group's windows and the app's own windows are intersected, and an empty result means "no
++     * restriction". That includes the case where a group's hours and an app's hours don't overlap
++     * at all — upstream treats that as unrestricted, and this must agree, or an app would be
++     * suspended with no screen ever explaining why.
++     */
++    private fun effectiveWindows(ctx: Context): Map<String, List<TimeWindow>> {
++        val windowPrefs = ctx.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
++        val groups = AppGroupRepository.getGroups(forceRefresh = true)
++
++        val candidates = mutableSetOf<String>()
++        windowPrefs.all.keys.forEach { candidates += it }
++        groups.filter { it.timeWindows.isNotEmpty() }.forEach { candidates += it.packageNames }
++
++        return candidates.mapNotNull { pkg ->
++            val appWindows = AppTimeWindows.decode(windowPrefs.getString(pkg, null))
++            val group = groups.firstOrNull { pkg in it.packageNames }
++            val effective =
++                if (group != null) TimeWindow.intersect(group.timeWindows, appWindows) else appWindows
++            if (effective.isEmpty()) null else pkg to effective
++        }.toMap()
++    }
++
++    private fun syncLocked(ctx: Context) {
++        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
++        val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
++        val now = ZonedDateTime.now()
++
++        val windows = effectiveWindows(ctx)
++
++        if (!dpm.isDeviceOwnerApp(ctx.packageName)) {
++            armNextBoundary(ctx, windows, now)
++            return
++        }
++
++        val nowMinute = now.hour * 60 + now.minute
++        val protectedPkgs = ScheduleEnforcer.protectedPackages(ctx)
++        val desired = windows
++            .filterValues { list -> list.none { it.contains(nowMinute) } }
++            .keys - protectedPkgs
++
++        applyApps(ctx, dpm, admin, desired)
++        armNextBoundary(ctx, windows, now)
++    }
++
++    private fun applyApps(
++        ctx: Context,
++        dpm: DevicePolicyManager,
++        admin: ComponentName,
++        desired: Set<String>
++    ) {
++        val prefs = state(ctx)
++        val initiallyOwned = ownedApps(ctx)
++        val owned = initiallyOwned.toMutableSet()
++
++        val toSuspend = desired.filter { pkg ->
++            try {
++                !dpm.isPackageSuspended(admin, pkg)
++            } catch (_: PackageManager.NameNotFoundException) {
++                false
++            }
++        }
++        if (toSuspend.isNotEmpty()) {
++            val failed = dpm.setPackagesSuspended(admin, toSuspend.toTypedArray(), true).toSet()
++            if (failed.isNotEmpty()) Timber.w("Window: could not suspend $failed")
++            owned += toSuspend - failed
++        }
++
++        // Release what the windows applied and no longer want — unless something else still
++        // needs it suspended. Same list of holders ScheduleEnforcer consults, plus schedules.
++        val toRelease = owned - desired
++        if (toRelease.isNotEmpty()) {
++            val timeLimitTracker = TimeLimitSuspensionTracker(ctx)
++            val heldElsewhere = SecurityManager.getActiveImpulseSuspension(ctx) +
++                VisualBlockingSuspensionTracker(ctx).activeSuspensions()
++                    .filterValues { it > System.currentTimeMillis() }.keys +
++                timeLimitTracker.dailyLimitSuspensions().keys +
++                timeLimitTracker.reopeningSuspensions().keys +
++                toRelease.filter { ScheduleEnforcer.isHeldBySchedule(ctx, it) }
++            val releasable = (toRelease - heldElsewhere).filter { pkg ->
++                try {
++                    ctx.packageManager.getPackageInfo(pkg, 0); true
++                } catch (_: PackageManager.NameNotFoundException) {
++                    false
++                }
++            }
++            if (releasable.isNotEmpty()) dpm.setPackagesSuspended(admin, releasable.toTypedArray(), false)
++            // A package still held by a schedule stops being ours: that schedule now owns the
++            // suspension, and will hand it back via adopt() if the window is still shut when it ends.
++            owned -= toRelease
++        }
++
++        if (owned != initiallyOwned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned) }
++        if (toSuspend.isNotEmpty() || toRelease.isNotEmpty()) AppRepository.invalidateCache()
++    }
++
++    /**
++     * Wakes at the next moment any window opens or closes. Without this the block would only be
++     * applied and lifted when something else happened to call [sync], which is exactly the
++     * dependence on the accessibility service this class exists to remove.
++     */
++    private fun armNextBoundary(
++        ctx: Context,
++        windows: Map<String, List<TimeWindow>>,
++        now: ZonedDateTime
++    ): Long? {
++        val minutes = windows.values.flatten()
++            .flatMap { listOf(it.startMinute, it.endMinute) }
++            .toSet()
++        if (minutes.isEmpty()) {
++            cancelAlarm(ctx)
++            return null
++        }
++
++        val startOfDay = now.toLocalDate().atStartOfDay(now.zone)
++        val next = minutes.map { minute ->
++            val candidate = startOfDay.plusMinutes(minute.toLong())
++            if (candidate.isAfter(now)) candidate else candidate.plusDays(1)
++        }.minOrNull() ?: return null
++
++        val triggerAt = next.toInstant().toEpochMilli() + 1000L
++        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
++        val pi = pendingIntent(ctx)
++        try {
++            val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
++            if (canExact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++        } catch (e: SecurityException) {
++            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
++        }
++        return triggerAt
++    }
++
++    // Request code 1 keeps this distinct from ScheduleEnforcer's alarm, which uses 0.
++    private fun pendingIntent(ctx: Context): PendingIntent = PendingIntent.getBroadcast(
++        ctx,
++        1,
++        Intent(ctx, ScheduleReceiver::class.java).setAction(ACTION_BOUNDARY),
++        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
++    )
++
++    private fun cancelAlarm(ctx: Context) {
++        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
++        am.cancel(pendingIntent(ctx))
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt main/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/models/BlockSchedule.kt	2026-09-21 03:24:21.897965276 +0000
+@@ -0,0 +1,145 @@
++package io.github.warleysr.dechainer.models
++
++import org.json.JSONArray
++import org.json.JSONObject
++import java.time.DayOfWeek
++import java.time.LocalDate
++import java.time.LocalDateTime
++import java.time.LocalTime
++import java.time.ZoneId
++import java.time.ZonedDateTime
++
++/**
++ * A recurring block window. While the window is open, [packages] are suspended, the Android user
++ * [restrictions] ("services") are applied and [websites] are added to the browser URL blocklist.
++ * When it closes, everything the schedule applied is released again, and the cycle repeats on
++ * every selected day until the schedule is disabled or deleted.
++ *
++ * Times are minutes after midnight. When [endMinute] <= [startMinute] the window crosses midnight
++ * (e.g. 22:00 -> 06:00) and belongs to the day it *starts* on; equal values mean a full 24h window.
++ */
++data class BlockSchedule(
++    val id: String,
++    val name: String,
++    val enabled: Boolean = true,
++    val days: Set<DayOfWeek> = DayOfWeek.entries.toSet(),
++    val startMinute: Int = 22 * 60,
++    val endMinute: Int = 6 * 60,
++    val packages: Set<String> = emptySet(),
++    val restrictions: Set<String> = emptySet(),
++    val websites: Set<String> = emptySet(),
++    /** While the window is open the schedule can't be edited, disabled or deleted — not even with the recovery code. */
++    val lockWhileActive: Boolean = false
++) {
++    val crossesMidnight: Boolean get() = endMinute <= startMinute
++
++    /** Length of one window in minutes (1440 when start == end). */
++    val windowMinutes: Int
++        get() = if (endMinute > startMinute) endMinute - startMinute else endMinute + 1440 - startMinute
++
++    fun isActiveAt(now: LocalDateTime): Boolean {
++        if (!enabled || days.isEmpty()) return false
++        val minute = now.hour * 60 + now.minute
++        val today = now.dayOfWeek
++        val yesterday = today.minus(1)
++
++        return if (!crossesMidnight) {
++            today in days && minute >= startMinute && minute < endMinute
++        } else {
++            (today in days && minute >= startMinute) || (yesterday in days && minute < endMinute)
++        }
++    }
++
++    /** Wall-clock end of the window that is open at [now], or null if it isn't open. */
++    fun currentWindowEnd(now: LocalDateTime): LocalDateTime? {
++        if (!isActiveAt(now)) return null
++        val minute = now.hour * 60 + now.minute
++        val endTime = LocalTime.of(endMinute / 60, endMinute % 60)
++        val endDate = if (crossesMidnight && minute >= startMinute) now.toLocalDate().plusDays(1)
++        else now.toLocalDate()
++        return LocalDateTime.of(endDate, endTime)
++    }
++
++    /** Every start/end instant of this schedule from [from] onward, over the next [daysAhead] days. */
++    fun boundariesAfter(from: ZonedDateTime, daysAhead: Int = 8): List<ZonedDateTime> {
++        if (!enabled || days.isEmpty()) return emptyList()
++        val zone: ZoneId = from.zone
++        val result = mutableListOf<ZonedDateTime>()
++        // Start one day back so the end of a window that began yesterday is included.
++        var date: LocalDate = from.toLocalDate().minusDays(1)
++        repeat(daysAhead + 1) {
++            if (date.dayOfWeek in days) {
++                val start = LocalDateTime.of(date, LocalTime.of(startMinute / 60, startMinute % 60)).atZone(zone)
++                val endDate = if (crossesMidnight) date.plusDays(1) else date
++                val end = LocalDateTime.of(endDate, LocalTime.of(endMinute / 60, endMinute % 60)).atZone(zone)
++                if (start.isAfter(from)) result.add(start)
++                if (end.isAfter(from)) result.add(end)
++            }
++            date = date.plusDays(1)
++        }
++        return result
++    }
++
++    /** Next time this schedule's window opens after [from], or null if it never will. */
++    fun nextStartAfter(from: ZonedDateTime): ZonedDateTime? {
++        if (!enabled || days.isEmpty()) return null
++        var date = from.toLocalDate()
++        repeat(8) {
++            if (date.dayOfWeek in days) {
++                val start = LocalDateTime.of(date, LocalTime.of(startMinute / 60, startMinute % 60))
++                    .atZone(from.zone)
++                if (start.isAfter(from)) return start
++            }
++            date = date.plusDays(1)
++        }
++        return null
++    }
++
++    fun toJson(): JSONObject = JSONObject().apply {
++        put("id", id)
++        put("name", name)
++        put("enabled", enabled)
++        put("days", JSONArray(days.map { it.value }))
++        put("start", startMinute)
++        put("end", endMinute)
++        put("packages", JSONArray(packages.toList()))
++        put("restrictions", JSONArray(restrictions.toList()))
++        put("websites", JSONArray(websites.toList()))
++        put("lockWhileActive", lockWhileActive)
++    }
++
++    companion object {
++        fun fromJson(obj: JSONObject): BlockSchedule = BlockSchedule(
++            id = obj.getString("id"),
++            name = obj.optString("name"),
++            enabled = obj.optBoolean("enabled", true),
++            days = obj.optJSONArray("days").toIntList()
++                .mapNotNull { runCatching { DayOfWeek.of(it) }.getOrNull() }.toSet(),
++            startMinute = obj.optInt("start", 22 * 60).coerceIn(0, 1439),
++            endMinute = obj.optInt("end", 6 * 60).coerceIn(0, 1439),
++            packages = obj.optJSONArray("packages").toStringList().toSet(),
++            restrictions = obj.optJSONArray("restrictions").toStringList().toSet(),
++            websites = obj.optJSONArray("websites").toStringList().toSet(),
++            lockWhileActive = obj.optBoolean("lockWhileActive", false)
++        )
++
++        private fun JSONArray?.toStringList(): List<String> =
++            if (this == null) emptyList() else (0 until length()).map { getString(it) }
++
++        private fun JSONArray?.toIntList(): List<Int> =
++            if (this == null) emptyList() else (0 until length()).map { getInt(it) }
++
++        /** Normalises what the user typed into a bare host usable in Chrome's URLBlocklist. */
++        fun normaliseWebsite(input: String): String? {
++            val host = input.trim().lowercase()
++                .removePrefix("https://").removePrefix("http://")
++                .removePrefix("www.")
++                .substringBefore('/')
++                .substringBefore('?')
++                .trim()
++            return host.takeIf { it.isNotEmpty() && it.contains('.') && !it.contains(' ') }
++        }
++
++        fun formatMinute(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/screens/setup/SetupDeviceOwnerPrivileges.kt main/app/src/main/java/io/github/warleysr/dechainer/screens/setup/SetupDeviceOwnerPrivileges.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/screens/setup/SetupDeviceOwnerPrivileges.kt	2026-09-21 03:23:56.719646581 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/screens/setup/SetupDeviceOwnerPrivileges.kt	2026-09-21 03:24:21.901717896 +0000
+@@ -6,6 +6,8 @@
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
++import android.widget.Toast
+ import androidx.compose.ui.res.stringResource
+ import androidx.lifecycle.viewmodel.compose.viewModel
+ import io.github.warleysr.dechainer.DechainerApplication
+@@ -21,6 +23,8 @@
+     var shizukuInstalled by remember { mutableStateOf(viewModel.isShizukuInstalled()) }
+     var shizukuRunning by remember { mutableStateOf(Shizuku.pingBinder()) }
+     val recoveryGate = rememberRecoveryGate()
++    val context = LocalContext.current
++    val lockedMsg = stringResource(R.string.schedule_locked_blocks_removal)
+ 
+     LaunchedEffect(Unit) {
+         while (true) {
+@@ -42,7 +46,10 @@
+         when {
+             viewModel.isDeviceOwner() -> DeviceOwnerRemoveContent(
+                 onRemoveAction = {
+-                    recoveryGate.run { viewModel.processDeviceOwnerPrivileges(remove = true) }
++                    recoveryGate.run {
++                        if (!viewModel.processDeviceOwnerPrivileges(remove = true))
++                            Toast.makeText(context, lockedMsg, Toast.LENGTH_LONG).show()
++                    }
+                 }
+             )
+             !shizukuInstalled -> ShizukuNotInstalledCard(viewModel)
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/ConfigTab.kt main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/ConfigTab.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/ConfigTab.kt	2026-09-21 03:23:56.719795194 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/ConfigTab.kt	2026-09-21 03:29:18.369469020 +0000
+@@ -16,6 +16,8 @@
+ import androidx.compose.material.icons.outlined.LockClock
+ import androidx.compose.material.icons.outlined.NoAdultContent
+ import androidx.compose.material.icons.outlined.NotificationsActive
++import androidx.compose.material.icons.outlined.Info
++import androidx.compose.material.icons.outlined.Schedule
+ import androidx.compose.material.icons.outlined.VpnKey
+ import androidx.compose.material.icons.outlined.Web
+ import androidx.compose.material3.*
+@@ -235,6 +237,34 @@
+                 )
+                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+             }
++            item {
++                ListItem(
++                    headlineContent = { Text(stringResource(R.string.status)) },
++                    supportingContent = { Text(stringResource(R.string.status_desc)) },
++                    leadingContent = { Icon(Icons.Outlined.Info, "") },
++                    // Deliberately NOT gated on Device Owner: when privileges are missing, this
++                    // screen is the one that says so and links straight to the fix.
++                    modifier = Modifier.clickable { navViewModel.navigateTo("status") }
++                )
++                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
++            }
++            item {
++                ListItem(
++                    headlineContent = { Text(stringResource(R.string.schedules)) },
++                    supportingContent = { Text(stringResource(R.string.schedules_desc)) },
++                    leadingContent = { Icon(Icons.Outlined.Schedule, "") },
++                    modifier = Modifier.clickable {
++                        if (!viewModel.isDeviceOwner()) {
++                            scope.launch {
++                                snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg)
++                            }
++                            return@clickable
++                        }
++                        navViewModel.navigateTo("schedules")
++                    }
++                )
++                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
++            }
+             item {
+                 ListItem(
+                     headlineContent = { Text(stringResource(R.string.impulse_lock)) },
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/SchedulesScreen.kt	2026-09-21 03:24:21.905407250 +0000
+@@ -0,0 +1,857 @@
++package io.github.warleysr.dechainer.screens.tabs
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.clickable
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.CircleShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.filled.Add
++import androidx.compose.material.icons.filled.Search
++import androidx.compose.material.icons.outlined.Apps
++import androidx.compose.material.icons.outlined.Delete
++import androidx.compose.material.icons.outlined.Lock
++import androidx.compose.material.icons.outlined.Public
++import androidx.compose.material.icons.outlined.Schedule
++import androidx.compose.material.icons.outlined.SettingsSuggest
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import androidx.lifecycle.viewmodel.compose.viewModel
++import io.github.warleysr.dechainer.DechainerAccessibilityService
++import io.github.warleysr.dechainer.R
++import io.github.warleysr.dechainer.models.BlockSchedule
++import io.github.warleysr.dechainer.screens.common.AppPickerDialog
++import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
++import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
++import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
++import io.github.warleysr.dechainer.viewmodels.SchedulesViewModel
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.launch
++import java.time.DayOfWeek
++import java.time.ZonedDateTime
++import java.time.format.DateTimeFormatter
++import java.time.format.FormatStyle
++import java.time.format.TextStyle
++import java.util.Locale
++import kotlin.time.Duration.Companion.seconds
++
++private val SOCIAL_MEDIA_SITES = listOf(
++    "instagram.com", "facebook.com", "tiktok.com", "x.com", "twitter.com",
++    "reddit.com", "youtube.com", "snapchat.com", "threads.net", "pinterest.com"
++)
++
++private val WEEKDAYS = setOf(
++    DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY
++)
++private val WEEKENDS = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
++
++// ---------------------------------------------------------------------------------------------
++// List
++// ---------------------------------------------------------------------------------------------
++
++@Composable
++fun SchedulesScreen(
++    viewModel: SchedulesViewModel = viewModel(),
++    navViewModel: NavigationViewModel = viewModel()
++) {
++    val recoveryGate = rememberRecoveryGate()
++    val snackbarHostState = remember { SnackbarHostState() }
++    val scope = rememberCoroutineScope()
++    val lockedMsg = stringResource(R.string.schedule_locked_message)
++    val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
++    val defaultName = stringResource(R.string.schedule_default_name)
++    val antiTamperLabel = stringResource(R.string.schedule_anti_tamper)
++
++    var now by remember { mutableStateOf(ZonedDateTime.now()) }
++    LaunchedEffect(Unit) {
++        while (true) {
++            now = ZonedDateTime.now()
++            viewModel.refresh()
++            delay(15.seconds)
++        }
++    }
++
++    fun showLocked() = scope.launch { snackbarHostState.showSnackbar(lockedMsg) }
++
++    Box(modifier = Modifier.fillMaxSize()) {
++        LazyColumn(modifier = Modifier.fillMaxSize()) {
++            item {
++                Text(
++                    stringResource(R.string.schedules_explanation),
++                    style = MaterialTheme.typography.bodyMedium,
++                    modifier = Modifier.padding(16.dp)
++                )
++                if (!DechainerAccessibilityService.isRunning) {
++                    Text(
++                        stringResource(R.string.schedules_requires_accessibility),
++                        style = MaterialTheme.typography.bodySmall,
++                        color = MaterialTheme.colorScheme.error,
++                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
++                    )
++                }
++                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
++            }
++
++            item {
++                ListItem(
++                    headlineContent = { Text(stringResource(R.string.schedule_anti_tamper)) },
++                    supportingContent = { Text(stringResource(R.string.schedule_anti_tamper_desc)) },
++                    leadingContent = { Icon(Icons.Outlined.Lock, null) },
++                    trailingContent = {
++                        Switch(
++                            checked = viewModel.antiTamper,
++                            onCheckedChange = { checked ->
++                                // Turning protection on is always allowed; turning it off needs the code.
++                                if (checked) viewModel.updateAntiTamper(true)
++                                else if (viewModel.isAnyLocked()) showLocked()
++                                else recoveryGate.run {
++                                    if (viewModel.updateAntiTamper(false) == SchedulesViewModel.SaveResult.LOCKED)
++                                        showLocked()
++                                }
++                            }
++                        )
++                    }
++                )
++                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
++            }
++
++            if (viewModel.schedules.isEmpty()) {
++                item {
++                    Text(
++                        stringResource(R.string.schedules_empty),
++                        style = MaterialTheme.typography.bodyMedium,
++                        color = MaterialTheme.colorScheme.onSurfaceVariant,
++                        modifier = Modifier.padding(24.dp)
++                    )
++                }
++            }
++
++            items(viewModel.schedules, key = { it.id }) { schedule ->
++                ScheduleCard(
++                    schedule = schedule,
++                    now = now,
++                    onClick = {
++                        if (viewModel.isLocked(schedule)) showLocked()
++                        else recoveryGate.run {
++                            viewModel.startEditing(schedule)
++                            navViewModel.navigateTo("schedule_editor")
++                        }
++                    },
++                    onEnabledChange = { enabled ->
++                        when {
++                            enabled -> {
++                                val result = viewModel.setEnabled(schedule, true)
++                                if (result == SchedulesViewModel.SaveResult.NO_FREE_TIME) {
++                                    scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
++                                }
++                            }
++                            viewModel.isLocked(schedule) -> showLocked()
++                            else -> recoveryGate.run {
++                                if (viewModel.setEnabled(schedule, false) == SchedulesViewModel.SaveResult.LOCKED)
++                                    showLocked()
++                            }
++                        }
++                    }
++                )
++            }
++
++            item { Spacer(Modifier.height(96.dp)) }
++        }
++
++        ExtendedFloatingActionButton(
++            onClick = {
++                // Creating a schedule only adds blocking, so it never needs the recovery code.
++                viewModel.startNew(defaultName)
++                navViewModel.navigateTo("schedule_editor")
++            },
++            icon = { Icon(Icons.Filled.Add, null) },
++            text = { Text(stringResource(R.string.schedule_new)) },
++            modifier = Modifier
++                .align(Alignment.BottomEnd)
++                .padding(16.dp)
++        )
++
++        SnackbarHost(
++            hostState = snackbarHostState,
++            modifier = Modifier
++                .align(Alignment.BottomCenter)
++                .padding(bottom = 80.dp)
++        )
++    }
++
++    RecoveryGateDialog(recoveryGate)
++}
++
++@Composable
++private fun ScheduleCard(
++    schedule: BlockSchedule,
++    now: ZonedDateTime,
++    onClick: () -> Unit,
++    onEnabledChange: (Boolean) -> Unit
++) {
++    val nowLocal = now.toLocalDateTime()
++    val active = schedule.isActiveAt(nowLocal)
++    val timeFormatter = remember { DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT) }
++
++    val status = when {
++        !schedule.enabled -> stringResource(R.string.schedule_status_disabled)
++        active -> stringResource(
++            R.string.schedule_status_active,
++            schedule.currentWindowEnd(nowLocal)?.format(timeFormatter) ?: ""
++        )
++        else -> schedule.nextStartAfter(now)?.let { next ->
++            val day = next.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
++            stringResource(R.string.schedule_status_next, "$day ${next.format(timeFormatter)}")
++        } ?: stringResource(R.string.schedule_status_never)
++    }
++
++    ElevatedCard(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(horizontal = 16.dp, vertical = 6.dp)
++            .clickable(onClick = onClick)
++    ) {
++        Row(
++            modifier = Modifier.padding(16.dp),
++            verticalAlignment = Alignment.CenterVertically
++        ) {
++            Column(modifier = Modifier.weight(1f)) {
++                Row(verticalAlignment = Alignment.CenterVertically) {
++                    Text(
++                        schedule.name.ifBlank { stringResource(R.string.schedule_default_name) },
++                        style = MaterialTheme.typography.titleMedium,
++                        fontWeight = FontWeight.Bold,
++                        maxLines = 1,
++                        overflow = TextOverflow.Ellipsis,
++                        modifier = Modifier.weight(1f, fill = false)
++                    )
++                    if (schedule.lockWhileActive) {
++                        Icon(
++                            Icons.Outlined.Lock, null,
++                            modifier = Modifier
++                                .padding(start = 6.dp)
++                                .size(16.dp)
++                        )
++                    }
++                }
++                Text(
++                    "${BlockSchedule.formatMinute(schedule.startMinute)} – " +
++                        "${BlockSchedule.formatMinute(schedule.endMinute)} · ${daysLabel(schedule.days)}",
++                    style = MaterialTheme.typography.bodyMedium
++                )
++                Text(
++                    status,
++                    style = MaterialTheme.typography.bodyMedium,
++                    fontWeight = if (active && schedule.enabled) FontWeight.Bold else FontWeight.Normal,
++                    color = if (active && schedule.enabled) MaterialTheme.colorScheme.primary
++                    else MaterialTheme.colorScheme.onSurfaceVariant
++                )
++                Text(
++                    stringResource(
++                        R.string.schedule_summary,
++                        schedule.packages.size, schedule.restrictions.size, schedule.websites.size
++                    ),
++                    style = MaterialTheme.typography.bodySmall,
++                    color = MaterialTheme.colorScheme.onSurfaceVariant
++                )
++            }
++            Switch(checked = schedule.enabled, onCheckedChange = onEnabledChange)
++        }
++    }
++}
++
++@Composable
++private fun daysLabel(days: Set<DayOfWeek>): String = when (days) {
++    DayOfWeek.entries.toSet() -> stringResource(R.string.schedule_every_day)
++    WEEKDAYS -> stringResource(R.string.schedule_weekdays)
++    WEEKENDS -> stringResource(R.string.schedule_weekends)
++    else -> DayOfWeek.entries.filter { it in days }
++        .joinToString(" ") { it.getDisplayName(TextStyle.SHORT, Locale.getDefault()) }
++}
++
++// ---------------------------------------------------------------------------------------------
++// Editor
++// ---------------------------------------------------------------------------------------------
++
++@Composable
++fun ScheduleEditorScreen(
++    viewModel: SchedulesViewModel = viewModel(),
++    navViewModel: NavigationViewModel = viewModel()
++) {
++    // saveDraft()/deleteDraft()/closeEditor() all clear the draft as part of succeeding, which
++    // makes the "no draft, back out" effect below fire a SECOND goBack() on the next frame and
++    // pop the screen underneath too. This flag means "we are already leaving on purpose".
++    var leaving by remember { mutableStateOf(false) }
++    val draft = viewModel.draft
++    if (draft == null) {
++        LaunchedEffect(Unit) { if (!leaving) navViewModel.goBack() }
++        return
++    }
++
++    val snackbarHostState = remember { SnackbarHostState() }
++    val scope = rememberCoroutineScope()
++    val lockedMsg = stringResource(R.string.schedule_locked_message)
++    val noDaysMsg = stringResource(R.string.schedule_error_no_days)
++    val nothingMsg = stringResource(R.string.schedule_error_nothing)
++    val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
++    var showLongLockConfirm by remember { mutableStateOf(false) }
++
++    var showStartPicker by remember { mutableStateOf(false) }
++    var showEndPicker by remember { mutableStateOf(false) }
++    var showAppPicker by remember { mutableStateOf(false) }
++    var showServicePicker by remember { mutableStateOf(false) }
++    var showDeleteConfirm by remember { mutableStateOf(false) }
++    var websitesText by remember(draft.id) { mutableStateOf(draft.websites.sorted().joinToString("\n")) }
++
++    fun handleResult(result: SchedulesViewModel.SaveResult) {
++        when (result) {
++            SchedulesViewModel.SaveResult.OK -> {
++                leaving = true
++                navViewModel.goBack()
++            }
++            SchedulesViewModel.SaveResult.LOCKED -> scope.launch { snackbarHostState.showSnackbar(lockedMsg) }
++            SchedulesViewModel.SaveResult.NO_DAYS -> scope.launch { snackbarHostState.showSnackbar(noDaysMsg) }
++            SchedulesViewModel.SaveResult.NOTHING_TO_BLOCK ->
++                scope.launch { snackbarHostState.showSnackbar(nothingMsg) }
++            SchedulesViewModel.SaveResult.NO_FREE_TIME ->
++                scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
++            SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
++        }
++    }
++
++    Box(modifier = Modifier.fillMaxSize()) {
++        Column(modifier = Modifier.fillMaxSize()) {
++            LazyColumn(modifier = Modifier.weight(1f)) {
++                item {
++                    OutlinedTextField(
++                        value = draft.name,
++                        onValueChange = { value -> viewModel.updateDraft { it.copy(name = value.take(40)) } },
++                        label = { Text(stringResource(R.string.schedule_name)) },
++                        singleLine = true,
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(16.dp)
++                    )
++                }
++
++                // --- Days ---
++                item {
++                    EditorSectionTitle(stringResource(R.string.schedule_days))
++                    DaySelector(
++                        selected = draft.days,
++                        onToggle = { day ->
++                            viewModel.updateDraft {
++                                it.copy(days = if (day in it.days) it.days - day else it.days + day)
++                            }
++                        }
++                    )
++                    Row(modifier = Modifier.padding(horizontal = 8.dp)) {
++                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = DayOfWeek.entries.toSet()) } }) {
++                            Text(stringResource(R.string.schedule_every_day))
++                        }
++                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKDAYS) } }) {
++                            Text(stringResource(R.string.schedule_weekdays))
++                        }
++                        TextButton(onClick = { viewModel.updateDraft { it.copy(days = WEEKENDS) } }) {
++                            Text(stringResource(R.string.schedule_weekends))
++                        }
++                    }
++                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++                }
++
++                // --- Time ---
++                item {
++                    EditorSectionTitle(stringResource(R.string.schedule_time))
++                    Row(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(horizontal = 16.dp),
++                        horizontalArrangement = Arrangement.spacedBy(12.dp)
++                    ) {
++                        TimeBox(
++                            label = stringResource(R.string.schedule_starts),
++                            minute = draft.startMinute,
++                            onClick = { showStartPicker = true },
++                            modifier = Modifier.weight(1f)
++                        )
++                        TimeBox(
++                            label = stringResource(R.string.schedule_ends),
++                            minute = draft.endMinute,
++                            onClick = { showEndPicker = true },
++                            modifier = Modifier.weight(1f)
++                        )
++                    }
++                    val timeNote = when {
++                        draft.startMinute == draft.endMinute -> stringResource(R.string.schedule_full_day)
++                        draft.crossesMidnight -> stringResource(R.string.schedule_crosses_midnight)
++                        else -> null
++                    }
++                    if (timeNote != null) {
++                        Text(
++                            timeNote,
++                            style = MaterialTheme.typography.bodySmall,
++                            color = MaterialTheme.colorScheme.onSurfaceVariant,
++                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
++                        )
++                    }
++                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++                }
++
++                // --- Apps ---
++                item {
++                    ListItem(
++                        headlineContent = { Text(stringResource(R.string.schedule_apps)) },
++                        supportingContent = {
++                            val count = draft.packages.size
++                            Text(
++                                if (count == 0) stringResource(R.string.no_apps)
++                                else draft.packages.map { viewModel.appName(it) }.sorted().joinToString(", "),
++                                maxLines = 3,
++                                overflow = TextOverflow.Ellipsis
++                            )
++                        },
++                        leadingContent = { Icon(Icons.Outlined.Apps, null) },
++                        trailingContent = {
++                            Button(onClick = { showAppPicker = true }) {
++                                Text(stringResource(R.string.select_apps))
++                            }
++                        }
++                    )
++                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++                }
++
++                // --- Services ---
++                item {
++                    val context = LocalContext.current
++                    ListItem(
++                        headlineContent = { Text(stringResource(R.string.schedule_services)) },
++                        supportingContent = {
++                            Column {
++                                Text(stringResource(R.string.schedule_services_desc))
++                                if (draft.restrictions.isNotEmpty()) {
++                                    Text(
++                                        draft.restrictions.map { restrictionLabel(context, viewModel, it) }
++                                            .sorted().joinToString(", "),
++                                        maxLines = 3,
++                                        overflow = TextOverflow.Ellipsis,
++                                        fontWeight = FontWeight.Medium
++                                    )
++                                }
++                            }
++                        },
++                        leadingContent = { Icon(Icons.Outlined.SettingsSuggest, null) },
++                        trailingContent = {
++                            Button(onClick = { showServicePicker = true }) {
++                                Text(stringResource(R.string.schedule_select_services))
++                            }
++                        }
++                    )
++                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++                }
++
++                // --- Websites ---
++                item {
++                    Row(
++                        verticalAlignment = Alignment.CenterVertically,
++                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
++                    ) {
++                        Icon(Icons.Outlined.Public, null)
++                        Text(
++                            stringResource(R.string.schedule_websites),
++                            style = MaterialTheme.typography.titleMedium,
++                            modifier = Modifier.padding(start = 16.dp)
++                        )
++                    }
++                    Text(
++                        stringResource(R.string.schedule_websites_desc),
++                        style = MaterialTheme.typography.bodySmall,
++                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
++                    )
++                    OutlinedTextField(
++                        value = websitesText,
++                        onValueChange = { websitesText = it },
++                        minLines = 3,
++                        maxLines = 8,
++                        placeholder = { Text("instagram.com\ntiktok.com") },
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .padding(horizontal = 16.dp)
++                    )
++                    AssistChip(
++                        onClick = {
++                            val merged = (parseWebsites(websitesText) + SOCIAL_MEDIA_SITES).sorted()
++                            websitesText = merged.joinToString("\n")
++                        },
++                        label = { Text(stringResource(R.string.schedule_websites_add_social)) },
++                        leadingIcon = { Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp)) },
++                        modifier = Modifier.padding(horizontal = 16.dp)
++                    )
++                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++                }
++
++                // --- Protection ---
++                item {
++                    ListItem(
++                        headlineContent = { Text(stringResource(R.string.schedule_lock_while_active)) },
++                        supportingContent = { Text(stringResource(R.string.schedule_lock_while_active_desc)) },
++                        leadingContent = { Icon(Icons.Outlined.Lock, null) },
++                        trailingContent = {
++                            Switch(
++                                checked = draft.lockWhileActive,
++                                onCheckedChange = { checked ->
++                                    viewModel.updateDraft { it.copy(lockWhileActive = checked) }
++                                }
++                            )
++                        }
++                    )
++                }
++
++                if (!viewModel.isNewDraft) {
++                    item {
++                        TextButton(
++                            onClick = { showDeleteConfirm = true },
++                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
++                            modifier = Modifier.padding(horizontal = 8.dp)
++                        ) {
++                            Icon(Icons.Outlined.Delete, null)
++                            Spacer(Modifier.width(8.dp))
++                            Text(stringResource(R.string.schedule_delete))
++                        }
++                    }
++                }
++
++                item { Spacer(Modifier.height(16.dp)) }
++            }
++
++            Row(
++                modifier = Modifier
++                    .fillMaxWidth()
++                    .padding(16.dp),
++                horizontalArrangement = Arrangement.spacedBy(12.dp)
++            ) {
++                OutlinedButton(
++                    onClick = {
++                        leaving = true
++                        viewModel.closeEditor()
++                        navViewModel.goBack()
++                    },
++                    modifier = Modifier.weight(1f)
++                ) { Text(stringResource(R.string.cancel)) }
++                Button(
++                    onClick = {
++                        viewModel.updateDraft { it.copy(websites = parseWebsites(websitesText)) }
++                        handleResult(viewModel.saveDraft())
++                    },
++                    modifier = Modifier.weight(1f)
++                ) { Text(stringResource(R.string.schedule_save)) }
++            }
++        }
++
++        SnackbarHost(
++            hostState = snackbarHostState,
++            modifier = Modifier
++                .align(Alignment.BottomCenter)
++                .padding(bottom = 80.dp)
++        )
++    }
++
++    if (showStartPicker) {
++        ScheduleTimePickerDialog(
++            initialMinute = draft.startMinute,
++            onConfirm = { minute ->
++                viewModel.updateDraft { it.copy(startMinute = minute) }
++                showStartPicker = false
++            },
++            onDismiss = { showStartPicker = false }
++        )
++    }
++
++    if (showEndPicker) {
++        ScheduleTimePickerDialog(
++            initialMinute = draft.endMinute,
++            onConfirm = { minute ->
++                viewModel.updateDraft { it.copy(endMinute = minute) }
++                showEndPicker = false
++            },
++            onDismiss = { showEndPicker = false }
++        )
++    }
++
++    if (showAppPicker) {
++        AppPickerDialog(
++            apps = viewModel.apps.filter { it.packageName !in viewModel.protectedPackages },
++            isLoading = viewModel.isLoadingApps,
++            isSelected = { draft.packages.contains(it) },
++            onToggle = { viewModel.toggleDraftPackage(it) },
++            onDismiss = { showAppPicker = false }
++        )
++    }
++
++    if (showServicePicker) {
++        ServicePickerDialog(
++            viewModel = viewModel,
++            selected = draft.restrictions,
++            onToggle = { viewModel.toggleDraftRestriction(it) },
++            onDismiss = { showServicePicker = false }
++        )
++    }
++
++    if (showLongLockConfirm) {
++        LongLockConfirmDialog(
++            windowMinutes = draft.windowMinutes,
++            onConfirm = {
++                showLongLockConfirm = false
++                handleResult(viewModel.saveDraft(confirmedLongLock = true))
++            },
++            onDismiss = { showLongLockConfirm = false }
++        )
++    }
++
++    if (showDeleteConfirm) {
++        AlertDialog(
++            onDismissRequest = { showDeleteConfirm = false },
++            title = { Text(stringResource(R.string.schedule_delete)) },
++            text = { Text(stringResource(R.string.schedule_delete_confirm)) },
++            confirmButton = {
++                TextButton(onClick = {
++                    showDeleteConfirm = false
++                    handleResult(viewModel.deleteDraft())
++                }) { Text(stringResource(R.string.confirm)) }
++            },
++            dismissButton = {
++                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
++            }
++        )
++    }
++}
++
++@Composable
++private fun LongLockConfirmDialog(windowMinutes: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
++    var understood by remember { mutableStateOf(false) }
++    val hours = windowMinutes / 60
++    val minutes = windowMinutes % 60
++    val duration = when {
++        minutes == 0 -> stringResource(R.string.time_hours, hours)
++        else -> stringResource(R.string.time_hours_minutes, hours, minutes)
++    }
++    AlertDialog(
++        onDismissRequest = onDismiss,
++        icon = { Icon(Icons.Outlined.Lock, null) },
++        title = { Text(stringResource(R.string.schedule_long_lock_title, duration)) },
++        text = {
++            Column {
++                Text(stringResource(R.string.schedule_long_lock_message))
++                Row(
++                    verticalAlignment = Alignment.CenterVertically,
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(top = 12.dp)
++                        .clickable { understood = !understood }
++                ) {
++                    Checkbox(checked = understood, onCheckedChange = { understood = it })
++                    Text(stringResource(R.string.schedule_long_lock_checkbox), modifier = Modifier.padding(start = 8.dp))
++                }
++            }
++        },
++        confirmButton = {
++            TextButton(enabled = understood, onClick = onConfirm) { Text(stringResource(R.string.confirm)) }
++        },
++        dismissButton = {
++            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
++        }
++    )
++}
++
++private fun parseWebsites(text: String): Set<String> = text
++    .split('\n', ',', ' ', ';')
++    .mapNotNull { BlockSchedule.normaliseWebsite(it) }
++    .toSet()
++
++private fun restrictionLabel(
++    context: android.content.Context,
++    viewModel: SchedulesViewModel,
++    key: String
++): String {
++    val resId = viewModel.resourceNameFor(key)
++        ?.let { context.resources.getIdentifier(it, "string", context.packageName) }
++        ?.takeIf { it != 0 }
++    return resId?.let { context.getString(it) } ?: key
++}
++
++@Composable
++private fun EditorSectionTitle(title: String) {
++    Text(
++        title,
++        style = MaterialTheme.typography.titleMedium,
++        fontWeight = FontWeight.Bold,
++        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
++    )
++}
++
++@Composable
++private fun DaySelector(selected: Set<DayOfWeek>, onToggle: (DayOfWeek) -> Unit) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(horizontal = 16.dp),
++        horizontalArrangement = Arrangement.spacedBy(6.dp)
++    ) {
++        DayOfWeek.entries.forEach { day ->
++            val isOn = day in selected
++            Box(
++                contentAlignment = Alignment.Center,
++                modifier = Modifier
++                    .weight(1f)
++                    .aspectRatio(1f)
++                    .clip(CircleShape)
++                    .background(
++                        if (isOn) MaterialTheme.colorScheme.primary
++                        else MaterialTheme.colorScheme.surfaceVariant
++                    )
++                    .clickable { onToggle(day) }
++            ) {
++                Text(
++                    day.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
++                    fontWeight = FontWeight.Bold,
++                    color = if (isOn) MaterialTheme.colorScheme.onPrimary
++                    else MaterialTheme.colorScheme.onSurfaceVariant
++                )
++            }
++        }
++    }
++}
++
++@Composable
++private fun TimeBox(label: String, minute: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
++    OutlinedCard(modifier = modifier.clickable(onClick = onClick)) {
++        Column(modifier = Modifier.padding(12.dp)) {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(16.dp))
++                Text(
++                    label,
++                    style = MaterialTheme.typography.labelMedium,
++                    modifier = Modifier.padding(start = 6.dp)
++                )
++            }
++            Text(
++                BlockSchedule.formatMinute(minute),
++                style = MaterialTheme.typography.headlineSmall,
++                fontWeight = FontWeight.Bold
++            )
++        }
++    }
++}
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun ScheduleTimePickerDialog(initialMinute: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
++    val state = rememberTimePickerState(
++        initialHour = initialMinute / 60,
++        initialMinute = initialMinute % 60,
++        is24Hour = true
++    )
++    AlertDialog(
++        onDismissRequest = onDismiss,
++        text = { TimePicker(state = state) },
++        confirmButton = {
++            TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
++                Text(stringResource(R.string.confirm))
++            }
++        },
++        dismissButton = {
++            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
++        }
++    )
++}
++
++@Composable
++private fun ServicePickerDialog(
++    viewModel: SchedulesViewModel,
++    selected: Set<String>,
++    onToggle: (String) -> Unit,
++    onDismiss: () -> Unit
++) {
++    val context = LocalContext.current
++    var query by remember { mutableStateOf("") }
++
++    val labels = remember {
++        (viewModel.suggestedRestrictions + viewModel.otherRestrictions)
++            .associateWith { restrictionLabel(context, viewModel, it) }
++    }
++
++    fun matches(key: String) = query.isBlank() ||
++        labels[key].orEmpty().contains(query, ignoreCase = true) ||
++        key.contains(query, ignoreCase = true)
++
++    val suggested = viewModel.suggestedRestrictions.filter(::matches)
++    val others = viewModel.otherRestrictions.filter(::matches)
++
++    AlertDialog(
++        onDismissRequest = onDismiss,
++        title = { Text(stringResource(R.string.schedule_select_services)) },
++        text = {
++            Column {
++                OutlinedTextField(
++                    value = query,
++                    onValueChange = { query = it },
++                    placeholder = { Text(stringResource(R.string.search_restrictions)) },
++                    leadingIcon = { Icon(Icons.Filled.Search, null) },
++                    singleLine = true,
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .padding(bottom = 8.dp)
++                )
++                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
++                    if (suggested.isNotEmpty()) {
++                        item { PickerHeader(stringResource(R.string.schedule_suggested)) }
++                        items(suggested, key = { "s_$it" }) { key ->
++                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
++                        }
++                    }
++                    if (others.isNotEmpty()) {
++                        item { PickerHeader(stringResource(R.string.schedule_all_services)) }
++                        items(others, key = { "o_$it" }) { key ->
++                            ServiceRow(labels[key] ?: key, key in selected) { onToggle(key) }
++                        }
++                    }
++                }
++            }
++        },
++        confirmButton = {
++            TextButton(onClick = onDismiss) { Text(stringResource(R.string.confirm)) }
++        }
++    )
++}
++
++@Composable
++private fun PickerHeader(text: String) {
++    Text(
++        text,
++        style = MaterialTheme.typography.labelLarge,
++        color = MaterialTheme.colorScheme.primary,
++        modifier = Modifier.padding(vertical = 8.dp)
++    )
++}
++
++@Composable
++private fun ServiceRow(label: String, checked: Boolean, onClick: () -> Unit) {
++    Row(
++        verticalAlignment = Alignment.CenterVertically,
++        modifier = Modifier
++            .fillMaxWidth()
++            .clickable(onClick = onClick)
++            .padding(vertical = 2.dp)
++    ) {
++        Checkbox(checked = checked, onCheckedChange = { onClick() })
++        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/StatusScreen.kt main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/StatusScreen.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/StatusScreen.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/screens/tabs/StatusScreen.kt	2026-09-21 03:29:18.371705042 +0000
+@@ -0,0 +1,246 @@
++package io.github.warleysr.dechainer.screens.tabs
++
++import android.content.ActivityNotFoundException
++import android.content.Context
++import android.content.Intent
++import android.net.Uri
++import android.os.Build
++import android.provider.Settings
++import android.text.format.DateUtils
++import androidx.compose.foundation.Image
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.CheckCircle
++import androidx.compose.material.icons.outlined.Refresh
++import androidx.compose.material.icons.outlined.Warning
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.asImageBitmap
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.core.graphics.drawable.toBitmap
++import androidx.lifecycle.viewmodel.compose.viewModel
++import io.github.warleysr.dechainer.R
++import io.github.warleysr.dechainer.data.BlockStatus
++import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++
++/**
++ * One screen answering "is blocking working?" and "why is this app blocked?".
++ *
++ * Refreshes on entry and on demand rather than on resume, so it needs no dependency the project
++ * doesn't already have. After fixing something in Settings, tap refresh.
++ */
++@Composable
++fun StatusScreen(navViewModel: NavigationViewModel = viewModel()) {
++    val context = LocalContext.current
++    var refreshKey by remember { mutableStateOf(0) }
++    var checks by remember { mutableStateOf<List<BlockStatus.Check>?>(null) }
++    var blocked by remember { mutableStateOf<List<BlockStatus.BlockedApp>?>(null) }
++
++    LaunchedEffect(refreshKey) {
++        val result = withContext(Dispatchers.IO) {
++            BlockStatus.healthChecks(context) to BlockStatus.blockedApps(context)
++        }
++        checks = result.first
++        blocked = result.second
++    }
++
++    LazyColumn(modifier = Modifier.fillMaxSize()) {
++        item {
++            Row(
++                verticalAlignment = Alignment.CenterVertically,
++                modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp)
++            ) {
++                Text(
++                    stringResource(R.string.status_desc),
++                    style = MaterialTheme.typography.bodyMedium,
++                    modifier = Modifier.weight(1f)
++                )
++                IconButton(onClick = {
++                    checks = null
++                    blocked = null
++                    refreshKey++
++                }) {
++                    Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.status_refresh))
++                }
++            }
++            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
++        }
++
++        // ---- health -------------------------------------------------------------------------
++        item { SectionTitle(stringResource(R.string.status_health)) }
++
++        val currentChecks = checks
++        if (currentChecks == null) {
++            item { Loading() }
++        } else {
++            items(currentChecks, key = { it.kind.name }) { check ->
++                ListItem(
++                    leadingContent = {
++                        Icon(
++                            if (check.ok) Icons.Outlined.CheckCircle else Icons.Outlined.Warning,
++                            contentDescription = null,
++                            tint = if (check.ok) MaterialTheme.colorScheme.primary
++                            else MaterialTheme.colorScheme.error
++                        )
++                    },
++                    headlineContent = { Text(stringResource(checkTitle(check.kind))) },
++                    supportingContent = { Text(stringResource(checkDesc(check.kind))) },
++                    trailingContent = {
++                        if (!check.ok) {
++                            TextButton(onClick = { fix(context, check.kind, navViewModel) }) {
++                                Text(stringResource(R.string.status_fix))
++                            }
++                        }
++                    }
++                )
++            }
++            // Xiaomi's own battery manager kills background apps regardless of the Android
++            // setting above, and no public API can detect it — so say it outright on those phones.
++            if (Build.MANUFACTURER.equals("xiaomi", ignoreCase = true)) {
++                item {
++                    Text(
++                        stringResource(R.string.status_xiaomi_note),
++                        style = MaterialTheme.typography.bodySmall,
++                        color = MaterialTheme.colorScheme.onSurfaceVariant,
++                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
++                    )
++                }
++            }
++        }
++
++        item { HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
++
++        // ---- blocked apps -------------------------------------------------------------------
++        item { SectionTitle(stringResource(R.string.status_blocked_now)) }
++
++        val currentBlocked = blocked
++        when {
++            currentBlocked == null -> item { Loading() }
++            currentBlocked.isEmpty() -> item {
++                Text(
++                    stringResource(R.string.status_nothing_blocked),
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                    modifier = Modifier.padding(16.dp)
++                )
++            }
++            else -> items(currentBlocked, key = { it.packageName }) { app ->
++                ListItem(
++                    leadingContent = {
++                        Image(
++                            bitmap = app.icon.toBitmap().asImageBitmap(),
++                            contentDescription = null,
++                            modifier = Modifier.size(40.dp)
++                        )
++                    },
++                    headlineContent = { Text(app.name) },
++                    supportingContent = {
++                        Column {
++                            app.reasons.forEach { reason ->
++                                Text(reasonText(context, reason), style = MaterialTheme.typography.bodySmall)
++                            }
++                        }
++                    }
++                )
++            }
++        }
++
++        item { Spacer(Modifier.height(24.dp)) }
++    }
++}
++
++@Composable
++private fun SectionTitle(text: String) {
++    Text(
++        text,
++        style = MaterialTheme.typography.titleMedium,
++        fontWeight = FontWeight.Bold,
++        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
++    )
++}
++
++@Composable
++private fun Loading() {
++    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
++        CircularProgressIndicator(modifier = Modifier.size(24.dp))
++    }
++}
++
++private fun checkTitle(kind: BlockStatus.CheckKind): Int = when (kind) {
++    BlockStatus.CheckKind.DEVICE_OWNER -> R.string.status_check_owner
++    BlockStatus.CheckKind.ACCESSIBILITY -> R.string.status_check_accessibility
++    BlockStatus.CheckKind.EXACT_ALARMS -> R.string.status_check_alarms
++    BlockStatus.CheckKind.BATTERY -> R.string.status_check_battery
++    BlockStatus.CheckKind.NOTIFICATIONS -> R.string.status_check_notifications
++}
++
++private fun checkDesc(kind: BlockStatus.CheckKind): Int = when (kind) {
++    BlockStatus.CheckKind.DEVICE_OWNER -> R.string.status_check_owner_desc
++    BlockStatus.CheckKind.ACCESSIBILITY -> R.string.status_check_accessibility_desc
++    BlockStatus.CheckKind.EXACT_ALARMS -> R.string.status_check_alarms_desc
++    BlockStatus.CheckKind.BATTERY -> R.string.status_check_battery_desc
++    BlockStatus.CheckKind.NOTIFICATIONS -> R.string.status_check_notifications_desc
++}
++
++/** Opens the exact Settings page that fixes [kind], falling back to the app's info page. */
++private fun fix(context: Context, kind: BlockStatus.CheckKind, navViewModel: NavigationViewModel) {
++    val pkg = context.packageName
++    val intent = when (kind) {
++        BlockStatus.CheckKind.DEVICE_OWNER -> {
++            navViewModel.navigateTo("setup_device_owner")
++            return
++        }
++        BlockStatus.CheckKind.ACCESSIBILITY -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
++        BlockStatus.CheckKind.EXACT_ALARMS ->
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
++                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$pkg"))
++            else appDetails(pkg)
++        BlockStatus.CheckKind.BATTERY -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
++        BlockStatus.CheckKind.NOTIFICATIONS ->
++            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, pkg)
++    }
++    try {
++        context.startActivity(intent)
++    } catch (_: ActivityNotFoundException) {
++        // Some manufacturers remove individual Settings pages; the app info page always exists.
++        try {
++            context.startActivity(appDetails(pkg))
++        } catch (_: ActivityNotFoundException) {
++        }
++    }
++}
++
++private fun appDetails(pkg: String) =
++    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
++
++/** "18:00" today, "Tue 18:00" on any other day — so a time is never ambiguous about which day. */
++private fun whenText(context: Context, millis: Long): String {
++    val flags = if (DateUtils.isToday(millis)) DateUtils.FORMAT_SHOW_TIME
++    else DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY
++    return DateUtils.formatDateTime(context, millis, flags)
++}
++
++private fun reasonText(context: Context, reason: BlockStatus.Reason): String = when (reason) {
++    is BlockStatus.Reason.Schedule ->
++        context.getString(R.string.status_reason_schedule, reason.name, whenText(context, reason.untilMillis))
++    is BlockStatus.Reason.OutsideWindow -> reason.opensAtMillis
++        ?.let { context.getString(R.string.status_reason_window, whenText(context, it)) }
++        ?: context.getString(R.string.status_reason_window_unknown)
++    is BlockStatus.Reason.Cooldown ->
++        context.getString(R.string.status_reason_cooldown, whenText(context, reason.untilMillis))
++    is BlockStatus.Reason.ExplicitContent ->
++        context.getString(R.string.status_reason_explicit, whenText(context, reason.untilMillis))
++    BlockStatus.Reason.DailyLimit -> context.getString(R.string.status_reason_daily)
++    BlockStatus.Reason.Impulse -> context.getString(R.string.status_reason_impulse)
++    BlockStatus.Reason.Manual -> context.getString(R.string.status_reason_manual)
++    BlockStatus.Reason.Hidden -> context.getString(R.string.status_reason_hidden)
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/AppsViewModel.kt main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/AppsViewModel.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/AppsViewModel.kt	2026-09-21 03:23:56.720049015 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/AppsViewModel.kt	2026-09-21 03:24:21.909120805 +0000
+@@ -5,8 +5,12 @@
+ import androidx.compose.runtime.setValue
+ import androidx.lifecycle.ViewModel
+ import androidx.lifecycle.viewModelScope
++import io.github.warleysr.dechainer.DechainerApplication
+ import io.github.warleysr.dechainer.data.AppGroupRepository
+ import io.github.warleysr.dechainer.data.AppRepository
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
++import io.github.warleysr.dechainer.data.TimeLimitSuspensionTracker
++import io.github.warleysr.dechainer.data.WindowEnforcer
+ import io.github.warleysr.dechainer.models.AppGroup
+ import io.github.warleysr.dechainer.models.AppItem
+ import io.github.warleysr.dechainer.models.TimeWindow
+@@ -24,6 +28,14 @@
+     var groups by mutableStateOf<List<AppGroup>>(emptyList())
+         private set
+ 
++    /** Set when an unsuspend was refused because a schedule window currently owns the package. */
++    var blockedBySchedule by mutableStateOf<String?>(null)
++        private set
++
++    fun clearBlockedBySchedule() {
++        blockedBySchedule = null
++    }
++
+     init {
+         loadApps()
+         loadGroups()
+@@ -57,7 +69,29 @@
+     fun suspendApp(packageName: String, suspended: Boolean) {
+         viewModelScope.launch(Dispatchers.IO) {
+             try {
++                val context = DechainerApplication.getInstance()
++                // A schedule inside its window owns this package. Without this check the Apps tab
++                // is a complete bypass of "Lock while active": unsuspend here and the app is free
++                // until the next 30-second accessibility tick - or forever, if that service is off.
++                if (!suspended && ScheduleEnforcer.isHeldBySchedule(context, packageName)) {
++                    blockedBySchedule = packageName
++                    loadApps() // snap the toggle back to the real state
++                    return@launch
++                }
+                 AppRepository.setAppSuspended(packageName, suspended)
++                if (suspended) {
++                    // A manual suspension must survive the end of a schedule or time window.
++                    ScheduleEnforcer.disown(context, packageName)
++                    WindowEnforcer.disown(context, packageName)
++                } else {
++                    // Forget any suspension-based time-limit hold, so a stale record doesn't
++                    // silently re-suspend an app the user just chose to free — at the next
++                    // service reconnect or day rollover, whichever comes first.
++                    TimeLimitSuspensionTracker(context).apply {
++                        endDailyLimitSuspension(packageName)
++                        endReopeningSuspension(packageName)
++                    }
++                }
+                 loadApps()
+             } catch (e: Exception) {
+                 e.printStackTrace()
+@@ -95,6 +129,7 @@
+ 
+     fun setAppTimeWindows(packageName: String, windows: List<TimeWindow>) {
+         AppRepository.setAppTimeWindows(packageName, windows)
++        syncWindows()
+         loadApps()
+     }
+ 
+@@ -127,19 +162,33 @@
+ 
+     fun setGroupTimeWindows(groupId: String, windows: List<TimeWindow>) {
+         AppGroupRepository.setGroupTimeWindows(groupId, windows)
++        syncWindows()
+         loadGroups()
+     }
+ 
+     fun setGroupPackages(groupId: String, packageNames: Set<String>) {
+         AppGroupRepository.setGroupPackages(groupId, packageNames)
++        syncWindows()
+         loadGroups()
+     }
+ 
+     fun setPackageGroup(packageName: String, groupId: String?) {
+         AppGroupRepository.setPackageGroup(packageName, groupId)
++        syncWindows()
+         loadGroups()
+     }
+ 
++    /**
++     * Applies a window/group change straight away. Without this the new hours would only bite the
++     * next time something else happened to sync, which on a phone with the accessibility service
++     * off could be hours.
++     */
++    private fun syncWindows() {
++        viewModelScope.launch(Dispatchers.IO) {
++            WindowEnforcer.sync(DechainerApplication.getInstance())
++        }
++    }
++
+     fun getGroupUsage(groupId: String, inMinutes: Boolean = false): Long {
+         return AppGroupRepository.getGroupUsage(groupId, inMinutes)
+     }
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/DeviceOwnerViewModel.kt main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/DeviceOwnerViewModel.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/DeviceOwnerViewModel.kt	2026-09-21 03:23:56.720080893 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/DeviceOwnerViewModel.kt	2026-09-21 03:24:21.912603711 +0000
+@@ -8,6 +8,8 @@
+ import androidx.lifecycle.ViewModel
+ import io.github.warleysr.dechainer.data.AppRepository
+ import io.github.warleysr.dechainer.data.DeviceOwnerRepository
++import io.github.warleysr.dechainer.DechainerApplication
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
+ import rikka.shizuku.Shizuku
+ import rikka.shizuku.Shizuku.OnRequestPermissionResultListener
+ 
+@@ -41,10 +43,21 @@
+ 
+     fun openShizukuSetupGuide() = DeviceOwnerRepository.openShizukuSetupGuide()
+ 
+-    fun removeDeviceOwner() = processDeviceOwnerPrivileges(remove = true)
++    /** Forced removal, after its 48h wait. Deliberately ignores "lock while active": it is the last-resort escape. */
++    fun removeDeviceOwner() {
++        processDeviceOwnerPrivileges(remove = true, ignoreScheduleLock = true)
++    }
+ 
+-    fun processDeviceOwnerPrivileges(remove: Boolean = false) {
++    /** Returns false if removal was refused because a schedule is locked right now. */
++    fun processDeviceOwnerPrivileges(remove: Boolean = false, ignoreScheduleLock: Boolean = false): Boolean {
++        if (remove) {
++            val context = DechainerApplication.getInstance()
++            if (!ignoreScheduleLock && ScheduleEnforcer.isAnyScheduleLocked(context)) return false
++            // Lift schedule blocks while we still hold the privileges needed to do so.
++            ScheduleEnforcer.releaseAll(context)
++        }
+         isDeviceOwner.value = DeviceOwnerRepository.processDeviceOwnerPrivileges(remove)
++        return true
+     }
+ 
+     fun setPrivateDNS(host: String): Int = DeviceOwnerRepository.setPrivateDNS(host)
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt
+--- orig/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/main/java/io/github/warleysr/dechainer/viewmodels/SchedulesViewModel.kt	2026-09-21 03:24:21.916141584 +0000
+@@ -0,0 +1,195 @@
++package io.github.warleysr.dechainer.viewmodels
++
++import android.os.UserManager
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.setValue
++import androidx.lifecycle.ViewModel
++import androidx.lifecycle.viewModelScope
++import io.github.warleysr.dechainer.DechainerApplication
++import io.github.warleysr.dechainer.data.AppRepository
++import io.github.warleysr.dechainer.data.LockSafety
++import io.github.warleysr.dechainer.data.ScheduleEnforcer
++import io.github.warleysr.dechainer.data.ScheduleRepository
++import io.github.warleysr.dechainer.models.AppItem
++import io.github.warleysr.dechainer.models.BlockSchedule
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import java.util.UUID
++
++/**
++ * Backs both the schedule list and the editor. Scoped to the Activity (every screen gets the same
++ * instance through `viewModel()`), which is how the list hands the draft over to the editor.
++ */
++class SchedulesViewModel : ViewModel() {
++    private val context = DechainerApplication.getInstance()
++
++    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION }
++
++    var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
++        private set
++
++    var antiTamper by mutableStateOf(ScheduleRepository.isAntiTamperEnabled(context))
++        private set
++
++    var apps by mutableStateOf<List<AppItem>>(emptyList())
++        private set
++
++    var isLoadingApps by mutableStateOf(false)
++        private set
++
++    /** Schedule being edited; null when the editor is closed. */
++    var draft by mutableStateOf<BlockSchedule?>(null)
++        private set
++
++    var isNewDraft by mutableStateOf(true)
++        private set
++
++    val protectedPackages: Set<String> by lazy { ScheduleEnforcer.protectedPackages(context) }
++
++    /** Restrictions most useful against compulsive phone use — shown first in the picker. */
++    val suggestedRestrictions = listOf(
++        UserManager.DISALLOW_INSTALL_APPS,
++        UserManager.DISALLOW_UNINSTALL_APPS,
++        UserManager.DISALLOW_ADD_USER,
++        UserManager.DISALLOW_CONFIG_VPN,
++        UserManager.DISALLOW_BLUETOOTH,
++        UserManager.DISALLOW_CONFIG_WIFI
++    )
++
++    private val restrictionFieldNames: Map<String, String> = UserManager::class.java.fields
++        .filter { field ->
++            java.lang.reflect.Modifier.isStatic(field.modifiers) &&
++                java.lang.reflect.Modifier.isFinal(field.modifiers) &&
++                field.type == String::class.java &&
++                field.name.startsWith("DISALLOW_")
++        }
++        .associate { (it.get(null) as String) to it.name.lowercase() }
++
++    val otherRestrictions: List<String> = restrictionFieldNames.keys
++        .filter { it !in suggestedRestrictions }
++        .sorted()
++
++    fun resourceNameFor(key: String): String? = restrictionFieldNames[key]
++
++    init {
++        loadApps()
++    }
++
++    fun refresh() {
++        schedules = ScheduleRepository.getSchedules(context)
++        antiTamper = ScheduleRepository.isAntiTamperEnabled(context)
++    }
++
++    fun loadApps() {
++        viewModelScope.launch {
++            isLoadingApps = true
++            apps = withContext(Dispatchers.IO) {
++                try { AppRepository.getApps() } catch (_: Exception) { emptyList() }
++            }
++            isLoadingApps = false
++        }
++    }
++
++    fun appName(pkg: String): String = apps.firstOrNull { it.packageName == pkg }?.name ?: pkg
++
++    fun isLocked(schedule: BlockSchedule): Boolean = ScheduleRepository.isLockedNow(schedule)
++
++    fun isAnyLocked(): Boolean = schedules.any { ScheduleRepository.isLockedNow(it) }
++
++    // --- Editor ---
++
++    fun startNew(defaultName: String) {
++        draft = BlockSchedule(id = UUID.randomUUID().toString(), name = defaultName)
++        isNewDraft = true
++    }
++
++    fun startEditing(schedule: BlockSchedule) {
++        draft = schedule
++        isNewDraft = false
++    }
++
++    fun updateDraft(transform: (BlockSchedule) -> BlockSchedule) {
++        draft = draft?.let(transform)
++    }
++
++    fun toggleDraftPackage(pkg: String) = updateDraft {
++        it.copy(packages = if (pkg in it.packages) it.packages - pkg else it.packages + pkg)
++    }
++
++    fun toggleDraftRestriction(key: String) = updateDraft {
++        it.copy(restrictions = if (key in it.restrictions) it.restrictions - key else it.restrictions + key)
++    }
++
++    /**
++     * @param confirmedLongLock the user already accepted the warning for a long locked window.
++     */
++    fun saveDraft(confirmedLongLock: Boolean = false): SaveResult {
++        val current = draft ?: return SaveResult.OK
++        // Re-read the stored copy: the window may have opened while the editor was on screen.
++        val stored = ScheduleRepository.getSchedule(context, current.id)
++        if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
++        if (current.days.isEmpty()) return SaveResult.NO_DAYS
++        if (current.packages.isEmpty() && current.restrictions.isEmpty() && current.websites.isEmpty())
++            return SaveResult.NOTHING_TO_BLOCK
++
++        if (current.enabled && current.lockWhileActive) {
++            val others = ScheduleRepository.getSchedules(context).filter { it.id != current.id }
++            if (!LockSafety.leavesEnoughFreeTime(others + current)) return SaveResult.NO_FREE_TIME
++            // "Got longer" means: newly locking, a longer window, or days ADDED. The old test
++            // asked whether the NEW day set contains the OLD one, which is true exactly when days
++            // were removed - so shrinking 7 days to 1 warned you, and growing 1 day to 7 did not.
++            val addsDays = !(stored?.days ?: emptySet()).containsAll(current.days)
++            val lockGotLonger = stored == null || !stored.lockWhileActive ||
++                current.windowMinutes > stored.windowMinutes || addsDays
++            if (!confirmedLongLock && lockGotLonger && current.windowMinutes > LockSafety.LONG_LOCK_MINUTES)
++                return SaveResult.NEEDS_CONFIRMATION
++        }
++
++        ScheduleRepository.upsert(context, current.copy(name = current.name.trim()))
++        draft = null
++        applyAndRefresh()
++        return SaveResult.OK
++    }
++
++    fun deleteDraft(): SaveResult {
++        val current = draft ?: return SaveResult.OK
++        val stored = ScheduleRepository.getSchedule(context, current.id)
++        if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
++        ScheduleRepository.delete(context, current.id)
++        draft = null
++        applyAndRefresh()
++        return SaveResult.OK
++    }
++
++    fun closeEditor() {
++        draft = null
++    }
++
++    // --- List actions ---
++
++    fun setEnabled(schedule: BlockSchedule, enabled: Boolean): SaveResult {
++        val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.OK
++        if (!enabled && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
++        if (enabled && stored.lockWhileActive) {
++            val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
++            if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME
++        }
++        ScheduleRepository.upsert(context, stored.copy(enabled = enabled))
++        applyAndRefresh()
++        return SaveResult.OK
++    }
++
++    fun updateAntiTamper(enabled: Boolean): SaveResult {
++        if (!enabled && ScheduleEnforcer.isAnyScheduleLocked(context)) return SaveResult.LOCKED
++        ScheduleRepository.setAntiTamperEnabled(context, enabled)
++        applyAndRefresh()
++        return SaveResult.OK
++    }
++
++    private fun applyAndRefresh() {
++        refresh()
++        viewModelScope.launch(Dispatchers.IO) { ScheduleEnforcer.sync(context) }
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/res/values/strings.xml main/app/src/main/res/values/strings.xml
+--- orig/app/src/main/res/values/strings.xml	2026-09-21 03:23:56.720682792 +0000
++++ main/app/src/main/res/values/strings.xml	2026-09-21 03:29:33.377050544 +0000
+@@ -321,6 +321,59 @@
+     <string name="nsfw_category_hentai">Hentai</string>
+     <string name="nsfw_category_porn">Porn</string>
+     <string name="nsfw_category_sexy">Sexy / suggestive</string>
++    <string name="schedules">Schedules</string>
++    <string name="schedules_desc">Block apps, services and websites at set times, every week</string>
++    <string name="schedules_explanation">Each schedule blocks the selected apps, services and websites while its time window is open and releases them automatically when it closes. It repeats on the selected days until you disable or delete it, which requires your recovery code.</string>
++    <string name="schedules_requires_accessibility">Advanced blocking (accessibility service) is off. Schedules still start and end on time, but the extra protection against reinstalled apps is not running.</string>
++    <string name="schedule_anti_tamper">Lock date and time</string>
++    <string name="schedule_anti_tamper_desc">While any schedule is enabled, automatic time is forced and date and time settings can\'t be changed, so a window can\'t be skipped by moving the clock</string>
++    <string name="schedules_empty">No schedules yet. Tap \"New schedule\" to create one.</string>
++    <string name="schedule_new">New schedule</string>
++    <string name="schedule_default_name">Focus time</string>
++    <string name="schedule_every_day">Every day</string>
++    <string name="schedule_weekdays">Weekdays</string>
++    <string name="schedule_weekends">Weekends</string>
++    <string name="schedule_status_active">Active until %1$s</string>
++    <string name="schedule_status_next">Next: %1$s</string>
++    <string name="schedule_status_disabled">Disabled</string>
++    <string name="schedule_status_never">No upcoming window</string>
++    <string name="schedule_summary">%1$d apps · %2$d services · %3$d websites</string>
++    <string name="schedule_locked_message">This schedule is locked until its window ends</string>
++    <string name="schedule_name">Name</string>
++    <string name="schedule_days">Days</string>
++    <string name="schedule_time">Time</string>
++    <string name="schedule_starts">Starts</string>
++    <string name="schedule_ends">Ends</string>
++    <string name="schedule_crosses_midnight">Ends the next day</string>
++    <string name="schedule_full_day">Runs for 24 hours</string>
++    <string name="schedule_apps">Apps to block</string>
++    <string name="schedule_services">Services to block</string>
++    <string name="schedule_services_desc">System features turned off during the window</string>
++    <string name="schedule_select_services">Select</string>
++    <string name="schedule_suggested">Suggested</string>
++    <string name="schedule_all_services">All services</string>
++    <string name="schedule_websites">Websites to block</string>
++    <string name="schedule_websites_desc">One per line, e.g. instagram.com. Applies to browsers that support managed restrictions (Chrome and most Chromium browsers).</string>
++    <string name="schedule_websites_add_social">Add social media sites</string>
++    <string name="schedule_lock_while_active">Lock while active</string>
++    <string name="schedule_lock_while_active_desc">While the window is open, this schedule can\'t be edited, disabled or deleted, not even with the recovery code. Forced removal still works after its 48-hour wait.</string>
++    <string name="schedule_delete">Delete schedule</string>
++    <string name="schedule_delete_confirm">Delete this schedule? Everything it is currently blocking will be released.</string>
++    <string name="schedule_save">Save</string>
++    <string name="schedule_error_no_days">Select at least one day</string>
++    <string name="schedule_error_nothing">Select at least one app, service or website</string>
++    <string name="schedule_blocked_title">Blocked by schedule</string>
++    <string name="schedule_blocked_description">%1$s is blocked by \"%2$s\" until %3$s.</string>
++    <string name="schedule_locked_blocks_removal">A schedule is locked right now. Device Owner can only be removed after its window ends, or through Forced removal.</string>
++    <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
++    <string name="schedule_long_lock_title">Lock this for %1$s?</string>
++    <string name="schedule_long_lock_message">While this window is open you won\'t be able to edit, disable or delete this schedule, not even with your recovery code. The only way out during the window is Forced removal, which takes 48 hours.</string>
++    <string name="schedule_long_lock_checkbox">I understand, lock it</string>
++    <!-- Accountability step -->
++
++    <!-- Companion screen -->
++
++    <!-- Home screen widget -->
+ 
+     <string name="usage_warning_channel_silent">Usage warning (silent)</string>
+     <string name="usage_warning_channel_sound">Usage warning (sound)</string>
+@@ -342,4 +395,33 @@
+     <string name="usage_warning_stage_type_vibrate">Vibrate</string>
+     <string name="usage_warning_stage_vibration_count">Vibrations</string>
+     <string name="usage_warning_remove_stage">Remove stage</string>
+-</resources>
+\ No newline at end of file
++
++    <!-- Status screen -->
++    <string name="status">Status</string>
++    <string name="status_desc">What is blocked right now, and whether blocking is working on this phone</string>
++    <string name="status_refresh">Refresh</string>
++    <string name="status_health">Health</string>
++    <string name="status_fix">Fix</string>
++    <string name="status_check_owner">Device Owner</string>
++    <string name="status_check_owner_desc">Without it nothing can be blocked at system level.</string>
++    <string name="status_check_accessibility">Accessibility service</string>
++    <string name="status_check_accessibility_desc">Needed for forbidden words, visual blocking and in-app screen blocking. Schedules, limits and windows work without it.</string>
++    <string name="status_check_alarms">Exact alarms</string>
++    <string name="status_check_alarms_desc">Without them, schedule and time-window boundaries can fire late.</string>
++    <string name="status_check_battery">Battery optimisation off</string>
++    <string name="status_check_battery_desc">If on, Android can put the app to sleep between checks.</string>
++    <string name="status_check_notifications">Notifications</string>
++    <string name="status_check_notifications_desc">Only needed for usage-time warnings.</string>
++    <string name="status_xiaomi_note">On Xiaomi, Redmi and POCO phones there is also a separate battery manager Android can\'t see. Go to Settings → Apps → Déchaîner and set Battery saver to No restrictions, and turn on Autostart.</string>
++    <string name="status_blocked_now">Blocked right now</string>
++    <string name="status_nothing_blocked">Nothing is blocked right now.</string>
++    <string name="status_reason_schedule">Schedule \"%1$s\" · until %2$s</string>
++    <string name="status_reason_window">Outside allowed hours · opens %1$s</string>
++    <string name="status_reason_window_unknown">Outside allowed hours</string>
++    <string name="status_reason_daily">Daily limit reached · until tomorrow</string>
++    <string name="status_reason_cooldown">Reopening cooldown · until %1$s</string>
++    <string name="status_reason_impulse">Impulse lock</string>
++    <string name="status_reason_explicit">Explicit content · until %1$s</string>
++    <string name="status_reason_manual">Suspended by you</string>
++    <string name="status_reason_hidden">Hidden by you</string>
++</resources>
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/main/res/values-pt/strings.xml main/app/src/main/res/values-pt/strings.xml
+--- orig/app/src/main/res/values-pt/strings.xml	2026-09-21 03:23:56.720620314 +0000
++++ main/app/src/main/res/values-pt/strings.xml	2026-09-21 03:29:33.377766098 +0000
+@@ -321,6 +321,54 @@
+     <string name="nsfw_category_hentai">Hentai</string>
+     <string name="nsfw_category_porn">Pornografia</string>
+     <string name="nsfw_category_sexy">Sensual</string>
++    <string name="schedules">Agendamentos</string>
++    <string name="schedules_desc">Bloqueie apps, serviços e sites em horários definidos, toda semana</string>
++    <string name="schedules_explanation">Cada agendamento bloqueia os apps, serviços e sites selecionados enquanto a janela de horário está aberta e os libera automaticamente quando ela fecha. Ele se repete nos dias selecionados até você desativá-lo ou excluí-lo, o que exige seu código de recuperação.</string>
++    <string name="schedules_requires_accessibility">O bloqueio avançado (serviço de acessibilidade) está desativado. Os agendamentos ainda começam e terminam na hora certa, mas a proteção extra contra apps reinstalados não está funcionando.</string>
++    <string name="schedule_anti_tamper">Travar data e hora</string>
++    <string name="schedule_anti_tamper_desc">Enquanto houver um agendamento ativado, a hora automática é forçada e as configurações de data e hora não podem ser alteradas, para que uma janela não seja pulada mudando o relógio</string>
++    <string name="schedules_empty">Nenhum agendamento ainda. Toque em \"Novo agendamento\" para criar um.</string>
++    <string name="schedule_new">Novo agendamento</string>
++    <string name="schedule_default_name">Hora do foco</string>
++    <string name="schedule_every_day">Todos os dias</string>
++    <string name="schedule_weekdays">Dias úteis</string>
++    <string name="schedule_weekends">Fins de semana</string>
++    <string name="schedule_status_active">Ativo até %1$s</string>
++    <string name="schedule_status_next">Próximo: %1$s</string>
++    <string name="schedule_status_disabled">Desativado</string>
++    <string name="schedule_status_never">Nenhuma janela futura</string>
++    <string name="schedule_summary">%1$d apps · %2$d serviços · %3$d sites</string>
++    <string name="schedule_locked_message">Este agendamento está travado até a janela terminar</string>
++    <string name="schedule_name">Nome</string>
++    <string name="schedule_days">Dias</string>
++    <string name="schedule_time">Horário</string>
++    <string name="schedule_starts">Começa</string>
++    <string name="schedule_ends">Termina</string>
++    <string name="schedule_crosses_midnight">Termina no dia seguinte</string>
++    <string name="schedule_full_day">Dura 24 horas</string>
++    <string name="schedule_apps">Apps a bloquear</string>
++    <string name="schedule_services">Serviços a bloquear</string>
++    <string name="schedule_services_desc">Recursos do sistema desligados durante a janela</string>
++    <string name="schedule_select_services">Selecionar</string>
++    <string name="schedule_suggested">Sugeridos</string>
++    <string name="schedule_all_services">Todos os serviços</string>
++    <string name="schedule_websites">Sites a bloquear</string>
++    <string name="schedule_websites_desc">Um por linha, ex.: instagram.com. Vale para navegadores que suportam restrições gerenciadas (Chrome e a maioria dos navegadores Chromium).</string>
++    <string name="schedule_websites_add_social">Adicionar redes sociais</string>
++    <string name="schedule_lock_while_active">Travar enquanto ativo</string>
++    <string name="schedule_lock_while_active_desc">Enquanto a janela estiver aberta, este agendamento não pode ser editado, desativado ou excluído, nem com o código de recuperação. A Remoção forçada ainda funciona após a espera de 48 horas.</string>
++    <string name="schedule_delete">Excluir agendamento</string>
++    <string name="schedule_delete_confirm">Excluir este agendamento? Tudo o que ele está bloqueando agora será liberado.</string>
++    <string name="schedule_save">Salvar</string>
++    <string name="schedule_error_no_days">Selecione pelo menos um dia</string>
++    <string name="schedule_error_nothing">Selecione pelo menos um app, serviço ou site</string>
++    <string name="schedule_blocked_title">Bloqueado pelo agendamento</string>
++    <string name="schedule_blocked_description">%1$s está bloqueado por \"%2$s\" até %3$s.</string>
++    <string name="schedule_locked_blocks_removal">Um agendamento está travado agora. O Device Owner só pode ser removido depois que a janela terminar, ou pela Remoção forçada.</string>
++    <string name="schedule_error_no_free_time">Os agendamentos travados cobririam a semana inteira com menos de uma hora livre, então você nunca poderia alterá-los. Encurte uma janela travada ou desative Travar enquanto ativo.</string>
++    <string name="schedule_long_lock_title">Travar por %1$s?</string>
++    <string name="schedule_long_lock_message">Enquanto esta janela estiver aberta, você não poderá editar, desativar ou excluir este agendamento, nem com o código de recuperação. A única saída durante a janela é a Remoção forçada, que leva 48 horas.</string>
++    <string name="schedule_long_lock_checkbox">Entendo, pode travar</string>
+ 
+     <string name="usage_warning_channel_silent">Aviso de uso (silencioso)</string>
+     <string name="usage_warning_channel_sound">Aviso de uso (som)</string>
+@@ -342,4 +390,33 @@
+     <string name="usage_warning_stage_type_vibrate">Vibrar</string>
+     <string name="usage_warning_stage_vibration_count">Vibrações</string>
+     <string name="usage_warning_remove_stage">Remover estágio</string>
+-</resources>
+\ No newline at end of file
++
++    <!-- Status screen -->
++    <string name="status">Status</string>
++    <string name="status_desc">O que está bloqueado agora e se o bloqueio está funcionando neste celular</string>
++    <string name="status_refresh">Atualizar</string>
++    <string name="status_health">Saúde</string>
++    <string name="status_fix">Corrigir</string>
++    <string name="status_check_owner">Device Owner</string>
++    <string name="status_check_owner_desc">Sem ele nada pode ser bloqueado em nível de sistema.</string>
++    <string name="status_check_accessibility">Serviço de acessibilidade</string>
++    <string name="status_check_accessibility_desc">Necessário para palavras proibidas, bloqueio visual e bloqueio de telas dentro de apps. Agendamentos, limites e janelas funcionam sem ele.</string>
++    <string name="status_check_alarms">Alarmes exatos</string>
++    <string name="status_check_alarms_desc">Sem eles, os horários de agendamentos e janelas podem disparar com atraso.</string>
++    <string name="status_check_battery">Otimização de bateria desligada</string>
++    <string name="status_check_battery_desc">Se ligada, o Android pode colocar o app para dormir entre as verificações.</string>
++    <string name="status_check_notifications">Notificações</string>
++    <string name="status_check_notifications_desc">Necessário apenas para os avisos de tempo de uso.</string>
++    <string name="status_xiaomi_note">Em celulares Xiaomi, Redmi e POCO existe também um gerenciador de bateria separado que o Android não enxerga. Vá em Configurações → Apps → Déchaîner, defina Economia de bateria como Sem restrições e ative a Inicialização automática.</string>
++    <string name="status_blocked_now">Bloqueado agora</string>
++    <string name="status_nothing_blocked">Nada está bloqueado agora.</string>
++    <string name="status_reason_schedule">Agendamento \"%1$s\" · até %2$s</string>
++    <string name="status_reason_window">Fora do horário permitido · abre %1$s</string>
++    <string name="status_reason_window_unknown">Fora do horário permitido</string>
++    <string name="status_reason_daily">Limite diário atingido · até amanhã</string>
++    <string name="status_reason_cooldown">Espera para reabrir · até %1$s</string>
++    <string name="status_reason_impulse">Bloqueio de impulso</string>
++    <string name="status_reason_explicit">Conteúdo explícito · até %1$s</string>
++    <string name="status_reason_manual">Suspenso por você</string>
++    <string name="status_reason_hidden">Oculto por você</string>
++</resources>
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt main/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt
+--- orig/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/test/java/io/github/warleysr/dechainer/BlockScheduleTest.kt	2026-09-21 03:24:21.919878555 +0000
+@@ -0,0 +1,85 @@
++package io.github.warleysr.dechainer
++
++import io.github.warleysr.dechainer.data.LockSafety
++import io.github.warleysr.dechainer.models.BlockSchedule
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.time.DayOfWeek
++import java.time.LocalDateTime
++import java.time.ZoneId
++
++class BlockScheduleTest {
++
++    private fun at(day: Int, hour: Int, minute: Int = 0) =
++        // 2026-09-14 is a Monday, so day 0 = Monday.
++        LocalDateTime.of(2026, 9, 14 + day, hour, minute)
++
++    @Test
++    fun sameDayWindow() {
++        val s = BlockSchedule("1", "t", days = setOf(DayOfWeek.MONDAY), startMinute = 9 * 60, endMinute = 17 * 60)
++        assertFalse(s.isActiveAt(at(0, 8, 59)))
++        assertTrue(s.isActiveAt(at(0, 9, 0)))
++        assertTrue(s.isActiveAt(at(0, 16, 59)))
++        assertFalse(s.isActiveAt(at(0, 17, 0)))
++        assertFalse(s.isActiveAt(at(1, 10, 0))) // Tuesday not selected
++    }
++
++    @Test
++    fun overnightWindowBelongsToStartDay() {
++        val s = BlockSchedule("1", "t", days = setOf(DayOfWeek.MONDAY), startMinute = 22 * 60, endMinute = 6 * 60)
++        assertFalse(s.isActiveAt(at(0, 5, 0)))  // Monday 05:00 — window of Sunday, not selected
++        assertTrue(s.isActiveAt(at(0, 23, 0)))  // Monday 23:00
++        assertTrue(s.isActiveAt(at(1, 5, 59)))  // Tuesday 05:59, still Monday's window
++        assertFalse(s.isActiveAt(at(1, 6, 0)))
++        assertFalse(s.isActiveAt(at(1, 23, 0))) // Tuesday not selected
++        assertEquals(at(1, 6, 0), s.currentWindowEnd(at(0, 23, 0)))
++    }
++
++    @Test
++    fun disabledIsNeverActive() {
++        val s = BlockSchedule("1", "t", enabled = false, startMinute = 0, endMinute = 1439)
++        assertFalse(s.isActiveAt(at(0, 12)))
++        assertNull(s.nextStartAfter(at(0, 12).atZone(ZoneId.of("UTC"))))
++    }
++
++    @Test
++    fun nextBoundaryIsTheWindowEndWhileActive() {
++        val zone = ZoneId.of("UTC")
++        val s = BlockSchedule("1", "t", startMinute = 22 * 60, endMinute = 6 * 60)
++        val now = at(0, 23).atZone(zone)
++        assertEquals(at(1, 6).atZone(zone), s.boundariesAfter(now).minOrNull())
++    }
++
++    @Test
++    fun websiteNormalisation() {
++        assertEquals("instagram.com", BlockSchedule.normaliseWebsite(" https://www.Instagram.com/reels?x=1 "))
++        assertNull(BlockSchedule.normaliseWebsite("not a site"))
++    }
++
++    @Test
++    fun lockSafetyRejectsPermanentLocks() {
++        val allDays = DayOfWeek.entries.toSet()
++        // 24h window every day, locked: no free time ever.
++        val permanent = BlockSchedule("a", "a", days = allDays, startMinute = 0, endMinute = 0, lockWhileActive = true)
++        assertFalse(LockSafety.leavesEnoughFreeTime(listOf(permanent)))
++
++        // Two locked windows that chain into each other also cover everything.
++        val night = BlockSchedule("b", "b", days = allDays, startMinute = 22 * 60, endMinute = 14 * 60, lockWhileActive = true)
++        val day = BlockSchedule("c", "c", days = allDays, startMinute = 14 * 60, endMinute = 22 * 60, lockWhileActive = true)
++        assertFalse(LockSafety.leavesEnoughFreeTime(listOf(night, day)))
++
++        // Same windows without the lock are fine: they can be edited with the recovery code any time.
++        assertTrue(LockSafety.leavesEnoughFreeTime(listOf(night, day.copy(lockWhileActive = false))))
++
++        // A normal nightly lock leaves plenty of free time.
++        val nightly = BlockSchedule("d", "d", days = allDays, startMinute = 22 * 60, endMinute = 6 * 60, lockWhileActive = true)
++        assertEquals(16 * 60, LockSafety.longestUnlockedGapMinutes(listOf(nightly)))
++
++        // 24h lock on 6 days leaves exactly one free day.
++        val sixDays = permanent.copy(days = allDays - DayOfWeek.SUNDAY)
++        assertEquals(1440, LockSafety.longestUnlockedGapMinutes(listOf(sixDays)))
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/test/java/io/github/warleysr/dechainer/BlockStatusTest.kt main/app/src/test/java/io/github/warleysr/dechainer/BlockStatusTest.kt
+--- orig/app/src/test/java/io/github/warleysr/dechainer/BlockStatusTest.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/test/java/io/github/warleysr/dechainer/BlockStatusTest.kt	2026-09-21 03:29:52.601984934 +0000
+@@ -0,0 +1,90 @@
++package io.github.warleysr.dechainer
++
++import io.github.warleysr.dechainer.data.BlockStatus
++import io.github.warleysr.dechainer.data.BlockStatus.Reason
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * The Status screen is only useful if it names the right cause. These pin the rules that decide
++ * which causes are shown for a blocked app.
++ */
++class BlockStatusTest {
++
++    private fun reasons(
++        isSuspended: Boolean = true,
++        isHidden: Boolean = false,
++        scheduleName: String? = null,
++        scheduleUntil: Long? = null,
++        windowClosed: Boolean = false,
++        windowOpensAt: Long? = null,
++        dailyLimit: Boolean = false,
++        cooldownUntil: Long? = null,
++        impulse: Boolean = false,
++        explicitUntil: Long? = null
++    ) = BlockStatus.reasonsFor(
++        isSuspended, isHidden, scheduleName, scheduleUntil, windowClosed, windowOpensAt,
++        dailyLimit, cooldownUntil, impulse, explicitUntil
++    )
++
++    @Test
++    fun suspendedWithNoFeatureClaimingItIsManual() {
++        val r = reasons()
++        assertEquals(1, r.size)
++        assertTrue(r.single() is Reason.Manual)
++    }
++
++    /**
++     * If a feature is holding the app, "suspended by you" would be false and would bury the one
++     * fact the person needs: what is holding it and until when.
++     */
++    @Test
++    fun aFeatureHoldingTheAppIsNeverAlsoCalledManual() {
++        val r = reasons(scheduleName = "Nights", scheduleUntil = 1000L)
++        assertEquals(1, r.size)
++        assertTrue(r.single() is Reason.Schedule)
++        assertEquals("Nights", (r.single() as Reason.Schedule).name)
++    }
++
++    @Test
++    fun everyHolderIsListedWhenSeveralApply() {
++        val r = reasons(
++            scheduleName = "Nights", scheduleUntil = 1000L,
++            windowClosed = true, windowOpensAt = 2000L,
++            dailyLimit = true,
++            impulse = true
++        )
++        assertEquals(4, r.size)
++        assertTrue(r.none { it is Reason.Manual })
++    }
++
++    @Test
++    fun aScheduleNeedsBothItsNameAndItsEndTime() {
++        assertTrue(reasons(scheduleName = "Nights", scheduleUntil = null).single() is Reason.Manual)
++        assertTrue(reasons(scheduleName = null, scheduleUntil = 1000L).single() is Reason.Manual)
++    }
++
++    @Test
++    fun aClosedWindowWithUnknownOpeningIsStillReported() {
++        val r = reasons(windowClosed = true, windowOpensAt = null)
++        assertTrue(r.single() is Reason.OutsideWindow)
++        assertEquals(null, (r.single() as Reason.OutsideWindow).opensAtMillis)
++    }
++
++    @Test
++    fun hiddenIsReportedAlongsideAnySuspensionReason() {
++        val hiddenOnly = reasons(isSuspended = false, isHidden = true)
++        assertTrue(hiddenOnly.single() is Reason.Hidden)
++
++        val both = reasons(isSuspended = true, isHidden = true, dailyLimit = true)
++        assertEquals(2, both.size)
++        assertTrue(both.any { it is Reason.DailyLimit })
++        assertTrue(both.any { it is Reason.Hidden })
++    }
++
++    @Test
++    fun anAppThatIsNeitherSuspendedNorHiddenHasNoReasons() {
++        assertTrue(reasons(isSuspended = false).isEmpty())
++    }
++}
+diff -ruN -x '*.tflite' -x .github -x .idea -x '*.patch' orig/app/src/test/java/io/github/warleysr/dechainer/TimeWindowLogicTest.kt main/app/src/test/java/io/github/warleysr/dechainer/TimeWindowLogicTest.kt
+--- orig/app/src/test/java/io/github/warleysr/dechainer/TimeWindowLogicTest.kt	1970-01-01 00:00:00.000000000 +0000
++++ main/app/src/test/java/io/github/warleysr/dechainer/TimeWindowLogicTest.kt	2026-09-21 03:24:21.923327212 +0000
+@@ -0,0 +1,92 @@
++package io.github.warleysr.dechainer
++
++import io.github.warleysr.dechainer.models.TimeWindow
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Covers the window maths WindowEnforcer decides suspensions from. All of it is pure, so it runs
++ * on the JVM in the CI gate rather than needing an emulator.
++ *
++ * The cases that matter are the awkward ones: windows crossing midnight, and the intersection of a
++ * group's hours with an app's own hours. A mistake in either means an app is suspended when it
++ * should be usable, or usable when it should be blocked.
++ */
++class TimeWindowLogicTest {
++
++    private fun min(h: Int, m: Int = 0) = h * 60 + m
++
++    @Test
++    fun ordinaryWindowContainsOnlyItsOwnHours() {
++        val w = TimeWindow(min(9), min(17))
++        assertFalse(w.contains(min(8, 59)))
++        assertTrue(w.contains(min(9)))
++        assertTrue(w.contains(min(16, 59)))
++        // End is exclusive: at 17:00 the window is shut.
++        assertFalse(w.contains(min(17)))
++    }
++
++    @Test
++    fun windowCrossingMidnightWrapsCorrectly() {
++        val w = TimeWindow(min(22), min(2))
++        assertTrue(w.contains(min(23, 30)))
++        assertTrue(w.contains(min(0, 30)))
++        assertTrue(w.contains(min(1, 59)))
++        assertFalse(w.contains(min(2)))
++        assertFalse(w.contains(min(12)))
++    }
++
++    @Test
++    fun anEmptyRestrictionIsTheIdentityForIntersection() {
++        val app = listOf(TimeWindow(min(9), min(17)))
++        assertEquals(app, TimeWindow.intersect(emptyList(), app))
++        assertEquals(app, TimeWindow.intersect(app, emptyList()))
++    }
++
++    @Test
++    fun groupAndAppHoursIntersectRatherThanReplace() {
++        val group = listOf(TimeWindow(min(8), min(12)))
++        val app = listOf(TimeWindow(min(10), min(18)))
++        val effective = TimeWindow.intersect(group, app)
++
++        assertEquals(1, effective.size)
++        assertTrue(effective.first().contains(min(11)))
++        // Allowed by the app alone, but outside the group's hours.
++        assertFalse(effective.first().contains(min(13)))
++        // Allowed by the group alone, but outside the app's hours.
++        assertFalse(effective.first().contains(min(9)))
++    }
++
++    @Test
++    fun midnightCrossingWindowsIntersectThroughTheWrap() {
++        val group = listOf(TimeWindow(min(20), min(4)))
++        val app = listOf(TimeWindow(min(22), min(6)))
++        val effective = TimeWindow.intersect(group, app)
++
++        assertTrue(effective.any { it.contains(min(23)) })
++        assertTrue(effective.any { it.contains(min(2)) })
++        assertFalse(effective.any { it.contains(min(21)) })
++        assertFalse(effective.any { it.contains(min(5)) })
++    }
++
++    /**
++     * Disjoint hours produce an empty intersection, which the app treats as "no restriction" — so
++     * the enforcer must leave such an app alone. Pinned here deliberately: it is surprising, and
++     * if upstream ever changes it, the enforcer has to change in the same direction or an app gets
++     * suspended with no screen explaining why.
++     */
++    @Test
++    fun disjointGroupAndAppHoursMeanNoRestriction() {
++        val group = listOf(TimeWindow(min(9), min(12)))
++        val app = listOf(TimeWindow(min(14), min(18)))
++        assertTrue(TimeWindow.intersect(group, app).isEmpty())
++    }
++
++    @Test
++    fun minutesUntilEndHandlesTheWrap() {
++        assertEquals(60, TimeWindow(min(9), min(17)).minutesUntilEnd(min(16)))
++        assertEquals(150, TimeWindow(min(22), min(2)).minutesUntilEnd(min(23, 30)))
++    }
++}
