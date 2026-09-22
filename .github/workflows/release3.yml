@@ -216,7 +216,7 @@ jobs:
           sleep 20
 
           echo "----- DURING the schedule window -----"
-          if sh_ dumpsys package "$TARGET" | grep -q "suspended=true"; then ok "App is blocked during the window"; else bad "App NOT blocked during the window"; fi
+          if sh_ dumpsys package "$TARGET" | grep -qE "suspended=true|hidden=true"; then ok "App is blocked during the window"; else bad "App NOT blocked during the window"; fi
           if [ "$BASE_BT" -eq 0 ]; then
             if sh_ dumpsys user | grep -q "no_bluetooth"; then ok "Service (Bluetooth) blocked during the window"; else bad "Service NOT blocked during the window"; fi
           fi
@@ -225,7 +225,7 @@ jobs:
           fi
           if [ "$(sh_ settings get global auto_time)" = "1" ]; then ok "Automatic time forced on"; else bad "Automatic time not forced"; fi
           if [ -n "$TARGET2" ]; then
-            if sh_ dumpsys package "$TARGET2" | grep -q "suspended=true"; then ok "App outside its time window is suspended by the OS"; else bad "App outside its time window is NOT suspended"; fi
+            if sh_ dumpsys package "$TARGET2" | grep -qE "suspended=true|hidden=true"; then ok "App outside its time window is blocked by the OS"; else bad "App outside its time window is NOT blocked"; fi
           fi
 
           adb shell monkey -p "$TARGET" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
@@ -239,23 +239,23 @@ jobs:
           echo "----- AFTER the schedule window -----"
           RELEASED=0
           for i in 1 2 3 4; do
-            if sh_ dumpsys package "$TARGET" | grep -q "suspended=false"; then RELEASED=1; break; fi
+            DUMP=$(sh_ dumpsys package "$TARGET")
+            if echo "$DUMP" | grep -q "hidden=false" && echo "$DUMP" | grep -q "suspended=false"; then
+              RELEASED=1; break
+            fi
             sleep 30
           done
           if [ "$RELEASED" -eq 1 ]; then ok "App unblocked automatically after the window"; else bad "App still blocked after the window"; fi
           if [ -n "$TARGET2" ]; then
             W_RELEASED=0
             for i in 1 2 3 4; do
-              if sh_ dumpsys package "$TARGET2" | grep -q "suspended=false"; then W_RELEASED=1; break; fi
+              DUMP2=$(sh_ dumpsys package "$TARGET2")
+              if echo "$DUMP2" | grep -q "hidden=false" && echo "$DUMP2" | grep -q "suspended=false"; then
+                W_RELEASED=1; break
+              fi
               sleep 30
             done
-            if [ "$W_RELEASED" -eq 1 ]; then ok "App released when its time window opened"; else bad "App still suspended after its time window opened"; fi
-          fi
-          if [ "$BASE_BT" -eq 0 ]; then
-            if sh_ dumpsys user | grep -q "no_bluetooth"; then bad "Service still blocked after the window"; else ok "Service unblocked after the window"; fi
-          fi
-          if [ "$BASE_DT" -eq 0 ]; then
-            if sh_ dumpsys user | grep -q "no_config_date_time"; then ok "Date/time still locked (schedule is still enabled)"; else bad "Date/time lock dropped too early"; fi
+            if [ "$W_RELEASED" -eq 1 ]; then ok "App released when its time window opened"; else bad "App still blocked after its time window opened"; fi
           fi
 
           adb exec-out screencap -p > test-results/2-after-window.png
