@@ -69,7 +69,7 @@ jobs:
           SIGNING_KEY_B64: ${{ secrets.SIGNING_KEY_B64 }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_KEY_B64" ] || [ -z "$SIGNING_PASSWORD" ]; then
+          if [ -z "$SIGNING_KEY_B64" ] \vert{}\vert{} [ -z "$SIGNING_PASSWORD" ]; then
             echo "Signing secrets are missing. Run 'Make signing key (run once)' and add both secrets first."
             exit 1
           fi
@@ -144,7 +144,7 @@ jobs:
           sleep 30
           OWNER=0
           for try in 1 2 3 4 5 6 7 8; do
-            OUT=$(sh_ dpm set-device-owner $PKG/.DechainerDeviceAdminReceiver)
+            OUT=$(sh_ dpm set-device-owner$PKG/.DechainerDeviceAdminReceiver)
             if echo "$OUT" | grep -qi "success"; then OWNER=1; break; fi
             echo "Device Owner attempt $try failed: $(echo "$OUT" | grep -i "exception" | head -1)"
             sh_ dumpsys account | grep -i "Account {" | head -5
@@ -163,14 +163,14 @@ jobs:
           # device as three separate arguments and date honours only the first - you get the hour
           # and nothing else. A colon-separated format survives the round trip intact.
           TS=$(sh_ date +%H:%M:%S)
-          if ! echo "$TS" | grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2}$'; then
+          if ! echo "$TS" \vert{} grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2}$'; then
             echo "Unexpected device time output: '$TS'"; exit 1
           fi
           IFS=: read -r H M S <<< "$TS"
           NOW=$((10#$H * 60 + 10#$M))
           START=$(( (NOW + 1440 - 2) % 1440 ))
           END=$(( (NOW + 4) % 1440 ))
-          echo "Device time $H:$M:$S, window $START -> $END (minutes after midnight)"
+          echo "Device time $H:$M:$S, window $START ->$END (minutes after midnight)"
 
           python3 - "$START" "$END" "$TARGET" > /tmp/schedule_prefs.xml << 'PY'
           import json, sys
@@ -215,7 +215,7 @@ jobs:
           adb shell am start -n $PKG/.activities.MainActivity > /dev/null
           sleep 20
 
-                    echo "----- DURING the schedule window -----"
+          echo "----- DURING the schedule window -----"
           if sh_ dumpsys package "$TARGET" | grep -qE "suspended=true|hidden=true"; then ok "App is blocked during the window"; else bad "App NOT blocked during the window"; fi
           if [ "$BASE_BT" -eq 0 ]; then
             if sh_ dumpsys user | grep -q "no_bluetooth"; then ok "Service (Bluetooth) blocked during the window"; else bad "Service NOT blocked during the window"; fi
@@ -240,7 +240,7 @@ jobs:
           RELEASED=0
           for i in 1 2 3 4; do
             DUMP=$(sh_ dumpsys package "$TARGET")
-            if echo "$DUMP" | grep -q "hidden=false" && echo "$DUMP" | grep -q "suspended=false"; then
+            if echo "$DUMP" \vert{} grep -q "hidden=false" && echo "$DUMP" | grep -q "suspended=false"; then
               RELEASED=1; break
             fi
             sleep 30
@@ -250,14 +250,14 @@ jobs:
             W_RELEASED=0
             for i in 1 2 3 4; do
               DUMP2=$(sh_ dumpsys package "$TARGET2")
-              if echo "$DUMP2" | grep -q "hidden=false" && echo "$DUMP2" | grep -q "suspended=false"; then
+              if echo "$DUMP2" \vert{} grep -q "hidden=false" && echo "$DUMP2" | grep -q "suspended=false"; then
                 W_RELEASED=1; break
               fi
               sleep 30
             done
             if [ "$W_RELEASED" -eq 1 ]; then ok "App released when its time window opened"; else bad "App still blocked after its time window opened"; fi
           fi
-         if [ "$BASE_BT" -eq 0 ]; then
+          if [ "$BASE_BT" -eq 0 ]; then
             if sh_ dumpsys user | grep -q "no_bluetooth"; then bad "Service still blocked after the window"; else ok "Service unblocked after the window"; fi
           fi
           if [ "$BASE_DT" -eq 0 ]; then
@@ -268,7 +268,7 @@ jobs:
           adb logcat -d > test-results/logcat.txt
 
           echo "=================================="
-          echo "ENGINE RESULT: $PASS passed, $FAIL failed"
+          echo "ENGINE RESULT: $PASS passed,$FAIL failed"
           echo "=================================="
           exit $FAIL
           EOF
@@ -326,7 +326,7 @@ jobs:
           sleep 30
           OWNER=0
           for try in 1 2 3 4 5 6 7 8; do
-            OUT=$(sh_ dpm set-device-owner $PKG/.DechainerDeviceAdminReceiver)
+            OUT=$(sh_ dpm set-device-owner$PKG/.DechainerDeviceAdminReceiver)
             if echo "$OUT" | grep -qi "success"; then OWNER=1; break; fi
             echo "Device Owner attempt $try failed: $(echo "$OUT" | grep -i "exception" | head -1)"
             sh_ dumpsys account | grep -i "Account {" | head -5
@@ -343,7 +343,7 @@ jobs:
             adb shell am force-stop $PKG
             adb shell am start -n $PKG/.activities.MainActivity > /dev/null
             sleep 20
-            if [ -n "$(sh_ pidof $PKG)" ]; then ok "App running after launch $round"; else bad "App not running after launch $round"; fi
+            if [ -n "$(sh_ pidof$PKG)" ]; then ok "App running after launch $round"; else bad "App not running after launch $round"; fi
           done
           adb exec-out screencap -p > test-results/release-app-screen.png
 
@@ -356,7 +356,7 @@ jobs:
           fi
 
           echo "=================================="
-          echo "RELEASE RESULT: $PASS passed, $FAIL failed"
+          echo "RELEASE RESULT: $PASS passed,$FAIL failed"
           echo "=================================="
           exit $FAIL
           EOF
@@ -413,5 +413,5 @@ jobs:
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
-            --notes "Built and tested by ${GITHUB_WORKFLOW} run ${GITHUB_RUN_NUMBER}. Engine test and release test both passed." \
+            --notes "Built and tested by ${GITHUB_WORKFLOW} run${GITHUB_RUN_NUMBER}. Engine test and release test both passed." \
             final/dechainer-schedules-release.apk
