@@ -1,0 +1,436 @@
+name: Release build v4 (tested)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Leave blank for an artifact only. Put a tag here (e.g. v1.2.0-schedules.2) to also cut a real GitHub Release."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Add feature patch (skipped if the tree already has the code)
+        run: |
+          set -uo pipefail
+          # Highest version number wins: schedules_v12.patch beats schedules_v11.patch.
+          NEWEST=$(ls -1 *.patch 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$NEWEST" ]; then
+            echo "No .patch in the repo root - building the committed tree as-is."
+            exit 0
+          fi
+          echo "Using patch file: $NEWEST"
+          cp "$NEWEST" /tmp/s.patch
+          if patch -p1 --batch --forward --dry-run < /tmp/s.patch > /tmp/dry.txt 2>&1; then
+            patch -p1 --batch --forward < /tmp/s.patch
+            # v43+ removed visual blocking; its ML model is binary, which a text patch can't
+            # delete, so it's removed here instead (17 MB off the APK).
+            rm -rf app/src/main/assets/models
+            echo "Patch applied."
+          elif grep -qiE "previously applied|Reversed" /tmp/dry.txt; then
+            echo "Patch content is already committed - nothing to apply."
+          else
+            echo "::error::Patch does not apply to this tree. Refusing to build."
+            cat /tmp/dry.txt
+            exit 1
+          fi
+
+      # Stamped here rather than committed, so it never conflicts with upstream's own version
+      # bumps. The run number only ever goes up, so every build installs as an upgrade over the last.
+      - name: Stamp version from the run number
+        run: |
+          RUN=${{ github.run_number }}
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $RUN/" app/build.gradle.kts
+          sed -i -E "s/versionName = \"([^\"]*)\"/versionName = \"\1-sched.$RUN\"/" app/build.gradle.kts
+          grep -nE "versionCode|versionName" app/build.gradle.kts
+
+      - name: Unit tests (must pass)
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest
+
+      - name: Build debug and release
+        run: ./gradlew assembleDebug assembleRelease
+
+      - name: Sign release APK with your permanent key
+        env:
+          SIGNING_KEY_B64: ${{ secrets.SIGNING_KEY_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_KEY_B64" ] || [ -z "$SIGNING_PASSWORD" ]; then
+            echo "Signing secrets are missing. Run 'Make signing key (run once)' and add both secrets first."
+            exit 1
+          fi
+          echo "$SIGNING_KEY_B64" | tr -d '\r\n ' | base64 -d > /tmp/key.p12
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
+            --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
+            --out dechainer-schedules-release.apk /tmp/aligned.apk
+          rm -f /tmp/key.p12
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs dechainer-schedules-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk-untested
+          path: dechainer-schedules-release.apk
+          retention-days: 1
+
+  engine-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: debug-apk
+          path: apk
+
+      - name: Write engine test
+        run: |
+          cat > emu_test.sh << 'EOF'
+          #!/bin/bash
+          set -u
+          PKG=io.github.warleysr.dechainer
+          APK=$(ls apk/*.apk | head -1)
+          PASS=0; FAIL=0
+          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+          sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
+          # Is Déchaîner's launcher icon showing? (the alias is left out of this list when disabled)
+          # The --brief output is indented, so leading spaces are stripped before matching.
+          launcher_apps() { sh_ cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER | sed 's/^[[:space:]]*//'; }
+          why() {
+            echo "   state: $(sh_ dumpsys package "$1" | grep -m1 "User 0:")"
+            sh_ logcat -d | grep -iE "Schedule|Window|Blocker|Dechainer" | tail -15 | sed 's/^/   log: /'
+          }
+          mkdir -p test-results
+
+          adb wait-for-device
+          adb install -r -g "$APK" || { echo "Install failed"; exit 1; }
+          ok "App installed"
+
+          TARGET=""
+          for p in com.android.camera2 com.android.gallery3d com.android.calendar com.android.deskclock com.android.contacts com.google.android.calculator com.android.calculator2; do
+            if sh_ pm path "$p" | grep -q "package:"; then TARGET=$p; break; fi
+          done
+          [ -z "$TARGET" ] && { echo "No test app found"; exit 1; }
+          echo "Test app to block: $TARGET"
+
+          # A second, different app for the time-window test, so the two features can't mask
+          # each other's result.
+          TARGET2=""
+          for p in com.android.deskclock com.android.contacts com.android.calendar com.android.gallery3d com.google.android.calculator com.android.calculator2 com.android.camera2; do
+            if [ "$p" != "$TARGET" ] && sh_ pm path "$p" | grep -q "package:"; then TARGET2=$p; break; fi
+          done
+          # Nothing from the list: take any launcher app that isn't Déchaîner, Settings or a launcher.
+          if [ -z "$TARGET2" ]; then
+            TARGET2=$(launcher_apps \
+              | grep "/" | cut -d/ -f1 | sort -u \
+              | grep -vE "^($TARGET|$PKG|com.android.settings|com.google.android.apps.nexuslauncher|com.android.launcher3)$" | head -1)
+          fi
+          [ "$TARGET2" = "$TARGET" ] && TARGET2=""
+          # Time windows were removed from the app (schedules cover them), so their test is off.
+          TARGET2=""
+          echo "Time-window test: skipped (feature removed)"
+
+          BASE_BT=$(sh_ dumpsys user | grep -c "no_bluetooth")
+          BASE_DT=$(sh_ dumpsys user | grep -c "no_config_date_time")
+
+          # Freshly booted emulators sometimes report accounts for a short while: wait and retry.
+          adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
+          sleep 30
+          OWNER=0
+          for try in 1 2 3 4 5 6 7 8; do
+            OUT=$(sh_ dpm set-device-owner $PKG/.DechainerDeviceAdminReceiver)
+            if echo "$OUT" | grep -qi "success"; then OWNER=1; break; fi
+            echo "Device Owner attempt $try failed: $(echo "$OUT" | grep -i "exception" | head -1)"
+            sh_ dumpsys account | grep -i "Account {" | head -5
+            sleep 15
+          done
+          if [ "$OWNER" -eq 1 ]; then ok "Device Owner granted"; else bad "Device Owner not granted"; exit 1; fi
+
+          # The window is computed HERE, after Device Owner, not before it. Computed earlier, a
+          # slow retry loop (up to ~155s) could eat most of a 3-minute window before the
+          # during-window assertions even ran, failing a build for no reason.
+          # One adb call, not three: three separate reads can straddle an hour boundary and pair
+          # an old hour with a new minute (12 from 12:59:59, then 00 from 13:00:00).
+          #
+          # The format string must contain NO SPACES. adb shell joins its arguments and hands them
+          # to the device's own shell, which re-splits them, so `date '+%H %M %S'` arrives on the
+          # device as three separate arguments and date honours only the first - you get the hour
+          # and nothing else. A colon-separated format survives the round trip intact.
+          TS=$(sh_ date +%H:%M:%S)
+          if ! echo "$TS" | grep -qE '^[0-9]{2}:[0-9]{2}:[0-9]{2}$'; then
+            echo "Unexpected device time output: '$TS'"; exit 1
+          fi
+          IFS=: read -r H M S <<< "$TS"
+          NOW=$((10#$H * 60 + 10#$M))
+          START=$(( (NOW + 1440 - 2) % 1440 ))
+          END=$(( (NOW + 4) % 1440 ))
+          echo "Device time $H:$M:$S, window $START -> $END (minutes after midnight)"
+
+          python3 - "$START" "$END" "$TARGET" > /tmp/schedule_prefs.xml << 'PY'
+          import json, sys
+          from xml.sax.saxutils import escape
+          s, e, t = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+          j = json.dumps([{"id": "ci-test", "name": "CI test", "enabled": True, "days": [1, 2, 3, 4, 5, 6, 7],
+                           "start": s, "end": e, "packages": [t], "restrictions": ["no_bluetooth"],
+                           "websites": ["instagram.com"], "lockWhileActive": True}])
+          print("<?xml version='1.0' encoding='utf-8' standalone='yes' ?>")
+          print("<map>")
+          print('    <string name="schedules_json">%s</string>' % escape(j, {'"': "&quot;"}))
+          print("</map>")
+          PY
+          # Time window for TARGET2 that OPENS in 3 minutes: right now the app is outside its
+          # hours, so it must be suspended, and the boundary alarm must release it once the window
+          # opens. The accessibility service is never enabled in this job, so anything that passes
+          # here is being enforced by the OS rather than by a screen pushed in front of the app.
+          if [ -n "$TARGET2" ]; then
+            WSTART=$(( (NOW + 3) % 1440 ))
+            WEND=$(( (NOW + 3 + 360) % 1440 ))
+            cat > /tmp/window_prefs.xml <<XML
+          <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+          <map>
+              <string name="$TARGET2">[{&quot;s&quot;:$WSTART,&quot;e&quot;:$WEND}]</string>
+          </map>
+          XML
+            sed -i 's/^          //' /tmp/window_prefs.xml
+            adb push /tmp/window_prefs.xml /data/local/tmp/window_prefs.xml > /dev/null
+          fi
+
+          adb push /tmp/schedule_prefs.xml /data/local/tmp/schedule_prefs.xml > /dev/null
+          adb shell "run-as $PKG mkdir -p shared_prefs"
+          adb shell "cat /data/local/tmp/schedule_prefs.xml | run-as $PKG sh -c 'cat > shared_prefs/schedule_prefs.xml'"
+          if sh_ run-as $PKG cat shared_prefs/schedule_prefs.xml | grep -q "ci-test"; then ok "Test schedule saved in app"; else bad "Could not save test schedule"; exit 1; fi
+
+          if [ -n "$TARGET2" ]; then
+            adb shell "cat /data/local/tmp/window_prefs.xml | run-as $PKG sh -c 'cat > shared_prefs/app_time_windows.xml'"
+            if sh_ run-as $PKG cat shared_prefs/app_time_windows.xml | grep -q "$TARGET2"; then ok "Test time window saved in app"; else bad "Could not save test time window"; fi
+          fi
+
+          adb shell am force-stop $PKG
+          adb shell am start -n $PKG/.activities.MainActivity > /dev/null
+          sleep 20
+
+          echo "----- DURING the schedule window -----"
+          BLOCKED_DURING=0
+          if sh_ dumpsys package "$TARGET" | grep -q "suspended=true"; then ok "App is blocked during the window"; BLOCKED_DURING=1; else bad "App NOT blocked during the window"; why "$TARGET"; fi
+          if [ "$BASE_BT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_bluetooth"; then ok "Service (Bluetooth) blocked during the window"; else bad "Service NOT blocked during the window"; fi
+          fi
+          if [ "$BASE_DT" -eq 0 ]; then
+            if sh_ dumpsys user | grep -q "no_config_date_time"; then ok "Date/time settings locked (anti-tamper)"; else bad "Date/time NOT locked"; fi
+          fi
+          if [ "$(sh_ settings get global auto_time)" = "1" ]; then ok "Automatic time forced on"; else bad "Automatic time not forced"; fi
+          if [ -n "$TARGET2" ]; then
+            if sh_ dumpsys package "$TARGET2" | grep -q "suspended=true"; then ok "App outside its time window is blocked by the OS"; else bad "App outside its time window is NOT blocked"; why "$TARGET2"; fi
+          fi
+
+          adb shell monkey -p "$TARGET" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
+          sleep 4
+          adb exec-out screencap -p > test-results/1-during-window.png
+
+          WAIT=$(( 4 * 60 - 10#$S + 60 ))
+          echo "Waiting ${WAIT}s for the window to end (no app restart, the alarm must do it)..."
+          sleep "$WAIT"
+
+          echo "----- AFTER the schedule window -----"
+          RELEASED=0
+          for i in 1 2 3 4; do
+            DUMP=$(sh_ dumpsys package "$TARGET")
+            if echo "$DUMP" | grep -q "hidden=false" && echo "$DUMP" | grep -q "suspended=false"; then
+              RELEASED=1; break
+            fi
+            sleep 30
+          done
+          if [ "$BLOCKED_DURING" -eq 0 ]; then
+            echo "(skipped: the app was never blocked, so 'unblocked after' would prove nothing)"
+          elif [ "$RELEASED" -eq 1 ]; then ok "App unblocked automatically after the window"; else bad "App still blocked after the window"; why "$TARGET"; fi
+          if [ -n "$TARGET2" ]; then
+            W_RELEASED=0
+            for i in 1 2 3 4; do
+              DUMP2=$(sh_ dumpsys package "$TARGET2")
+              if echo "$DUMP2" | grep -q "hidden=false" && echo "$DUMP2" | grep -q "suspended=false"; then
+                W_RELEASED=1; break
+              fi
+              sleep 30
+            done
+            if [ "$W_RELEASED" -eq 1 ]; then ok "App released when its time window opened"; else bad "App still blocked after its time window opened"; fi
+          fi
+
+          adb exec-out screencap -p > test-results/2-after-window.png
+
+          # Study mode was replaced by the Pomodoro, which blocks nothing, so its test is gone.
+
+          adb logcat -d > test-results/logcat.txt
+
+          echo "=================================="
+          echo "ENGINE RESULT: $PASS passed, $FAIL failed"
+          echo "=================================="
+          exit $FAIL
+          EOF
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run engine test on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash emu_test.sh
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-test-results
+          path: test-results/
+
+  release-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-apk-untested
+          path: apk
+
+      - name: Write release test
+        run: |
+          cat > release_test.sh << 'EOF'
+          #!/bin/bash
+          set -u
+          PKG=io.github.warleysr.dechainer
+          APK=apk/dechainer-schedules-release.apk
+          PASS=0; FAIL=0
+          ok()  { echo "✅ PASS: $1"; PASS=$((PASS+1)); }
+          bad() { echo "❌ FAIL: $1"; FAIL=$((FAIL+1)); }
+          sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
+          mkdir -p test-results
+
+          adb wait-for-device
+          if adb install -r "$APK"; then ok "Signed release APK installs"; else bad "Signed release APK does not install"; exit 1; fi
+
+          # Freshly booted emulators sometimes report accounts for a short while: wait and retry.
+          adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
+          sleep 30
+          OWNER=0
+          for try in 1 2 3 4 5 6 7 8; do
+            OUT=$(sh_ dpm set-device-owner $PKG/.DechainerDeviceAdminReceiver)
+            if echo "$OUT" | grep -qi "success"; then OWNER=1; break; fi
+            echo "Device Owner attempt $try failed: $(echo "$OUT" | grep -i "exception" | head -1)"
+            sh_ dumpsys account | grep -i "Account {" | head -5
+            sleep 15
+          done
+          if [ "$OWNER" -eq 1 ]; then ok "Device Owner granted"; else bad "Device Owner not granted"; exit 1; fi
+
+          if sh_ run-as $PKG id | grep -qi "not debuggable"; then ok "App data is protected (not debuggable)"; else bad "App data is readable with run-as"; fi
+          if sh_ dumpsys package $PKG | grep -q "USE_EXACT_ALARM: granted=true"; then ok "Exact alarm permission granted"; else bad "Exact alarm permission missing"; fi
+          if sh_ pm dump $PKG | grep -q "ScheduleReceiver"; then ok "Schedule boundary receiver registered"; else bad "ScheduleReceiver missing from manifest"; fi
+
+          adb logcat -c
+          for round in 1 2; do
+            adb shell am force-stop $PKG
+            adb shell am start -n $PKG/.activities.MainActivity > /dev/null
+            sleep 20
+            if [ -n "$(sh_ pidof $PKG)" ]; then ok "App running after launch $round"; else bad "App not running after launch $round"; fi
+          done
+          adb exec-out screencap -p > test-results/release-app-screen.png
+
+          adb logcat -d > test-results/release-logcat.txt
+          if grep -A 3 "FATAL EXCEPTION" test-results/release-logcat.txt | grep -q "$PKG"; then
+            bad "Release build crashed (see release-logcat.txt)"
+            grep -A 20 "FATAL EXCEPTION" test-results/release-logcat.txt | head -40
+          else
+            ok "No crashes in the release build"
+          fi
+
+          echo "=================================="
+          echo "RELEASE RESULT: $PASS passed, $FAIL failed"
+          echo "=================================="
+          exit $FAIL
+          EOF
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run release test on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash release_test.sh
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results
+          path: test-results/
+
+  publish:
+    needs: [engine-test, release-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-apk-untested
+          path: final
+
+      - name: Upload the tested app
+        uses: actions/upload-artifact@v4
+        with:
+          name: DECHAINER-SCHEDULES-RELEASE-TESTED
+          path: final/dechainer-schedules-release.apk
+          retention-days: 90
+
+      # Only runs if you typed a tag when starting the workflow. An artifact expires; a Release
+      # does not, and it gives you a permanent download link and a version history.
+      - name: Cut a GitHub Release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --notes "Built and tested by ${GITHUB_WORKFLOW} run ${GITHUB_RUN_NUMBER}. Engine test and release test both passed." \
+            final/dechainer-schedules-release.apk
