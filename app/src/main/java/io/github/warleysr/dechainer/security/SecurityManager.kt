@@ -187,9 +187,9 @@ class SecurityManager {
             prefs.edit { remove("impulse_active_suspension") }
         }
 
-        fun startImpulseBlock(context: Context) {
+        fun startImpulseBlock(context: Context, minutes: Int = getImpulseDurationMinutes(context)) {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val duration = getImpulseDurationMinutes(context) * 60 * 1000L
+            val duration = minutes * 60 * 1000L
             prefs.edit {
                 putLong("impulse_block_start_rtc", System.currentTimeMillis())
                 putLong("impulse_block_start_elapsed", SystemClock.elapsedRealtime())
