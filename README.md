@@ -79,13 +79,9 @@ If the installer says *"You can't install the app"*, a restriction is blocking i
 
 ## Building
 
-Builds run on GitHub Actions. The workflow applies the newest `schedules_vNN.patch` from the repo root to the committed source, runs the unit tests and an emulator test, and produces a signed APK.
+The source is committed directly (no patch files). The **CI** workflow runs the unit tests and builds a debug APK on every push. The **Release build** workflow additionally runs an emulator test and produces a signed APK; run it from the *Actions* tab and download the APK from the run's artifacts, or from the release it creates.
 
-1. Put the latest patch file in the repo root.
-2. Run the release workflow from the *Actions* tab.
-3. Download the APK from the run's artifacts, or from the release it creates.
-
-Building locally with Android Studio also works: apply the patch with `patch -p1 < schedules_vNN.patch`, delete `app/src/main/assets/models`, then build.
+Locally: open the project in Android Studio, or run `./gradlew assembleDebug`.
 
 ---
 

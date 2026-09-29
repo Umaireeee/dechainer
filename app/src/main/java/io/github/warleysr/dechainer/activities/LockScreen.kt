@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.activities
 
+import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import androidx.biometric.AuthenticationRequest
 import androidx.biometric.AuthenticationResult
 import androidx.biometric.AuthenticationResultCallback
@@ -99,11 +100,8 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-            delay(1.seconds)
-        }
+    RepeatWhileVisible(1000) {
+        impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -131,9 +129,9 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                         icon = Icons.Filled.Warning,
                         title = stringResource(R.string.having_impulses),
                         subtitle = stringResource(R.string.having_impulses_subtitle),
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                        height = 120.dp,
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        height = 96.dp,
                         onClick = {
                             SecurityManager.startImpulseBlock(context)
                             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)

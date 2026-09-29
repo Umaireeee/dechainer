@@ -20,10 +20,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    androidResources {
-        noCompress.add("tflite")
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -73,10 +69,10 @@ dependencies {
     implementation(libs.shizuku.provider)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.timber)
     implementation(libs.jsoup)
     implementation(libs.json)
-    implementation(libs.litert)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.androidx.test.core.ktx)

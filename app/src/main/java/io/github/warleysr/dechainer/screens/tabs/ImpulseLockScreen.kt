@@ -14,7 +14,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.screens.common.AppPickerDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
@@ -28,7 +27,6 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
     val recoveryGate = rememberRecoveryGate()
 
     val sessionActive = recoveryGate.isSessionActive
-    val accessibilityActive = DechainerAccessibilityService.isRunning
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -43,7 +41,7 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
         if (!sessionActive) {
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.visual_blocking_locked)) },
+                    headlineContent = { Text(stringResource(R.string.settings_locked)) },
                     leadingContent = { Icon(Icons.Outlined.Lock, null) },
                     modifier = Modifier.clickable { recoveryGate.run {} }
                 )
@@ -168,14 +166,6 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                         }
                     }
                 )
-                if (!accessibilityActive) {
-                    Text(
-                        stringResource(R.string.impulse_apps_requires_accessibility),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
             }
         }
 

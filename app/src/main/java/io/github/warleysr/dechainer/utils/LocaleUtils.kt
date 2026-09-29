@@ -6,26 +6,22 @@ import android.os.Build
 import android.os.LocaleList
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
-import java.util.Locale
 
+/** The app is English-only; this only clears a language picked in an older version. */
 object LocaleUtils {
 
-    fun setLocale(context: Context, languageCode: String) {
+    fun hasExplicitLocale(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.getSystemService(LocaleManager::class.java).applicationLocales =
-                LocaleList.forLanguageTags(languageCode)
+            !context.getSystemService(LocaleManager::class.java).applicationLocales.isEmpty
         } else {
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(languageCode))
+            !AppCompatDelegate.getApplicationLocales().isEmpty
         }
-    }
 
-    fun getLocale(context: Context): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.getSystemService(LocaleManager::class.java).applicationLocales.toLanguageTags()
-                .ifEmpty { Locale.getDefault().language }
+    fun clearLocale(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.getEmptyLocaleList()
         } else {
-            AppCompatDelegate.getApplicationLocales().toLanguageTags()
-                .ifEmpty { Locale.getDefault().language }
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
         }
     }
 }

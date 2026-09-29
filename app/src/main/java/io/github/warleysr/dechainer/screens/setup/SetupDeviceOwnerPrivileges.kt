@@ -1,11 +1,14 @@
 package io.github.warleysr.dechainer.screens.setup
 
+import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerApplication
@@ -21,17 +24,15 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
     var shizukuInstalled by remember { mutableStateOf(viewModel.isShizukuInstalled()) }
     var shizukuRunning by remember { mutableStateOf(Shizuku.pingBinder()) }
     val recoveryGate = rememberRecoveryGate()
+    val context = LocalContext.current
+    val lockedMsg = stringResource(R.string.schedule_locked_blocks_removal)
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (!shizukuInstalled)
-                shizukuInstalled = viewModel.isShizukuInstalled()
-
-            if (shizukuInstalled && !shizukuRunning)
-                shizukuRunning = Shizuku.pingBinder()
-
-            delay(500)
-        }
+    // Setup only: watches for Shizuku to be installed and started. Once it is, each tick is a no-op.
+    RepeatWhileVisible(1000) {
+        if (!shizukuInstalled)
+            shizukuInstalled = viewModel.isShizukuInstalled()
+        if (shizukuInstalled && !shizukuRunning)
+            shizukuRunning = Shizuku.pingBinder()
     }
 
     Column(
@@ -42,7 +43,10 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
         when {
             viewModel.isDeviceOwner() -> DeviceOwnerRemoveContent(
                 onRemoveAction = {
-                    recoveryGate.run { viewModel.processDeviceOwnerPrivileges(remove = true) }
+                    recoveryGate.run {
+                        if (!viewModel.processDeviceOwnerPrivileges(remove = true))
+                            Toast.makeText(context, lockedMsg, Toast.LENGTH_LONG).show()
+                    }
                 }
             )
             !shizukuInstalled -> ShizukuNotInstalledCard(viewModel)
