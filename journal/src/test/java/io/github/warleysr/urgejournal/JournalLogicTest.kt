@@ -287,4 +287,14 @@ class JournalLogicTest {
 
         assertEquals(AiError.BAD_MODEL, (AiClient.interpret(400, """{"error":{"message":"Unknown model: Gemini"}}""") as AiResult.Failed).error)
     }
+
+    @Test
+    fun theModelListDropsNonChatModelsAndThePrefix() {
+        val json = """{"object":"list","data":[
+            {"id":"models/gemini-3.8-flash"},{"id":"models/text-embedding-004"},
+            {"id":"models/imagen-4"},{"id":"models/gemini-flash-latest"},{"id":"models/gemini-3.8-flash"}]}"""
+        assertEquals(listOf("gemini-3.8-flash", "gemini-flash-latest"), AiClient.parseModels(json))
+        assertEquals(emptyList<String>(), AiClient.parseModels("nope"))
+        assertEquals(emptyList<String>(), AiClient.parseModels("""{"data":[]}"""))
+    }
 }

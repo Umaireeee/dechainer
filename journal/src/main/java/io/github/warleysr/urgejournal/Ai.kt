@@ -23,8 +23,8 @@ enum class Provider(
     GOOGLE(
         "Google AI Studio (free)",
         "https://generativelanguage.googleapis.com/v1beta/openai",
-        "gemini-2.5-flash",
-        listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"),
+        "gemini-3.8-flash",
+        listOf("gemini-3.8-flash", "gemini-flash-latest"),
         "aistudio.google.com/apikey"
     ),
     OPENROUTER(
@@ -107,7 +107,7 @@ object AiClient {
     fun chat(provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String): AiResult {
         return try {
             val body = JSONObject()
-                .put("model", model)
+                .put("model", model.trim().removePrefix("models/"))
                 .put(
                     "messages",
                     JSONArray()
@@ -159,6 +159,43 @@ object AiClient {
         }
     }
 
+    /** Model names that are not for chat, so they are left out of the list. */
+    private val notChat = listOf(
+        "embed", "tts", "image", "imagen", "aqa", "veo", "whisper", "dall-e", "moderation",
+        "transcribe", "audio", "realtime", "vision-preview"
+    )
+
+    /**
+     * The model names this key can use, or null if the list couldn't be fetched. Model names come
+     * and go, so asking the service is more reliable than a list written into the app.
+     */
+    fun listModels(baseUrl: String, key: String): List<String>? = try {
+        val conn = (URL(baseUrl.trim().trimEnd('/') + "/models").openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            setRequestProperty("Authorization", "Bearer $key")
+        }
+        val code = conn.responseCode
+        val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+        conn.disconnect()
+        if (code in 200..299) parseModels(text).ifEmpty { null } else null
+    } catch (_: IOException) {
+        null
+    } catch (_: RuntimeException) {
+        null
+    }
+
+    /** Pulls chat model names out of a `/models` reply, without the `models/` prefix Google adds. */
+    fun parseModels(json: String): List<String> = runCatching {
+        val arr = JSONObject(json).getJSONArray("data")
+        (0 until arr.length())
+            .mapNotNull { arr.optJSONObject(it)?.optString("id")?.removePrefix("models/")?.takeIf { id -> id.isNotBlank() } }
+            .filter { id -> notChat.none { bad -> id.contains(bad, ignoreCase = true) } }
+            .distinct()
+            .sorted()
+    }.getOrDefault(emptyList())
+
     fun content(json: String): String? = runCatching {
         JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
     }.getOrNull()?.takeIf { it.isNotBlank() }
@@ -174,7 +211,7 @@ object AiClient {
         }.getOrNull() ?: runCatching {
             JSONArray(body).getJSONObject(0).getJSONObject("error").getString("message")
         }.getOrNull()
-        return (text ?: "").replace('\n', ' ').take(180)
+        return (text ?: "").replace('\n', ' ').take(320)
     }
 }
 

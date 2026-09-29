@@ -211,4 +211,8 @@
     <string name="settings_testing">Checking…</string>
     <string name="settings_test_ok">Works. The model answered.</string>
     <string name="error_bad_model">That model name isn\'t available on this service. Pick one of the suggestions.</string>
+    <string name="settings_load_models">Load models from my account</string>
+    <string name="settings_loading_models">Loading…</string>
+    <string name="settings_models_none">Couldn\'t load the list. Check the key and try again, or type a model name yourself.</string>
+    <string name="settings_models_hint">Type part of a name, like flash, to filter. Tap one to use it.</string>
 </resources>

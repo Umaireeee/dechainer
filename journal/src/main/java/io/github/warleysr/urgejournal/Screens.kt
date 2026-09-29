@@ -448,8 +448,13 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
     var confirmDelete by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     var test by remember { mutableStateOf<TestState>(TestState.Idle) }
+    var available by remember { mutableStateOf<List<String>>(emptyList()) }
+    var loadingModels by remember { mutableStateOf(false) }
+    var modelsFailed by remember { mutableStateOf(false) }
 
     fun pick(p: Provider) {
+        available = emptyList()
+        modelsFailed = false
         provider = p
         model = p.defaultModel
         consent = false
@@ -528,6 +533,46 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
         if (provider.models.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 provider.models.forEach { m ->
+                    AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
+                }
+            }
+        }
+
+        // Ask the service which models this key can use; names change, so don't rely on a fixed list.
+        val canLoad = key.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
+        OutlinedButton(
+            onClick = {
+                loadingModels = true
+                modelsFailed = false
+                val base = if (provider == Provider.CUSTOM) customBase else provider.baseUrl
+                val k = key.trim()
+                Thread {
+                    val list = AiClient.listModels(base, k)
+                    available = list.orEmpty()
+                    modelsFailed = list == null
+                    loadingModels = false
+                }.start()
+            },
+            enabled = canLoad && !loadingModels,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(stringResource(if (loadingModels) R.string.settings_loading_models else R.string.settings_load_models)) }
+        if (modelsFailed) {
+            Text(
+                stringResource(R.string.settings_models_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        if (available.isNotEmpty()) {
+            Text(
+                stringResource(R.string.settings_models_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val query = model.trim().removePrefix("models/")
+            val shown = available.filter { it.contains(query, ignoreCase = true) }.ifEmpty { available }.take(14)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                shown.forEach { m ->
                     AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
                 }
             }
