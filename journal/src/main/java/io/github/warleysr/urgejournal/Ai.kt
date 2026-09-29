@@ -34,6 +34,13 @@ enum class Provider(
         listOf("deepseek/deepseek-chat", "google/gemini-2.5-flash", "openai/gpt-4o-mini"),
         "openrouter.ai/keys"
     ),
+    DEEPSEEK(
+        "DeepSeek",
+        "https://api.deepseek.com",
+        "deepseek-chat",
+        listOf("deepseek-chat", "deepseek-reasoner"),
+        "platform.deepseek.com/api_keys"
+    ),
     OPENAI(
         "OpenAI",
         "https://api.openai.com/v1",
@@ -44,13 +51,16 @@ enum class Provider(
     CUSTOM("Other (OpenAI-compatible)", "", "", emptyList(), "");
 
     companion object {
-        /** Guesses the provider from how a key looks, so pasting one is enough. */
+        /**
+         * Guesses the provider from how a key looks, so pasting one is enough. A plain `sk-` key is
+         * ambiguous (DeepSeek, OpenAI and others all use it), so it is left to the person's choice.
+         */
         fun detect(key: String): Provider? {
             val k = key.trim()
             return when {
                 k.startsWith("sk-or-") -> OPENROUTER
                 k.startsWith("AIza") -> GOOGLE
-                k.startsWith("sk-") -> OPENAI
+                k.startsWith("sk-proj-") -> OPENAI
                 else -> null
             }
         }

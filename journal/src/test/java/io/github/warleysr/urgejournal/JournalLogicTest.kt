@@ -250,6 +250,7 @@ class JournalLogicTest {
         assertEquals(Provider.OPENROUTER, Provider.detect("sk-or-v1-abcdef"))
         assertEquals(Provider.GOOGLE, Provider.detect("AIzaSyExample"))
         assertEquals(Provider.OPENAI, Provider.detect("sk-proj-abc"))
+        assertNull(Provider.detect("sk-plain123")) // DeepSeek and others also use this shape
         assertNull(Provider.detect("something-else"))
         assertNull(Provider.detect(""))
     }
@@ -262,6 +263,7 @@ class JournalLogicTest {
             AiClient.endpoint(Provider.GOOGLE.baseUrl)
         )
         assertEquals("https://api.groq.com/openai/v1/chat/completions", AiClient.endpoint(" https://api.groq.com/openai/v1/ "))
+        assertEquals("https://api.deepseek.com/chat/completions", AiClient.endpoint(Provider.DEEPSEEK.baseUrl))
     }
 
     @Test
