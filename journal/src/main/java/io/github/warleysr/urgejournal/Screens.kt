@@ -328,8 +328,13 @@ fun PlanScreen(
             Text(stringResource(R.string.door_note), style = MaterialTheme.typography.bodySmall)
         }
 
-        Eyebrow(stringResource(R.string.plan_now))
-        NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
+        // The app's own quick steps are a fallback. Once the AI has written personal ones they
+        // would only repeat it, so they step aside.
+        val aiHasSteps = ai is AiState.Ready && ReportParser.parse(ai.text)?.rightNow?.isNotEmpty() == true
+        if (!aiHasSteps) {
+            Eyebrow(stringResource(R.string.plan_now))
+            NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
+        }
 
         // Without a deep dive, still say why it's probably happening.
         if (ai !is AiState.Ready) {
@@ -391,12 +396,14 @@ fun PlanScreen(
 /** The deep dive as a short letter: what's going on, then what to do, then what to learn. */
 @Composable
 fun ReportView(raw: String) {
+    val context = LocalContext.current
     val report = remember(raw) { ReportParser.parse(raw) }
     if (report == null) {
         Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
         return
     }
-    var expanded by remember(raw) { mutableStateOf(false) }
+    val startExpanded = remember { AiSettings(context).expandAll }
+    var expanded by remember(raw) { mutableStateOf(startExpanded) }
     val hasMore = report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
         report.understand.isNotEmpty() || report.pattern.isNotBlank()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -572,6 +579,8 @@ fun SettingsScreen(
     var customBase by remember { mutableStateOf(settings.customBase) }
     var model by remember { mutableStateOf(settings.model) }
     var consent by remember { mutableStateOf(settings.consent) }
+    var deep by remember { mutableStateOf(settings.deep) }
+    var expandAll by remember { mutableStateOf(settings.expandAll) }
     var about by remember { mutableStateOf(settings.about) }
     var backupMessage by remember { mutableStateOf<Int?>(null) }
     var backupCount by remember { mutableIntStateOf(0) }
@@ -723,6 +732,8 @@ fun SettingsScreen(
                 settings.model = model
                 settings.consent = consent
                 settings.about = about
+                settings.deep = deep
+                settings.expandAll = expandAll
                 saved = true
             },
             modifier = Modifier.fillMaxWidth()
@@ -777,6 +788,21 @@ fun SettingsScreen(
             maxLines = 8,
             modifier = Modifier.fillMaxWidth()
         )
+
+        Row(
+            Modifier.fillMaxWidth().clickable { deep = !deep; saved = false },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(checked = deep, onCheckedChange = { deep = it; saved = false })
+            Text(stringResource(R.string.settings_deep), style = MaterialTheme.typography.bodyMedium)
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable { expandAll = !expandAll; saved = false },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(checked = expandAll, onCheckedChange = { expandAll = it; saved = false })
+            Text(stringResource(R.string.settings_expand), style = MaterialTheme.typography.bodyMedium)
+        }
 
         Eyebrow(stringResource(R.string.settings_backup))
         Text(

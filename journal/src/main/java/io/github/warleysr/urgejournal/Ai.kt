@@ -80,6 +80,16 @@ class AiSettings(context: Context) {
             ?: Provider.detect(key) ?: Provider.OPENROUTER
         set(v) = prefs.edit { putString("provider", v.name) }
 
+    /** Ask the AI for the long, thorough version (default) rather than a short one. */
+    var deep: Boolean
+        get() = prefs.getBoolean("deep", true)
+        set(v) = prefs.edit { putBoolean("deep", v) }
+
+    /** Show every section of a deep dive at once (default) instead of folding the later ones. */
+    var expandAll: Boolean
+        get() = prefs.getBoolean("expand_all", true)
+        set(v) = prefs.edit { putBoolean("expand_all", v) }
+
     /** What the person wants coached: their goals and how blunt to be. Added to every request. */
     var about: String
         get() = prefs.getString("about", "") ?: ""
@@ -259,6 +269,13 @@ Reply with ONLY one JSON object, no other text, in exactly this shape:
  "pattern": "one observation about their history if the digest shows one, else an empty string",
  "encouragement": "one honest sentence, no fluff"
 }"""
+
+    private const val DEPTH_DEEP = """Depth: this person wants a thorough, substantial read, so these lengths replace the shorter ones above. Write at length. "why": 5 to 8 sentences on the psychology and on how THEIR specific answers interact (time, place, feeling, thought, phone location). "right_now": 4 to 6 steps, each with a brief reason. "today": 3 items. "this_week": 3 to 4 items. "long_term": 3 items. "understand": 3 concepts, each 3 to 5 sentences with a practical way to use it. Refer back to details they gave: times, places, their own words, their goals, their history."""
+
+    private const val DEPTH_SHORT = """Depth: keep it tight, so these lengths replace the longer ones above. "why": 2 to 3 sentences. "right_now": 3 steps. "today": 1 to 2. "this_week": 2. "long_term": 2. "understand": 1 concept in 2 sentences."""
+
+    /** The instructions for a deep dive, at the depth the person chose. */
+    fun systemFor(deep: Boolean): String = SYSTEM + "\n\n" + if (deep) DEPTH_DEEP else DEPTH_SHORT
 
     fun user(entry: Entry, digest: String, about: String = ""): String = buildString {
         if (about.isNotBlank()) appendLine("About them (their own words): ${about.trim().take(ABOUT_LIMIT)}")

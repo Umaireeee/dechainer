@@ -237,4 +237,6 @@
     <string name="settings_import">Import from clipboard</string>
     <string name="settings_import_ok">Imported %1$d entries.</string>
     <string name="settings_import_none">Nothing new found in the clipboard.</string>
+    <string name="settings_deep">Go deeper: longer, more detailed deep dives (uses a little more of your AI credit).</string>
+    <string name="settings_expand">Show every section of a deep dive at once.</string>
 </resources>

@@ -109,10 +109,11 @@ private fun App() {
         val baseUrl = settings.baseUrl
         val key = settings.key
         val model = settings.model
+        val system = Prompt.systemFor(settings.deep)
         val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), settings.about)
         thread {
             val result = try {
-                AiClient.chat(provider, baseUrl, key, model, Prompt.SYSTEM, user)
+                AiClient.chat(provider, baseUrl, key, model, system, user)
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
             }

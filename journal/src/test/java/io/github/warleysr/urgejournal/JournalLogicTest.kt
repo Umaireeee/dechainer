@@ -349,4 +349,19 @@ class JournalLogicTest {
         assertTrue(r.today.isEmpty())
         assertEquals("Late nights", r.pattern)
     }
+
+    @Test
+    fun theDepthSettingChangesWhatTheAiIsAskedFor() {
+        val deep = Prompt.systemFor(true)
+        val short = Prompt.systemFor(false)
+        assertTrue("thorough, substantial read" in deep)
+        assertTrue("5 to 8 sentences" in deep)
+        assertTrue("keep it tight" in short)
+        assertFalse("5 to 8 sentences" in short)
+        // Both keep the fixed reply shape and the safety rule.
+        for (s in listOf(deep, short)) {
+            assertTrue("\"right_now\"" in s)
+            assertTrue("crisis" in s)
+        }
+    }
 }
