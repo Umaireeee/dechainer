@@ -30,6 +30,9 @@ class SecurityManager {
     companion object {
         private const val CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+        /** How long forced removal makes you wait, without the recovery code: four days. */
+        const val FORCED_REMOVAL_WAIT_MS = 4L * 24 * 60 * 60 * 1000
+
         const val IMPULSE_MIN_DURATION_MINUTES = 15
         const val IMPULSE_MAX_DURATION_MINUTES = 360
         const val IMPULSE_DEFAULT_DURATION_MINUTES = 60
@@ -371,8 +374,7 @@ class SecurityManager {
                 putLong("forced_removal_last_elapsed", now)
             }
 
-            val target = 48L * 60 * 60 * 1000
-            return (target - accumulated).coerceAtLeast(0L)
+            return (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
         }
 
     }

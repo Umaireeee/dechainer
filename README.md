@@ -33,7 +33,11 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 - **Private DNS:** blocks adult sites across the whole phone. Choose from CleanBrowsing Family (strictest), CleanBrowsing Adult, AdGuard Family or Cloudflare Family.
 - **Protections:** system rules, like blocking factory reset.
 - **Recovery code and unlock delay:** anything that loosens a rule asks for your code, and optionally a waiting period.
-- **Forced removal:** the escape hatch. It lifts everything after 48 hours, without the code.
+- **Forced removal:** the escape hatch. It lifts everything after 4 days, without the code.
+- **Urge log:** name what set an urge off, wait ten minutes, log how it went, and get a weekly summary of your triggers. Stays on your phone; share it only if you choose.
+- **Quick-start presets:** Bedtime, Study hours, Exam week and Night detox open a pre-filled schedule for you to adjust.
+
+New here? Read the step-by-step **[GUIDE](GUIDE.md)**.
 
 ### Battery
 Nothing runs in the background and nothing watches your screen: **there's no accessibility service**. Schedules, the impulse lock and the Pomodoro all run on exact alarms, and the timer's countdown is drawn by Android itself.
