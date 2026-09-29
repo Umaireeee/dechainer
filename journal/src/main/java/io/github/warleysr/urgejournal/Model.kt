@@ -59,6 +59,47 @@ val Q.options: List<Opt>
         Q.STOPPER -> listOf(Opt.STOP_DISTANCE, Opt.STOP_COMPANY, Opt.STOP_EARLIER, Opt.STOP_BUSY, Opt.STOP_SLEEP, Opt.STOP_UNKNOWN)
     }
 
+/** How each question and answer reads in the prompt sent to the AI (plain English, no app jargon). */
+object Plain {
+    fun question(q: Q): String = when (q) {
+        Q.FEELING -> "Feeling"
+        Q.INTENSITY -> "Urge strength"
+        Q.PULL -> "Pulled toward"
+        Q.PLACE -> "Location"
+        Q.THOUGHT -> "What they were telling themselves"
+        Q.PHONE_PLACE -> "Where the phone was (late at night)"
+        Q.GAP -> "What was in place when the slip happened"
+        Q.STOPPER -> "What they think would have stopped it"
+        else -> "Detail"
+    }
+
+    private val overrides = mapOf(
+        Opt.SLEEP_LOW to "slept under 5 hours",
+        Opt.SLEEP_MID to "slept 5 to 7 hours",
+        Opt.SLEEP_OK to "slept 7+ hours",
+        Opt.GAP_BLOCKED to "their phone was blocked, and it happened anyway",
+        Opt.GAP_UNBLOCKED to "nothing was blocking it at the time",
+        Opt.GAP_OTHER_DEVICE to "used another device",
+        Opt.GAP_WAITED to "waited for the block to end",
+        Opt.LONELY_CAN_REACH to "could reach someone",
+        Opt.LONELY_NO_ONE to "no one around",
+        Opt.LONELY_WONT to "could reach someone but didn't want to",
+        Opt.NO_THOUGHT to "no particular thought, it just happens",
+        Opt.EXPLICIT to "explicit content",
+        Opt.VIDEOS_GAMES to "videos or games",
+        Opt.BORED_AVOIDING to "bored, avoiding something they should do",
+        Opt.BORED_NOTHING to "bored, nothing to do",
+        Opt.BORED_WAITING to "bored, waiting for something",
+        Opt.HAPPENED_TODAY to "something happened today",
+        Opt.NOTHING_PARTICULAR to "nothing in particular",
+        Opt.OTHER_FEELING to "another feeling",
+        Opt.OTHER_PULL to "something else",
+        Opt.OTHER_PLACE to "somewhere else"
+    )
+
+    fun answer(o: Opt): String = overrides[o] ?: o.name.lowercase().replace('_', ' ')
+}
+
 /** Late enough that tiredness and an empty house do most of the damage. */
 fun isLate(hour: Int): Boolean = hour >= 22 || hour < 5
 
@@ -213,7 +254,11 @@ data class Entry(
     val time: Long,
     val slipped: Boolean,
     val answers: Map<Q, Opt>,
-    val outcome: Outcome?
+    val outcome: Outcome?,
+    /** Anything the person added in their own words. */
+    val note: String = "",
+    /** The AI deep dive as the model returned it, kept so it can be read again. */
+    val report: String? = null
 ) {
     /** A slip, or an urge that was given in to. */
     val gaveIn: Boolean get() = slipped || outcome == Outcome.GAVE_IN
@@ -223,6 +268,8 @@ data class Entry(
         put("s", slipped)
         put("a", JSONObject().also { o -> answers.forEach { (q, a) -> o.put(q.name, a.name) } })
         outcome?.let { put("o", it.name) }
+        if (note.isNotBlank()) put("n", note)
+        report?.let { put("r", it) }
     }
 
     companion object {
@@ -241,7 +288,9 @@ data class Entry(
                 time = o.getLong("t"),
                 slipped = o.optBoolean("s", false),
                 answers = answers,
-                outcome = if (o.has("o")) runCatching { Outcome.valueOf(o.getString("o")) }.getOrNull() else null
+                outcome = if (o.has("o")) runCatching { Outcome.valueOf(o.getString("o")) }.getOrNull() else null,
+                note = o.optString("n", ""),
+                report = if (o.has("r")) o.getString("r") else null
             )
         }.getOrNull()
 
@@ -291,5 +340,44 @@ object Insights {
             peakHour = peak,
             daysSinceGaveIn = days
         )
+    }
+
+    /** One bar of the seven-day chart: urges ridden out, and given in to (slips count here). */
+    data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int)
+
+    /** The last [days] calendar days ending today, oldest first, with a bar for each. */
+    fun days(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault(), days: Int = 7): List<DayBar> {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val byDay = entries.groupBy { Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate() }
+        return (days - 1 downTo 0).map { back ->
+            val d = today.minusDays(back.toLong())
+            val list = byDay[d].orEmpty()
+            DayBar(d, list.count { !it.gaveIn }, list.count { it.gaveIn })
+        }
+    }
+
+    /** A short, anonymous digest of recent history for the AI: counts and patterns, no notes. */
+    fun summary(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        if (recent.size < 3) return ""
+        val feelings = recent.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
+            .entries.sortedByDescending { it.value }.take(3).joinToString(", ") { "${Plain.answer(it.key)} (${it.value})" }
+        val hours = recent.groupingBy { Instant.ofEpochMilli(it.time).atZone(zone).hour }.eachCount()
+            .entries.sortedByDescending { it.value }.take(3).joinToString(", ") { "%02d:00 (%d)".format(it.key, it.value) }
+        val late = recent.count { isLate(Instant.ofEpochMilli(it.time).atZone(zone).hour) }
+        val slips = recent.count { it.gaveIn }
+        val days = daysSince(entries, now, zone)
+        return buildString {
+            append("Last 30 days: ${recent.size} entries, $slips given in to or slipped. ")
+            append("Most common feelings: $feelings. Busiest hours: $hours. $late of them were late at night (22:00 to 05:00). ")
+            if (days != null) append("Days since last slip: $days.")
+        }
+    }
+
+    private fun daysSince(entries: List<Entry>, now: Long, zone: ZoneId): Int? {
+        val last = entries.filter { it.gaveIn && it.time <= now }.maxOfOrNull { it.time } ?: return null
+        val d = Instant.ofEpochMilli(last).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        return ChronoUnit.DAYS.between(d, today).toInt().coerceAtLeast(0)
     }
 }

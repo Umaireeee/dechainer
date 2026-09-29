@@ -6,19 +6,33 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.edit
 
-/** The journal, kept on this phone only. Nothing here is sent anywhere. */
+/** The journal, kept on this phone only. Only the optional AI deep dive ever sends anything out. */
 class JournalStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("journal", Context.MODE_PRIVATE)
 
+    @Synchronized
     fun all(): List<Entry> = Entry.listFromJson(prefs.getString(KEY, null)).sortedBy { it.time }
 
+    @Synchronized
     fun add(entry: Entry) {
         val next = (all() + entry).takeLast(LIMIT)
         prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next)) }
     }
 
-    fun setOutcome(time: Long, outcome: Outcome) {
-        val next = all().map { if (it.time == time) it.copy(outcome = outcome) else it }
+    @Synchronized
+    fun setOutcome(time: Long, outcome: Outcome) = update(time) { it.copy(outcome = outcome) }
+
+    @Synchronized
+    fun setReport(time: Long, report: String) = update(time) { it.copy(report = report) }
+
+    /** Deletes every entry. Used by "delete all my data". */
+    @Synchronized
+    fun clear() {
+        prefs.edit(commit = true) { remove(KEY) }
+    }
+
+    private fun update(time: Long, change: (Entry) -> Entry) {
+        val next = all().map { if (it.time == time) change(it) else it }
         prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next)) }
     }
 

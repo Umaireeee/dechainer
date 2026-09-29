@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- For the optional AI deep dive, which talks to OpenRouter with your own key. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Lets this app ask Déchaîner to block things. A signature permission: it is granted only
          when both apps are signed with the same key, and Déchaîner should be installed first. -->
     <uses-permission android:name="io.github.warleysr.dechainer.permission.URGE_ACTION" />

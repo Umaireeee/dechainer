@@ -34,12 +34,12 @@
     <string name="plan_later_btn">Tell me later</string>
     <string name="plan_done">Done</string>
 
-    <string name="action_impulse">Block my phone for %1$d minutes</string>
+    <string name="action_impulse">Pause my distraction apps for %1$d minutes</string>
     <string name="action_focus">Start a %1$d-minute focus block</string>
     <string name="door_sent">Sent to Déchaîner.</string>
     <string name="door_not_installed">Déchaîner isn\'t installed on this phone.</string>
     <string name="door_no_permission">Not allowed. Install Déchaîner first, then this app, both built with the same key.</string>
-    <string name="door_note">This asks Déchaîner to block. It can only add blocking, never remove it, and it needs Déchaîner to be set up with device owner.</string>
+    <string name="door_note">Pauses only the apps you chose in Déchaîner, so calls, maps and banking keep working. It can add blocking, never remove it.</string>
 
     <!-- Questions -->
     <string name="q_feeling">What are you feeling right now?</string>
@@ -146,4 +146,62 @@
     <string name="rule_study_start">Fix a small start time for your hardest task, so boredom has less room.</string>
     <string name="rule_tell_someone">Tell one person you trust what you\'re working on.</string>
     <string name="rule_sleep_earlier">Move bedtime earlier; short sleep makes every urge stronger.</string>
+    <string name="greeting_morning">Good morning</string>
+    <string name="greeting_afternoon">Good afternoon</string>
+    <string name="greeting_evening">Good evening</string>
+    <string name="greeting_night">It\'s late. I\'m here.</string>
+    <string name="stat_logged">Logged</string>
+    <string name="stat_resisted">Ridden out</string>
+    <string name="stat_gave_in">Given in</string>
+    <string name="settings_title">Settings</string>
+    <string name="interview_back">Back</string>
+
+    <string name="note_title">Anything you want to add?</string>
+    <string name="note_hint">Say it in your own words. The more you write, the more specific your deep dive will be. Skipping is fine.</string>
+    <string name="note_hint_slip">What happened, in your own words? No one is grading this.</string>
+    <string name="note_privacy">Stays on your phone unless you use the AI deep dive.</string>
+    <string name="note_skip">Skip</string>
+    <string name="note_continue">Continue</string>
+
+    <string name="consent_title">Send this to an AI?</string>
+    <string name="consent_body">To write your deep dive, your answers and the note you wrote are sent to OpenRouter and the AI model you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
+    <string name="consent_yes">Send</string>
+    <string name="consent_no">Not now</string>
+
+    <string name="deep_title">Deep dive</string>
+    <string name="deep_loading">Reading between the lines…</string>
+    <string name="deep_retry">Try again</string>
+    <string name="deep_needs_key">Add your OpenRouter key for a personal deep dive: why it\'s happening, what to do now, and what to change.</string>
+    <string name="deep_add_key">Add key</string>
+    <string name="support_body">What you wrote sounds really heavy, and you deserve real support more than a list of tips. If you might hurt yourself or you are in danger, please contact your local emergency number or a crisis line now, or reach someone you trust and stay with them. You don\'t have to carry this alone.</string>
+    <string name="deep_right_now">Right now</string>
+    <string name="deep_today">Today</string>
+    <string name="deep_this_week">This week</string>
+    <string name="deep_long_term">Longer term</string>
+    <string name="deep_understand">Worth understanding</string>
+    <string name="deep_pattern">A pattern I notice</string>
+    <string name="detail_no_report">No deep dive was saved for this one.</string>
+    <string name="detail_back">Back</string>
+
+    <string name="settings_ai">AI deep dive</string>
+    <string name="settings_ai_body">Uses OpenRouter with your own key, so there is no account with us and nothing in between. Get a key at openrouter.ai, add a little credit, and paste it here.</string>
+    <string name="settings_key">OpenRouter API key</string>
+    <string name="settings_model">Model</string>
+    <string name="settings_model_hint">Default: deepseek/deepseek-chat. Paste any model name from openrouter.ai/models.</string>
+    <string name="settings_consent">I agree my answers and notes are sent to OpenRouter to write the report.</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_saved">Saved</string>
+    <string name="settings_privacy">Your data</string>
+    <string name="settings_privacy_body">Entries are stored only on this phone. The AI deep dive is the only thing that leaves it, and only when you use it. Your key is kept in this app\'s private storage.</string>
+    <string name="delete_title">Delete all my entries</string>
+    <string name="delete_body">This removes every entry and deep dive from this phone. It can\'t be undone.</string>
+    <string name="delete_yes">Delete</string>
+    <string name="delete_no">Cancel</string>
+
+    <string name="error_bad_key">OpenRouter didn\'t accept your key. Check it in Settings.</string>
+    <string name="error_no_credits">Your OpenRouter account is out of credit. Add a little and try again.</string>
+    <string name="error_rate_limit">Too many requests just now. Wait a minute and try again.</string>
+    <string name="error_network">Couldn\'t reach OpenRouter. Check your connection and try again.</string>
+    <string name="error_server">The AI service had a problem. Try again in a moment.</string>
+    <string name="error_empty">The AI sent back nothing usable. Try again, or pick another model in Settings.</string>
 </resources>

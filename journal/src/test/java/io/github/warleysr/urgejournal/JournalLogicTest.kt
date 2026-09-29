@@ -143,4 +143,103 @@ class JournalLogicTest {
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
     }
+
+    // ---- AI ----
+
+    @Test
+    fun theModelReplyIsParsedEvenInsideCodeFences() {
+        val reply = """
+            Here you go:
+            ```json
+            {"headline":"You're using the phone to escape stress.","why":"Tired plus stressed lowers self-control.",
+             "right_now":["Stand up","Cold water"],"today":["Eat something"],"this_week":["If it's 23:00, then phone charges outside."],
+             "long_term":["Find a healthier release"],"understand":[{"title":"Urge surfing","body":"Urges peak and pass."}],
+             "pattern":"","encouragement":"You logged it, and that counts."}
+            ```
+        """.trimIndent()
+        val r = ReportParser.parse(reply)!!
+        assertEquals("You're using the phone to escape stress.", r.headline)
+        assertEquals(listOf("Stand up", "Cold water"), r.rightNow)
+        assertEquals("Urge surfing" to "Urges peak and pass.", r.understand.first())
+        assertTrue(r.pattern.isEmpty())
+    }
+
+    @Test
+    fun junkRepliesAreNotAReport() {
+        assertNull(ReportParser.parse("I can't help with that."))
+        assertNull(ReportParser.parse("{}"))
+        assertNull(ReportParser.parse("{ not json }"))
+    }
+
+    @Test
+    fun httpResultsMapToUsefulErrors() {
+        val ok = """{"choices":[{"message":{"content":"hello"}}]}"""
+        assertEquals(AiResult.Ok("hello"), AiClient.interpret(200, ok))
+        assertEquals(AiResult.Failed(AiError.BAD_KEY), AiClient.interpret(401, ""))
+        assertEquals(AiResult.Failed(AiError.NO_CREDITS), AiClient.interpret(402, ""))
+        assertEquals(AiResult.Failed(AiError.RATE_LIMIT), AiClient.interpret(429, ""))
+        assertEquals(AiResult.Failed(AiError.SERVER), AiClient.interpret(503, ""))
+        assertEquals(AiResult.Failed(AiError.EMPTY), AiClient.interpret(200, """{"choices":[]}"""))
+    }
+
+    @Test
+    fun theCrisisCheckCatchesTheObviousAndLeavesOrdinaryNotesAlone() {
+        assertTrue(Safety.needsSupport("Sometimes I just want to die"))
+        assertTrue(Safety.needsSupport("thinking about self-harm"))
+        assertFalse(Safety.needsSupport("I was bored and stressed about my exam"))
+        assertFalse(Safety.needsSupport(""))
+    }
+
+    @Test
+    fun thePromptCarriesTheAnswersAndTheNoteButNothingElse() {
+        val e = Entry(
+            ms(20, 23), false,
+            mapOf(Q.FEELING to Opt.LONELY, Q.INTENSITY to Opt.STRONG, Q.PROBE_LONELY to Opt.LONELY_NO_ONE),
+            null, note = "Roommate is away"
+        )
+        val text = Prompt.user(e, "Last 30 days: 5 entries.")
+        assertTrue("Feeling: lonely" in text)
+        assertTrue("no one around" in text)
+        assertTrue("Roommate is away" in text)
+        assertTrue("History digest: Last 30 days: 5 entries." in text)
+    }
+
+    @Test
+    fun aSlipIsFlaggedInThePrompt() {
+        val e = Entry(ms(20, 2), true, mapOf(Q.FEELING to Opt.TIRED, Q.GAP to Opt.GAP_BLOCKED), null)
+        assertTrue("SLIPPED" in Prompt.user(e, ""))
+        assertTrue("phone was blocked" in Prompt.user(e, ""))
+    }
+
+    @Test
+    fun theWeekChartHasOneBarPerDayOldestFirst() {
+        val now = ms(20, 12)
+        val entries = listOf(
+            Entry(ms(20, 9), false, emptyMap(), Outcome.RESISTED),
+            Entry(ms(20, 10), true, emptyMap(), null),
+            Entry(ms(18, 9), false, emptyMap(), Outcome.RESISTED)
+        )
+        val bars = Insights.days(entries, now, zone)
+        assertEquals(7, bars.size)
+        assertEquals(14, bars.first().date.dayOfMonth)
+        assertEquals(1, bars.last().resisted)
+        assertEquals(1, bars.last().gaveIn)
+        assertEquals(1, bars[4].resisted)
+    }
+
+    @Test
+    fun notesAndReportsSurviveStorage() {
+        val e = Entry(9L, false, mapOf(Q.FEELING to Opt.BORED), null, note = "long day", report = "{\"headline\":\"x\"}")
+        assertEquals(listOf(e), Entry.listFromJson(Entry.listToJson(listOf(e))))
+    }
+
+    @Test
+    fun theDigestIsAnonymousAndOnlyAppearsWithEnoughHistory() {
+        val now = ms(20, 12)
+        assertEquals("", Insights.summary(listOf(Entry(ms(19, 1), false, emptyMap(), null)), now, zone))
+        val many = (1..5).map { Entry(ms(15 + it % 4, 23), it % 2 == 0, mapOf(Q.FEELING to Opt.TIRED), null, note = "SECRET NOTE") }
+        val digest = Insights.summary(many, now, zone)
+        assertTrue("tired" in digest)
+        assertFalse("SECRET NOTE" in digest)
+    }
 }
