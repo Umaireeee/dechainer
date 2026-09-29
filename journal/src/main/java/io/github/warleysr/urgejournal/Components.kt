@@ -4,6 +4,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +53,7 @@ fun label(prefix: String, key: Enum<*>): String {
 /** The one big call to action: a slowly breathing ember. Calm on purpose; nothing flashes. */
 @Composable
 fun Ember(text: String, onClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val transition = rememberInfiniteTransition(label = "ember")
     val scale by transition.animateFloat(
         initialValue = 1f,
@@ -72,7 +74,10 @@ fun Ember(text: String, onClick: () -> Unit) {
                 .scale(scale)
                 .clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34))))
-                .clickable(onClick = onClick),
+                .clickable {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onClick()
+                },
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -88,12 +93,15 @@ fun Ember(text: String, onClick: () -> Unit) {
 
 /** An answer to tap. Bordered rather than filled, so a screen of them stays quiet. */
 @Composable
-fun OptionCard(text: String, onClick: () -> Unit) {
+fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
@@ -260,5 +268,59 @@ fun Breathing(text: String) {
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
         )
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * A slow circle to breathe with: it grows for 4 seconds and shrinks for 6, and holds the time left
+ * in its middle. It only moves; nothing flashes.
+ */
+@Composable
+fun BreathCircle(inhale: Boolean, centerText: String, caption: String) {
+    val transition = rememberInfiniteTransition(label = "breathCircle")
+    val scale by transition.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 0.72f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 10_000
+                0.72f at 0
+                1f at 4_000
+                0.72f at 10_000
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "breathScale"
+    )
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(260.dp)) {
+            Box(
+                Modifier
+                    .size(260.dp)
+                    .scale(scale)
+                    .clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(Color(0x55D9A55B), Color(0x11D9A55B))))
+            )
+            Box(
+                Modifier
+                    .size(170.dp)
+                    .scale(0.85f + scale * 0.15f)
+                    .clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34)))),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    centerText,
+                    color = Color(0xFF2A1F10),
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        Text(
+            caption,
+            style = MaterialTheme.typography.titleLarge,
+            color = if (inhale) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

@@ -70,9 +70,29 @@ enum class Provider(
 class AiSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("ai", Context.MODE_PRIVATE)
 
+    /**
+     * The API key, kept encrypted with a key that lives in the phone's Keystore and never leaves
+     * it. A key saved in plain text by an earlier version is read once and moved over.
+     */
     var key: String
-        get() = prefs.getString("key", "") ?: ""
-        set(v) = prefs.edit { putString("key", v.trim()) }
+        get() {
+            prefs.getString("key_enc", null)?.let { return SecretBox.open(it) ?: "" }
+            val old = prefs.getString("key", "") ?: ""
+            if (old.isNotBlank()) key = old
+            return old
+        }
+        set(v) {
+            val clean = v.trim()
+            val sealed = if (clean.isEmpty()) null else SecretBox.seal(clean)
+            prefs.edit {
+                when {
+                    clean.isEmpty() -> { remove("key_enc"); remove("key") }
+                    sealed != null -> { putString("key_enc", sealed); remove("key") }
+                    // No Keystore on this phone: better a working key than none.
+                    else -> { remove("key_enc"); putString("key", clean) }
+                }
+            }
+        }
 
     /** The chosen provider, or the one the key looks like, or OpenRouter as a last resort. */
     var provider: Provider
@@ -116,6 +136,50 @@ class AiSettings(context: Context) {
 }
 
 const val ABOUT_LIMIT = 600
+
+/** AES-GCM with a key held in the Android Keystore, so the AI key is not readable from a backup or a copy of the files. */
+object SecretBox {
+    private const val ALIAS = "urge_journal_ai_key"
+    private const val PROVIDER = "AndroidKeyStore"
+    private const val TRANSFORM = "AES/GCM/NoPadding"
+    private const val IV_BYTES = 12
+
+    private fun key(): javax.crypto.SecretKey {
+        val store = java.security.KeyStore.getInstance(PROVIDER).apply { load(null) }
+        (store.getKey(ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
+        val gen = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
+        gen.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                ALIAS,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return gen.generateKey()
+    }
+
+    /** Encrypted text safe to store, or null if this phone can't do it. */
+    fun seal(plain: String): String? = runCatching {
+        val cipher = javax.crypto.Cipher.getInstance(TRANSFORM)
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key())
+        val out = cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        android.util.Base64.encodeToString(out, android.util.Base64.NO_WRAP)
+    }.getOrNull()
+
+    /** The text [seal] made, or null if it can't be read (a wiped Keystore, for example). */
+    fun open(sealed: String): String? = runCatching {
+        val bytes = android.util.Base64.decode(sealed, android.util.Base64.NO_WRAP)
+        val cipher = javax.crypto.Cipher.getInstance(TRANSFORM)
+        cipher.init(
+            javax.crypto.Cipher.DECRYPT_MODE, key(),
+            javax.crypto.spec.GCMParameterSpec(128, bytes, 0, IV_BYTES)
+        )
+        String(cipher.doFinal(bytes, IV_BYTES, bytes.size - IV_BYTES), Charsets.UTF_8)
+    }.getOrNull()
+}
 
 /** What went wrong, in terms the person can act on. */
 enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL }
@@ -284,6 +348,8 @@ Reply with ONLY one JSON object, no other text, in exactly this shape:
         Q.entries.forEach { q ->
             entry.answers[q]?.let { appendLine("${Plain.question(q)}: ${Plain.answer(it)}") }
         }
+        entry.after?.let { appendLine("After riding it out for ten minutes: ${Plain.after(it)}") }
+        if (entry.tried.isNotEmpty()) appendLine("What they tried: ${entry.tried.joinToString(", ") { Plain.step(it) }}")
         if (entry.note.isNotBlank()) {
             appendLine()
             appendLine("In their own words: ${entry.note.trim().take(1200)}")

@@ -1,16 +1,22 @@
 package io.github.warleysr.urgejournal
 
+import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -18,12 +24,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import java.time.Instant
 import java.time.LocalTime
+import java.time.ZoneId
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
+    /** What the launching intent asked for (a notification tap, or Déchaîner's shortcut). The app clears it once handled. */
+    var pendingAction by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingAction = intent?.getStringExtra(EXTRA_ACTION)
         setContent {
             UrgeTheme {
                 Surface(
@@ -34,14 +46,29 @@ class MainActivity : ComponentActivity() {
                     // Without this the text falls back to black on the dark page.
                     contentColor = MaterialTheme.colorScheme.onBackground
                 ) {
-                    App()
+                    App(this)
                 }
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingAction = intent.getStringExtra(EXTRA_ACTION)
+    }
+
+    companion object {
+        const val EXTRA_ACTION = "action"
+        /** Open the check-in on the last ride. */
+        const val ACTION_CHECKIN = "checkin"
+        /** Start a ride straight away (used by Déchaîner's shortcut). */
+        const val ACTION_RIDE = "ride"
+        const val ACTION_NONE = "none"
+    }
 }
 
-private enum class Screen { HOME, INTERVIEW, NOTE, PLAN, DETAIL, SETTINGS, REVIEW }
+private enum class Screen { HOME, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, SETTINGS, REVIEW }
 
 /** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
@@ -58,11 +85,23 @@ sealed interface AiState {
 /** A cached weekly review counts as fresh for this long. */
 private const val REVIEW_FRESH_MS = 12L * 60 * 60 * 1000
 
+/** How long the block sent at the start of a ride lasts: the ten-minute ride plus time to settle. */
+private const val RIDE_BLOCK_MINUTES = 30
+
+/** What "still strong" asks for. */
+private const val LONGER_BLOCK_MINUTES = 60
+
+private const val FORTNIGHT_MS = 14L * 24 * 60 * 60 * 1000
+private const val SIX_HOURS_MS = 6L * 60 * 60 * 1000
+
+private fun hourOf(time: Long): Int = Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).hour
+
 @Composable
-private fun App() {
+private fun App(activity: MainActivity) {
     val context = LocalContext.current
     val store = remember { JournalStore(context) }
     val settings = remember { AiSettings(context) }
+    val reminders = remember { ReminderSettings(context) }
     var entries by remember { mutableStateOf(store.all()) }
     var screen by remember { mutableStateOf(Screen.HOME) }
     var slipped by remember { mutableStateOf(false) }
@@ -74,6 +113,32 @@ private fun App() {
     var review by remember { mutableStateOf<AiState>(AiState.Idle) }
     // Bumped whenever the screen moves on, so a slow reply can't land on the wrong screen.
     var runId by remember { mutableIntStateOf(0) }
+    // A ride is the ten minutes at the peak of an urge; the check-in after it feeds the coach.
+    var quick by remember { mutableStateOf(false) }
+    var rideStart by remember { mutableLongStateOf(0L) }
+    var rideClock by remember { mutableLongStateOf(0L) }
+    var blockMinutes by remember { mutableIntStateOf(RIDE_BLOCK_MINUTES) }
+    var doorResult by remember { mutableStateOf<Door.Result?>(null) }
+    var pendingAfter by remember { mutableStateOf<After?>(null) }
+    var pendingTried by remember { mutableStateOf(emptyList<Step>()) }
+    var plans by remember { mutableStateOf(store.plans()) }
+    var nudgeMinute by remember { mutableIntStateOf(reminders.nudgeMinute) }
+    var cardsTick by remember { mutableIntStateOf(0) }
+
+    // Asking for the notification permission is done from a tap that needs it, never at the peak of an urge.
+    var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) afterPermission?.invoke()
+        afterPermission = null
+    }
+    fun withNotifications(then: () -> Unit) {
+        if (!Notifier.needsPermission(context)) {
+            then()
+        } else {
+            afterPermission = then
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     fun refresh() {
         entries = store.all()
@@ -83,6 +148,11 @@ private fun App() {
         runId++
         hour = LocalTime.now().hour
         refresh()
+        quick = false
+        rideStart = 0L
+        pendingAfter = null
+        pendingTried = emptyList()
+        cardsTick++
         current = null
         detail = null
         ai = AiState.Idle
@@ -164,14 +234,69 @@ private fun App() {
 
     fun startInterview(isSlip: Boolean) {
         slipped = isSlip
+        if (!isSlip) quick = false
         hour = LocalTime.now().hour
         answers = emptyMap()
         screen = Screen.INTERVIEW
     }
 
+    /** The three-question version, asked after a ride once there is a clear head to answer with. */
+    fun startDetails() {
+        slipped = false
+        quick = true
+        answers = emptyMap()
+        screen = Screen.INTERVIEW
+    }
+
+    /** The ride is over, one way or another: forget it and its reminder. */
+    fun clearRide() {
+        store.clearPendingRide()
+        Notifier.cancelCheckIn(context)
+        rideStart = 0L
+    }
+
+    fun startRide() {
+        val now = System.currentTimeMillis()
+        blockMinutes = RIDE_BLOCK_MINUTES
+        doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, RIDE_BLOCK_MINUTES))
+        slipped = false
+        quick = true
+        hour = LocalTime.now().hour
+        answers = emptyMap()
+        pendingAfter = null
+        pendingTried = emptyList()
+        rideStart = now
+        rideClock = now
+        store.setPendingRide(now)
+        Notifier.scheduleCheckIn(context, now + Notifier.CHECKIN_DELAY_MS)
+        runId++
+        screen = Screen.RIDE
+    }
+
+    /** From the Home card or the notification: how did the last ride end? */
+    fun startCheckIn() {
+        val started = store.pendingRide()
+        if (started == 0L) return
+        rideStart = started
+        slipped = false
+        quick = true
+        hour = hourOf(started)
+        answers = emptyMap()
+        pendingAfter = null
+        pendingTried = emptyList()
+        screen = Screen.AFTER
+    }
+
     fun finish(note: String) {
-        val entry = Entry(System.currentTimeMillis(), slipped, answers, null, note.trim())
+        val time = if (rideStart != 0L && !slipped) rideStart else System.currentTimeMillis()
+        val entry = Entry(
+            time, slipped, answers,
+            if (slipped) null else pendingAfter?.outcome,
+            note.trim(), null, pendingTried,
+            if (slipped) null else pendingAfter
+        )
         store.add(entry)
+        clearRide()
         refresh()
         current = entry
         ai = AiState.Idle
@@ -182,45 +307,145 @@ private fun App() {
     fun answer(q: Q, opt: Opt) {
         val next = answers + (q to opt)
         answers = next
-        if (QuestionTree.next(next, hour, slipped) == null) screen = Screen.NOTE
+        if (QuestionTree.next(next, hour, slipped, quick) == null) screen = Screen.NOTE
     }
 
     fun undoLastAnswer() {
-        val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
+        val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped, quick).lastOrNull { it in answers }
         if (last != null) answers = answers - last
     }
 
     fun stepBack() {
-        val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
-        if (last == null) goHome() else answers = answers - last
+        val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped, quick).lastOrNull { it in answers }
+        when {
+            last != null -> answers = answers - last
+            quick && rideStart != 0L && !slipped -> screen = Screen.AFTER
+            else -> goHome()
+        }
+    }
+
+    // What a notification tap or Déchaîner's shortcut asked for.
+    val action = activity.pendingAction
+    LaunchedEffect(action) {
+        when (action) {
+            MainActivity.ACTION_RIDE -> startRide()
+            MainActivity.ACTION_CHECKIN -> startCheckIn()
+        }
+        if (action != null) activity.pendingAction = null
     }
 
     when (screen) {
-        Screen.HOME -> HomeScreen(
-            entries = entries,
-            hour = hour,
-            setup = SetupState(
-                dechainerInstalled = Door.isInstalled(context),
-                canReachDechainer = Door.hasPermission(context),
-                aiReady = settings.configured
-            ),
-            onUrge = { startInterview(false) },
-            onSlip = { startInterview(true) },
-            onOpen = { detail = it; screen = Screen.DETAIL },
-            onReview = {
-                screen = Screen.REVIEW
-                runReview(force = false)
-            },
-            onSettings = { screen = Screen.SETTINGS }
-        )
+        Screen.HOME -> {
+            val now = System.currentTimeMillis()
+            val cards = remember(entries, cardsTick, nudgeMinute) {
+                HomeCards(
+                    pendingRideAt = store.pendingRide().takeIf { it != 0L && now - it < SIX_HOURS_MS } ?: 0L,
+                    hot = if (nudgeMinute < 0 && now - store.dismissedAt("hot") > FORTNIGHT_MS) Insights.hotWindow(entries, now) else null,
+                    heavier = now - store.dismissedAt("heavier") > FORTNIGHT_MS && Insights.heavier(entries, now),
+                    nudgeMinute = nudgeMinute
+                )
+            }
+            HomeScreen(
+                entries = entries,
+                hour = hour,
+                setup = SetupState(
+                    dechainerInstalled = Door.isInstalled(context),
+                    canReachDechainer = Door.hasPermission(context),
+                    aiReady = settings.configured
+                ),
+                cards = cards,
+                onRide = { startRide() },
+                onUrge = { startInterview(false) },
+                onSlip = { startInterview(true) },
+                onOpen = { detail = it; screen = Screen.DETAIL },
+                onReview = {
+                    screen = Screen.REVIEW
+                    runReview(force = false)
+                },
+                onSettings = { screen = Screen.SETTINGS },
+                onCheckIn = { startCheckIn() },
+                onDropRide = {
+                    clearRide()
+                    cardsTick++
+                },
+                onNudge = { minute ->
+                    withNotifications {
+                        reminders.nudgeMinute = minute
+                        nudgeMinute = minute
+                        Notifier.rearmNudge(context)
+                    }
+                },
+                onDismissHot = {
+                    store.dismiss("hot")
+                    cardsTick++
+                },
+                onDismissHeavy = {
+                    store.dismiss("heavier")
+                    cardsTick++
+                },
+                onShare = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, Insights.shareText(entries, System.currentTimeMillis()))
+                    }
+                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            )
+        }
+
+        Screen.RIDE -> {
+            BackHandler { goHome() }
+            RideScreen(
+                startedAt = rideClock,
+                blockMinutes = blockMinutes,
+                door = doorResult,
+                step = Coach.rideStep(entries),
+                myPlan = MyPlan.forRide(plans, hour),
+                onDone = { screen = Screen.AFTER },
+                onLonger = {
+                    blockMinutes = LONGER_BLOCK_MINUTES
+                    doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, LONGER_BLOCK_MINUTES))
+                },
+                onLeave = { goHome() }
+            )
+        }
+
+        Screen.AFTER -> {
+            BackHandler { goHome() }
+            AfterScreen(
+                after = pendingAfter,
+                tried = pendingTried,
+                onAfter = { pendingAfter = it },
+                onToggle = { step ->
+                    pendingTried = if (step in pendingTried) pendingTried - step else pendingTried + step
+                },
+                onSave = {
+                    pendingAfter?.let { a ->
+                        store.add(Entry(rideStart, false, emptyMap(), a.outcome, "", null, pendingTried, a))
+                        clearRide()
+                        goHome()
+                    }
+                },
+                onDetails = { startDetails() },
+                onAgain = {
+                    val now = System.currentTimeMillis()
+                    rideClock = now
+                    blockMinutes = RIDE_BLOCK_MINUTES
+                    doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, RIDE_BLOCK_MINUTES))
+                    screen = Screen.RIDE
+                },
+                onGaveIn = { startInterview(true) },
+                onBack = { goHome() }
+            )
+        }
 
         Screen.INTERVIEW -> {
             BackHandler { stepBack() }
-            val q = QuestionTree.next(answers, hour, slipped)
+            val q = QuestionTree.next(answers, hour, slipped, quick)
             if (q != null) {
                 InterviewScreen(
                     q = q,
-                    total = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).size,
+                    total = QuestionTree.sequence(answers[Q.FEELING], hour, slipped, quick).size,
                     done = answers.size,
                     slipped = slipped,
                     onAnswer = { answer(q, it) },
@@ -249,8 +474,19 @@ private fun App() {
             current?.let { entry ->
                 PlanScreen(
                     entry = entry,
+                    history = entries,
+                    plans = plans,
                     ai = ai,
                     providerLabel = settings.provider.label,
+                    onSavePlan = { text ->
+                        store.addPlan(
+                            MyPlan(
+                                System.currentTimeMillis(), text.trim(),
+                                entry.answers[Q.FEELING], isLate(hourOf(entry.time))
+                            )
+                        )
+                        plans = store.plans()
+                    },
                     onConsent = { yes ->
                         if (yes) {
                             settings.consent = true
@@ -315,8 +551,14 @@ private fun App() {
             SettingsScreen(
                 settings = settings,
                 store = store,
+                reminders = reminders,
+                plans = plans,
+                onPlansChanged = { plans = store.plans() },
+                onNeedNotifications = { then -> withNotifications(then) },
                 onDeleteAll = {
                     store.clear()
+                    Notifier.cancelCheckIn(context)
+                    plans = emptyList()
                     goHome()
                 },
                 onImported = { refresh() },

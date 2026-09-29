@@ -140,6 +140,9 @@ class JournalLogicTest {
             Step.entries.forEach { if ("step_${it.name.lowercase()}" !in names) add("step_${it.name.lowercase()}") }
             Rule.entries.forEach { if ("rule_${it.name.lowercase()}" !in names) add("rule_${it.name.lowercase()}") }
             Reason.entries.forEach { if ("reason_${it.name.lowercase()}" !in names) add("reason_${it.name.lowercase()}") }
+            Step.entries.forEach { if ("try_${it.name.lowercase()}" !in names) add("try_${it.name.lowercase()}") }
+            After.entries.forEach { if ("after_${it.name.lowercase()}" !in names) add("after_${it.name.lowercase()}") }
+            Insights.DayWindow.entries.forEach { if ("window_${it.name.lowercase()}" !in names) add("window_${it.name.lowercase()}") }
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
     }
@@ -363,5 +366,154 @@ class JournalLogicTest {
             assertTrue("\"right_now\"" in s)
             assertTrue("crisis" in s)
         }
+    }
+
+    // ---- Ride, check-in, plans, patterns ----
+
+    private fun ride(day: Int, hour: Int, after: After, vararg tried: Step) =
+        Entry(ms(day, hour), false, emptyMap(), after.outcome, tried = tried.toList(), after = after)
+
+    @Test
+    fun aRideEntryRoundTripsWithWhatWasTriedAndHowItEnded() {
+        val e = ride(5, 23, After.WEAKER, Step.LEAVE_ROOM, Step.COLD_WATER)
+        val back = Entry.listFromJson(Entry.listToJson(listOf(e)))
+        assertEquals(listOf(e), back)
+        assertEquals(Outcome.RESISTED, back.first().outcome)
+        // Old entries, written before rides existed, still read fine.
+        assertEquals(1, Entry.listFromJson("""[{"t":2,"s":false,"a":{"FEELING":"BORED"}}]""").size)
+        assertNull(ride(5, 23, After.STILL).outcome)
+    }
+
+    @Test
+    fun theQuickInterviewIsThreeQuestionsAndAlwaysFullAfterASlip() {
+        assertEquals(listOf(Q.FEELING, Q.PLACE, Q.THOUGHT), QuestionTree.sequence(Opt.BORED, 14, false, quick = true))
+        assertEquals(listOf(Q.FEELING, Q.PLACE, Q.THOUGHT, Q.PHONE_PLACE), QuestionTree.sequence(Opt.BORED, 23, false, quick = true))
+        assertEquals(QuestionTree.sequence(Opt.TIRED, 12, true), QuestionTree.sequence(Opt.TIRED, 12, true, quick = true))
+        assertEquals(Q.FEELING, QuestionTree.next(emptyMap(), 12, false, quick = true))
+    }
+
+    @Test
+    fun stepsThatWorkedForYouMoveUpOnceThereIsEvidence() {
+        val answers = mapOf(Q.FEELING to Opt.BORED, Q.INTENSITY to Opt.MILD)
+        val plain = Coach.plan(answers, 12, false)
+        // Two tries is not evidence; the plan is unchanged.
+        val few = listOf(ride(1, 12, After.GONE, Step.COLD_WATER), ride(2, 12, After.GONE, Step.COLD_WATER))
+        assertEquals(plain.steps, Coach.plan(answers, 12, false, few).steps)
+        // Four good tries is: cold water now leads, even though the rules didn't pick it.
+        val many = (1..4).map { ride(it, 12, After.GONE, Step.COLD_WATER) }
+        val ranked = Coach.plan(answers, 12, false, many).steps
+        assertEquals(Step.COLD_WATER, ranked.first())
+        assertTrue(ranked.size <= 4)
+        // A step that keeps failing drops to the back.
+        val bad = (1..4).map { ride(it, 12, After.STILL, Step.BREATHE) }
+        assertEquals(Step.BREATHE, Coach.plan(answers, 12, false, bad).steps.last())
+    }
+
+    @Test
+    fun theRideStepDefaultsToLeavingTheRoomAndLearnsFromYou() {
+        assertEquals(Step.LEAVE_ROOM, Coach.rideStep(emptyList()))
+        val walks = (1..4).map { ride(it, 12, After.WEAKER, Step.WALK) }
+        assertEquals(Step.WALK, Coach.rideStep(walks))
+    }
+
+    @Test
+    fun cleanDaysAreCountedAgainstTheDaysYouHaveBeenLogging() {
+        val now = ms(20, 12)
+        assertNull(Insights.cleanDays(emptyList(), now, zone))
+        val entries = listOf(
+            Entry(ms(11, 9), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED),
+            Entry(ms(14, 22), true, mapOf(Q.FEELING to Opt.TIRED), null),
+            Entry(ms(14, 23), true, mapOf(Q.FEELING to Opt.TIRED), null) // same day: still one day
+        )
+        // Logging since the 11th: ten days including today, one of them with a slip.
+        assertEquals(9 to 10, Insights.cleanDays(entries, now, zone))
+        // A journal older than the window is measured over the window only.
+        val old = listOf(Entry(ms(1, 9), false, emptyMap(), Outcome.RESISTED))
+        assertEquals(20 to 20, Insights.cleanDays(old, now, zone))
+    }
+
+    @Test
+    fun aHotWindowNeedsEnoughEntriesAndAClearMajority() {
+        val now = ms(28, 12)
+        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.RESISTED)
+        // Too few entries: quiet, however tidy.
+        assertNull(Insights.hotWindow(listOf(at(20, 23), at(21, 23), at(22, 23), at(23, 23)), now, zone))
+        // Six entries, five late at night: a pattern.
+        val late = listOf(at(20, 23), at(21, 23), at(22, 0), at(23, 23), at(24, 2), at(25, 14))
+        val hot = Insights.hotWindow(late, now, zone)
+        assertNotNull(hot)
+        assertEquals(Insights.DayWindow.NIGHT, hot!!.window)
+        assertEquals(5, hot.count)
+        assertEquals(6, hot.total)
+        assertEquals(Opt.TIRED, hot.topFeeling)
+        // Spread all over the day: no pattern.
+        val spread = listOf(at(20, 7), at(21, 13), at(22, 19), at(23, 23), at(24, 9), at(25, 15))
+        assertNull(Insights.hotWindow(spread, now, zone))
+        // The heads-up comes half an hour before the window opens.
+        assertEquals(21 * 60 + 30, Insights.DayWindow.NIGHT.nudgeMinute)
+    }
+
+    @Test
+    fun heavierMeansMuchMoreLatelyOrSeveralOverwhelmingOnes() {
+        val now = ms(28, 12)
+        fun at(day: Int, intensity: Opt? = null) =
+            Entry(ms(day, 12), false, if (intensity != null) mapOf(Q.INTENSITY to intensity) else emptyMap(), null)
+        assertFalse(Insights.heavier(emptyList(), now))
+        val surge = (16..21).map { at(it) }
+        assertTrue(Insights.heavier(surge, now))
+        // The same number, but the fortnight before was just as busy: steady, not heavier.
+        val steady = surge + (2..7).map { at(it) }
+        assertFalse(Insights.heavier(steady, now))
+        val overwhelmed = listOf(at(20, Opt.OVERWHELMING), at(22, Opt.OVERWHELMING), at(24, Opt.OVERWHELMING))
+        assertTrue(Insights.heavier(overwhelmed, now))
+    }
+
+    @Test
+    fun theShareTextHasCountsOnly() {
+        val now = ms(20, 12)
+        val e = listOf(Entry(ms(19, 23), false, mapOf(Q.FEELING to Opt.LONELY, Q.PLACE to Opt.BED), Outcome.RESISTED, note = "private words"))
+        val text = Insights.shareText(e, now, zone)
+        assertTrue(text.contains("1 urges logged"))
+        assertFalse(text.contains("private"))
+        assertFalse(text.contains("lonely", ignoreCase = true))
+        assertFalse(text.contains("bed", ignoreCase = true))
+    }
+
+    @Test
+    fun myPlansMatchTheMomentAndRoundTrip() {
+        val late = MyPlan(3, "If I feel tired, late at night, then the phone charges in the kitchen.", Opt.TIRED, true)
+        val bored = MyPlan(4, "If I feel bored, then I start one question.", Opt.BORED, false)
+        val any = MyPlan(5, "If in doubt, I stand up.", null, false)
+        val plans = listOf(late, bored, any)
+        assertEquals(late, MyPlan.best(plans, Opt.TIRED, 23))
+        // Tired but in the afternoon: the late plan doesn't apply, so the general one does.
+        assertEquals(any, MyPlan.best(plans, Opt.TIRED, 14))
+        assertEquals(bored, MyPlan.best(plans, Opt.BORED, 14))
+        assertNull(MyPlan.best(listOf(bored), Opt.LONELY, 14))
+        // During a ride the feeling is unknown: late plans only when it is late, newest first.
+        assertEquals(late, MyPlan.forRide(plans, 23))
+        assertEquals(any, MyPlan.forRide(plans, 14))
+        assertNull(MyPlan.forRide(emptyList(), 14))
+        assertEquals(plans, MyPlan.listFromJson(MyPlan.listToJson(plans)))
+        assertEquals(emptyList<MyPlan>(), MyPlan.listFromJson("nope"))
+    }
+
+    @Test
+    fun theDailyHeadsUpIsAlwaysInTheFuture() {
+        val at = 21 * 60 + 30
+        assertEquals(ms(20, 21) + 30 * 60_000L, Times.nextDaily(at, ms(20, 12), zone))
+        // Already past today's time: tomorrow's.
+        assertEquals(ms(21, 21) + 30 * 60_000L, Times.nextDaily(at, ms(20, 22), zone))
+        assertEquals("21:30", Times.clock(at))
+        assertEquals("07:05", Times.clock(7 * 60 + 5))
+    }
+
+    @Test
+    fun theRideIsInThePromptButNotThePrivateNote() {
+        val e = Entry(ms(5, 23), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED,
+            tried = listOf(Step.LEAVE_ROOM), after = After.WEAKER)
+        val prompt = Prompt.user(e, "")
+        assertTrue(prompt.contains("weaker"))
+        assertTrue(prompt.contains("leave room"))
     }
 }

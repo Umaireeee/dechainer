@@ -98,6 +98,14 @@ object Plain {
     )
 
     fun answer(o: Opt): String = overrides[o] ?: o.name.lowercase().replace('_', ' ')
+
+    fun step(s: Step): String = s.name.lowercase().replace('_', ' ')
+
+    fun after(a: After): String = when (a) {
+        After.GONE -> "the urge passed"
+        After.WEAKER -> "the urge got weaker and they felt okay"
+        After.STILL -> "the urge was still strong"
+    }
 }
 
 /** Late enough that tiredness and an empty house do most of the damage. */
@@ -114,8 +122,19 @@ object QuestionTree {
         else -> Q.PROBE_OTHER
     }
 
-    /** The full list of questions for these answers; it grows as the feeling becomes known. */
-    fun sequence(feeling: Opt?, hour: Int, slipped: Boolean): List<Q> = buildList {
+    /**
+     * The full list of questions for these answers; it grows as the feeling becomes known. [quick]
+     * is the short version asked after a ride: how it feels, where, and what you were telling
+     * yourself. A slip always gets the full one.
+     */
+    fun sequence(feeling: Opt?, hour: Int, slipped: Boolean, quick: Boolean = false): List<Q> = buildList {
+        if (quick && !slipped) {
+            add(Q.FEELING)
+            add(Q.PLACE)
+            add(Q.THOUGHT)
+            if (isLate(hour)) add(Q.PHONE_PLACE)
+            return@buildList
+        }
         add(Q.FEELING)
         if (!slipped) add(Q.INTENSITY)
         add(Q.PULL)
@@ -129,8 +148,8 @@ object QuestionTree {
         }
     }
 
-    fun next(answers: Map<Q, Opt>, hour: Int, slipped: Boolean): Q? =
-        sequence(answers[Q.FEELING], hour, slipped).firstOrNull { it !in answers }
+    fun next(answers: Map<Q, Opt>, hour: Int, slipped: Boolean, quick: Boolean = false): Q? =
+        sequence(answers[Q.FEELING], hour, slipped, quick).firstOrNull { it !in answers }
 }
 
 /** Something to do with your body or surroundings. Text is `step_<name lowercase>`. */
@@ -178,7 +197,38 @@ object Coach {
         return (base + if (isLate(hour)) 1 else 0).coerceAtMost(3)
     }
 
-    fun plan(answers: Map<Q, Opt>, hour: Int, slipped: Boolean): Plan {
+    /** A step needs this many tries before what happened to it counts as evidence. */
+    const val MIN_TRIES = 3
+
+    /** Success rate of each step you have tried enough times, smoothed so two lucky tries don't crown it. */
+    fun stepScores(history: List<Entry>): Map<Step, Double> {
+        val tries = mutableMapOf<Step, Int>()
+        val wins = mutableMapOf<Step, Int>()
+        history.forEach { e ->
+            val after = e.after ?: return@forEach
+            e.tried.distinct().forEach { step ->
+                tries[step] = (tries[step] ?: 0) + 1
+                if (after == After.GONE || after == After.WEAKER) wins[step] = (wins[step] ?: 0) + 1
+            }
+        }
+        return tries.filter { it.value >= MIN_TRIES }
+            .mapValues { (step, n) -> ((wins[step] ?: 0) + 1.0) / (n + 2.0) }
+    }
+
+    /** Puts what has worked for you first, and adds a proven step the rules didn't pick. */
+    fun rank(steps: List<Step>, history: List<Entry>): List<Step> {
+        val scores = stepScores(history)
+        if (scores.isEmpty()) return steps
+        val proven = scores.filter { it.value >= 0.65 && it.key !in steps }.keys
+        return (steps + proven).sortedByDescending { scores[it] ?: 0.5 }
+    }
+
+    /** The one thing to do during a ride: what has worked for you, else leaving the room. */
+    fun rideStep(history: List<Entry>): Step =
+        stepScores(history).filter { it.value >= 0.6 && it.key != Step.BREATHE }
+            .maxByOrNull { it.value }?.key ?: Step.LEAVE_ROOM
+
+    fun plan(answers: Map<Q, Opt>, hour: Int, slipped: Boolean, history: List<Entry> = emptyList()): Plan {
         val late = isLate(hour)
         val level = level(answers, hour, slipped)
         val feeling = answers[Q.FEELING]
@@ -243,11 +293,19 @@ object Coach {
         if (feeling == Opt.LONELY) rules += Rule.TELL_SOMEONE
         if (late && rules.isEmpty()) rules += Rule.EARLIER_BLOCK
 
-        return Plan(reasons, steps.take(4), primary, secondary, rules.take(2))
+        return Plan(reasons, rank(steps.toList(), history).take(4), primary, secondary, rules.take(2))
     }
 }
 
 enum class Outcome { RESISTED, GAVE_IN }
+
+/** How the urge stood after riding it out. Text is `after_<name lowercase>`. */
+enum class After {
+    GONE, WEAKER, STILL;
+
+    /** Passed or weaker means it was ridden out; still strong means the person is still in it. */
+    val outcome: Outcome? get() = if (this == STILL) null else Outcome.RESISTED
+}
 
 /** One urge, or one slip, as logged. [outcome] is null until you say how it went. */
 data class Entry(
@@ -258,7 +316,11 @@ data class Entry(
     /** Anything the person added in their own words. */
     val note: String = "",
     /** The AI deep dive as the model returned it, kept so it can be read again. */
-    val report: String? = null
+    val report: String? = null,
+    /** What the person did while riding it out; feeds the coach's ranking of steps. */
+    val tried: List<Step> = emptyList(),
+    /** How the urge stood after the ride, if it was ridden. */
+    val after: After? = null
 ) {
     /** A slip, or an urge that was given in to. */
     val gaveIn: Boolean get() = slipped || outcome == Outcome.GAVE_IN
@@ -270,6 +332,8 @@ data class Entry(
         outcome?.let { put("o", it.name) }
         if (note.isNotBlank()) put("n", note)
         report?.let { put("r", it) }
+        if (tried.isNotEmpty()) put("tr", JSONArray(tried.map { it.name }))
+        after?.let { put("af", it.name) }
     }
 
     companion object {
@@ -290,7 +354,11 @@ data class Entry(
                 answers = answers,
                 outcome = if (o.has("o")) runCatching { Outcome.valueOf(o.getString("o")) }.getOrNull() else null,
                 note = o.optString("n", ""),
-                report = if (o.has("r")) o.getString("r") else null
+                report = if (o.has("r")) o.getString("r") else null,
+                tried = o.optJSONArray("tr")?.let { a ->
+                    (0 until a.length()).mapNotNull { i -> runCatching { Step.valueOf(a.getString(i)) }.getOrNull() }
+                }.orEmpty(),
+                after = if (o.has("af")) runCatching { After.valueOf(o.getString("af")) }.getOrNull() else null
             )
         }.getOrNull()
 
@@ -362,6 +430,84 @@ object Insights {
         }
     }
 
+
+    /** Days since the first entry, up to [window]; the honest denominator for "days without a slip". */
+    private fun span(entries: List<Entry>, now: Long, zone: ZoneId, window: Int): Int {
+        val first = entries.minOfOrNull { it.time } ?: return 0
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val start = Instant.ofEpochMilli(first).atZone(zone).toLocalDate()
+        return (ChronoUnit.DAYS.between(start, today).toInt() + 1).coerceIn(0, window)
+    }
+
+    /**
+     * Days without a slip out of the last [window] days (or fewer, for a new journal). A softer
+     * measure than a streak: one slip costs one day, not everything.
+     */
+    fun cleanDays(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault(), window: Int = 30): Pair<Int, Int>? {
+        val days = span(entries, now, zone, window)
+        if (days == 0) return null
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val oldest = today.minusDays(days - 1L)
+        val slipDays = entries.filter { it.gaveIn && it.time <= now }
+            .map { Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate() }
+            .filter { !it.isBefore(oldest) }
+            .toSet().size
+        return (days - slipDays).coerceAtLeast(0) to days
+    }
+
+    /** A stretch of the day where urges keep landing, from the last 30 days. */
+    data class HotWindow(val window: DayWindow, val count: Int, val total: Int, val topFeeling: Opt?)
+
+    enum class DayWindow(val startHour: Int, val endHour: Int) {
+        NIGHT(22, 5), MORNING(5, 12), AFTERNOON(12, 18), EVENING(18, 22);
+
+        fun contains(hour: Int): Boolean =
+            if (startHour < endHour) hour in startHour until endHour else hour >= startHour || hour < endHour
+
+        /** Half an hour before the window opens, as minutes from midnight. */
+        val nudgeMinute: Int get() = ((startHour * 60 - 30) + 24 * 60) % (24 * 60)
+    }
+
+    /**
+     * The window that holds most urges, but only when there is enough to say so: at least six in
+     * the last 30 days, at least four of them in this window and at least 40 percent. A few entries
+     * can look like a pattern by chance, so it stays quiet until they don't.
+     */
+    fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? {
+        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        if (recent.size < 6) return null
+        val best = DayWindow.entries.map { w ->
+            w to recent.filter { w.contains(Instant.ofEpochMilli(it.time).atZone(zone).hour) }
+        }.maxByOrNull { it.second.size } ?: return null
+        val (window, inWindow) = best
+        if (inWindow.size < 4 || inWindow.size * 10 < recent.size * 4) return null
+        val feeling = inWindow.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
+            .maxByOrNull { it.value }?.key
+        return HotWindow(window, inWindow.size, recent.size, feeling)
+    }
+
+    /**
+     * Whether the last two weeks look heavier than the two before: many more entries, or several
+     * overwhelming ones. Used only to offer a gentle nudge toward real support, never a warning.
+     */
+    fun heavier(entries: List<Entry>, now: Long): Boolean {
+        val day = 24L * 60 * 60 * 1000
+        val last = entries.filter { it.time in (now - 14 * day)..now }
+        val before = entries.count { it.time in (now - 28 * day) until (now - 14 * day) }
+        val overwhelming = last.count { it.answers[Q.INTENSITY] == Opt.OVERWHELMING }
+        return overwhelming >= 3 || (last.size >= 6 && last.size >= before * 3 / 2 + 1)
+    }
+
+    /** Counts only, safe to hand to someone you trust. No notes, no feelings, no places. */
+    fun shareText(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+        val w = week(entries, now, zone)
+        val clean = cleanDays(entries, now, zone, 7)
+        return buildString {
+            append("My week: ${w.total} urges logged, ${w.resisted} ridden out, ${w.gaveIn} given in to.")
+            if (clean != null) append(" ${clean.first} of the last ${clean.second} days without a slip.")
+        }
+    }
+
     /** A short, anonymous digest of recent history for the AI: counts and patterns, no notes. */
     fun summary(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
         val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
@@ -386,4 +532,72 @@ object Insights {
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         return ChronoUnit.DAYS.between(d, today).toInt().coerceAtLeast(0)
     }
+}
+
+/**
+ * An if-then plan the person wrote or edited themselves. Plans they own work better than assigned
+ * ones, so the coach only suggests wording; this is what they saved. [feeling] and [late] say when
+ * it applies: a plan with neither applies whenever.
+ */
+data class MyPlan(val id: Long, val text: String, val feeling: Opt?, val late: Boolean) {
+    /** How specific the plan is to this moment, or -1 if it doesn't apply. */
+    fun score(now: Opt?, isLateNow: Boolean): Int {
+        if (feeling != null && feeling != now) return -1
+        if (late && !isLateNow) return -1
+        return (if (feeling != null) 1 else 0) + (if (late) 1 else 0)
+    }
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("i", id)
+        put("x", text)
+        feeling?.let { put("f", it.name) }
+        if (late) put("l", true)
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject): MyPlan? = runCatching {
+            MyPlan(
+                id = o.getLong("i"),
+                text = o.getString("x").trim().also { require(it.isNotEmpty()) },
+                feeling = if (o.has("f")) runCatching { Opt.valueOf(o.getString("f")) }.getOrNull() else null,
+                late = o.optBoolean("l", false)
+            )
+        }.getOrNull()
+
+        fun listFromJson(text: String?): List<MyPlan> {
+            if (text.isNullOrBlank()) return emptyList()
+            return runCatching {
+                val arr = JSONArray(text)
+                (0 until arr.length()).mapNotNull { fromJson(arr.getJSONObject(it)) }
+            }.getOrDefault(emptyList())
+        }
+
+        fun listToJson(plans: List<MyPlan>): String = JSONArray(plans.map { it.toJson() }).toString()
+
+        /**
+         * During a ride nothing has been asked yet, so the feeling is unknown: show the newest plan
+         * that could apply, and prefer one made for late nights when it is late.
+         */
+        fun forRide(plans: List<MyPlan>, hour: Int): MyPlan? =
+            plans.filter { !it.late || isLate(hour) }
+                .sortedWith(compareBy<MyPlan>({ if (it.late) 0 else 1 }, { -it.id }))
+                .firstOrNull()
+
+        /** The saved plan that fits this moment best, or null. */
+        fun best(plans: List<MyPlan>, feeling: Opt?, hour: Int): MyPlan? =
+            plans.map { it to it.score(feeling, isLate(hour)) }.filter { it.second >= 0 }
+                .maxByOrNull { it.second }?.first
+    }
+}
+
+object Times {
+    /** The next moment after [now] that is [minuteOfDay] minutes past local midnight. */
+    fun nextDaily(minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
+        val nowAt = Instant.ofEpochMilli(now).atZone(zone)
+        var at = nowAt.toLocalDate().atStartOfDay(zone).plusMinutes(minuteOfDay.toLong())
+        if (!at.toInstant().isAfter(nowAt.toInstant())) at = at.plusDays(1)
+        return at.toInstant().toEpochMilli()
+    }
+
+    fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
 }

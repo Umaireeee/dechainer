@@ -3,7 +3,10 @@
     <string name="app_name">Urge Journal</string>
 
     <string name="home_urge">I feel an urge</string>
+    <string name="home_urge_hint">One tap pauses your distraction apps for 30 minutes, and we ride it out together.</string>
+    <string name="home_log_only">Just log it</string>
     <string name="home_slip">I already slipped</string>
+    <string name="home_clean_days">%1$d of the last %2$d days without a slip</string>
     <string name="home_days_since">Days since your last slip: %1$d</string>
     <string name="home_no_slips">No slips logged yet. Every urge you log still counts.</string>
     <string name="week_title">This week</string>
@@ -20,7 +23,7 @@
     <string name="interview_progress">Question %1$d of %2$d</string>
     <string name="interview_cancel">Cancel</string>
     <string name="slip_intro">A slip is information, not a verdict. Answer honestly and we\'ll work out what to change.</string>
-    <string name="slip_outro">One slip doesn\'t undo your progress. The next hour matters most: do the steps above, then go back to your plan.</string>
+    <string name="slip_outro">One slip doesn\'t undo your progress, and it doesn\'t mean you\'ve failed. What matters most is the next hour: do the steps above, then go straight back to your plan. Slipping once is not a reason to slip again.</string>
 
     <string name="plan_title">Here\'s your plan</string>
     <string name="plan_title_slip">Let\'s stop it here</string>
@@ -239,4 +242,88 @@
     <string name="settings_import_none">Nothing new found in the clipboard.</string>
     <string name="settings_deep">Go deeper: longer, more detailed deep dives (uses a little more of your AI credit).</string>
     <string name="settings_expand">Show every section of a deep dive at once.</string>
+
+    <!-- Ride it out -->
+    <string name="ride_title">Stay with me. This will pass.</string>
+    <string name="ride_body">Urges rise, peak and fade, usually within about ten minutes if you don\'t feed them. You don\'t have to fight it. Just breathe and watch it.</string>
+    <string name="ride_in">Breathe in</string>
+    <string name="ride_out">Breathe out slowly</string>
+    <string name="ride_finished">You rode the peak.</string>
+    <string name="ride_done_mark">Done</string>
+    <string name="ride_paused">Your distraction apps are paused for %1$d minutes.</string>
+    <string name="ride_one_thing">Do one thing now</string>
+    <string name="ride_your_rule">Your own rule</string>
+    <string name="ride_early">I\'m through the worst of it</string>
+    <string name="ride_continue">Continue</string>
+    <string name="ride_longer">Still strong: pause my apps for an hour</string>
+    <string name="ride_leave">Back home</string>
+
+    <!-- After the ride -->
+    <string name="after_title">How is it now?</string>
+    <string name="after_gone">It passed</string>
+    <string name="after_weaker">Weaker, and I\'m okay</string>
+    <string name="after_still">Still strong</string>
+    <string name="after_tried">What did you try?</string>
+    <string name="after_again">Ride another ten minutes</string>
+    <string name="after_save">Save it and finish</string>
+    <string name="after_save_open">Save it for now</string>
+    <string name="after_details">Add a few details (3 questions)</string>
+    <string name="after_gave_in">I gave in</string>
+    <string name="try_breathe">Breathing</string>
+    <string name="try_leave_room">Left the room</string>
+    <string name="try_cold_water">Cold water</string>
+    <string name="try_walk">A walk</string>
+    <string name="try_message_someone">Messaged someone</string>
+    <string name="try_phone_out">Phone away</string>
+    <string name="try_small_task">A small task</string>
+    <string name="try_sleep">Went to sleep</string>
+    <string name="detail_after">After the ride: %1$s</string>
+    <string name="detail_tried">Tried: %1$s</string>
+
+    <!-- Check-in card and notification -->
+    <string name="checkin_card_title">How did it go?</string>
+    <string name="checkin_card_body">You started riding out an urge %1$d minutes ago. Two taps to note how it ended.</string>
+    <string name="checkin_card_button">Check in</string>
+    <string name="checkin_card_drop">Skip this one</string>
+    <string name="channel_reminders">Reminders</string>
+    <string name="notif_checkin_title">Quick check-in</string>
+    <string name="notif_checkin_text">How is it going? It takes two taps.</string>
+    <string name="notif_nudge_title">Heads-up</string>
+    <string name="notif_nudge_text">Your tougher time of day is close. Want to pause your apps for the next hour?</string>
+    <string name="notif_nudge_action">Pause my apps for an hour</string>
+
+    <!-- Your own if-then plans -->
+    <string name="plan_yours">Make it your own</string>
+    <string name="plan_yours_body">A rule you write yourself works better than one handed to you. Write it as \"If ..., then ...\" and it will come back the next time this kind of moment does.</string>
+    <string name="plan_write">Write my rule</string>
+    <string name="plan_save">Save my rule</string>
+    <string name="plan_saved">Saved. It will show up the next time you ride out an urge.</string>
+    <string name="plan_if_prefix">If I feel %1$s%2$s, then I will</string>
+    <string name="plan_if_urge">an urge</string>
+    <string name="plan_if_late">, late at night</string>
+    <string name="plans_title">My rules</string>
+    <string name="plans_empty">Nothing saved yet. After an urge, write an \"If ..., then ...\" rule and it will live here.</string>
+    <string name="plans_edit">Edit</string>
+    <string name="plans_remove">Remove</string>
+
+    <!-- Patterns and care -->
+    <string name="hot_title">A pattern worth acting on</string>
+    <string name="hot_body">Most of your urges come in the %1$s hours: %2$d of your last %3$d. A heads-up before then can help you get ahead of it.</string>
+    <string name="hot_button">Remind me at %1$s each day</string>
+    <string name="card_dismiss">Not now</string>
+    <string name="window_night">late night</string>
+    <string name="window_morning">morning</string>
+    <string name="window_afternoon">afternoon</string>
+    <string name="window_evening">evening</string>
+    <string name="heavier_title">The last two weeks look heavier</string>
+    <string name="heavier_body">That says nothing bad about you. It\'s a good moment to be kind to yourself, and to talk to someone: a friend you trust, a doctor or a counsellor. You don\'t have to sort this out alone.</string>
+    <string name="share_week">Share this week\'s counts</string>
+
+    <!-- Reminders settings -->
+    <string name="reminders_title">Reminders</string>
+    <string name="reminders_body">Both are plain notifications that never mention what this app is for.</string>
+    <string name="reminders_checkin">Check in about 20 minutes after an urge</string>
+    <string name="reminders_nudge">Daily heads-up before your tough time of day</string>
+    <string name="reminders_off">Off</string>
+    <string name="reminders_blocked">Notifications are off for this app. Turn them on in your phone\'s settings for reminders to appear.</string>
 </resources>
