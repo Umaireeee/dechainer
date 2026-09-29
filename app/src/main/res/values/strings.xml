@@ -197,6 +197,12 @@
     <string name="schedule_anti_tamper_desc">While any schedule is enabled, automatic time is forced and date and time settings can\'t be changed, so a window can\'t be skipped by moving the clock</string>
     <string name="schedules_empty">No schedules yet. Tap \"New schedule\" to create one.</string>
     <string name="schedule_new">New schedule</string>
+    <string name="schedule_quick_start">Quick start</string>
+    <string name="schedule_quick_start_desc">Pick a starting point, add the few apps you need, then save. Nothing is applied until you do.</string>
+    <string name="schedule_preset_bedtime">Bedtime</string>
+    <string name="schedule_preset_study">Study hours</string>
+    <string name="schedule_preset_exam">Exam week</string>
+    <string name="schedule_preset_night">Night detox</string>
     <string name="schedule_default_name">Focus time</string>
     <string name="schedule_every_day">Every day</string>
     <string name="schedule_weekdays">Weekdays</string>

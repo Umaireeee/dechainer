@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.models.BlockSchedule
+import io.github.warleysr.dechainer.models.SchedulePreset
 import io.github.warleysr.dechainer.screens.common.AppPickerDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
@@ -115,6 +117,37 @@ fun SchedulesScreen(
                     }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+
+            item {
+                Text(
+                    stringResource(R.string.schedule_quick_start),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 4.dp)
+                )
+                Text(
+                    stringResource(R.string.schedule_quick_start_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(SchedulePreset.entries.toList(), key = { it.name }) { preset ->
+                        val name = stringResource(presetNameRes(preset))
+                        AssistChip(
+                            onClick = {
+                                // Like a new schedule, a preset only adds blocking: no code needed.
+                                viewModel.startPreset(preset, name)
+                                navViewModel.navigateTo("schedule_editor")
+                            },
+                            label = { Text(name) }
+                        )
+                    }
+                }
             }
 
             if (viewModel.schedules.isEmpty()) {
@@ -967,3 +1000,10 @@ private fun scheduleSummary(apps: Int, services: Int, websites: Int): String = l
     if (websites == 1) stringResource(R.string.count_website_one) else stringResource(R.string.count_website_many, websites)
 ).joinToString(" · ")
 
+
+private fun presetNameRes(preset: SchedulePreset): Int = when (preset) {
+    SchedulePreset.BEDTIME -> R.string.schedule_preset_bedtime
+    SchedulePreset.STUDY_HOURS -> R.string.schedule_preset_study
+    SchedulePreset.EXAM_WEEK -> R.string.schedule_preset_exam
+    SchedulePreset.NIGHT_DETOX -> R.string.schedule_preset_night
+}
