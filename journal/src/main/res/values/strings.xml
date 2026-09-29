@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Urge Journal</string>
+
+    <string name="home_urge">I feel an urge</string>
+    <string name="home_slip">I already slipped</string>
+    <string name="home_days_since">Days since your last slip: %1$d</string>
+    <string name="home_no_slips">No slips logged yet. Every urge you log still counts.</string>
+    <string name="week_title">This week</string>
+    <string name="week_empty">Nothing logged in the last 7 days.</string>
+    <string name="week_counts">%1$d logged: %2$d ridden out, %3$d given in to.</string>
+    <string name="week_top">Most common feeling: %1$s.</string>
+    <string name="week_peak">They cluster around %1$s.</string>
+    <string name="recent_title">Recent</string>
+    <string name="result_through">Got through</string>
+    <string name="result_gave_in">Gave in</string>
+    <string name="result_slipped">Slipped</string>
+    <string name="result_open">Open</string>
+
+    <string name="interview_progress">Question %1$d of %2$d</string>
+    <string name="interview_cancel">Cancel</string>
+    <string name="slip_intro">A slip is information, not a verdict. Answer honestly and we\'ll work out what to change.</string>
+    <string name="slip_outro">One slip doesn\'t undo your progress. The next hour matters most: do the steps above, then go back to your plan.</string>
+
+    <string name="plan_title">Here\'s your plan</string>
+    <string name="plan_title_slip">Let\'s stop it here</string>
+    <string name="plan_why">What\'s probably behind it</string>
+    <string name="plan_now">Right now</string>
+    <string name="plan_lock">Lock it in</string>
+    <string name="plan_later">Change for later</string>
+    <string name="plan_outcome_q">How did it go?</string>
+    <string name="plan_through">I got through it</string>
+    <string name="plan_gave_in">I gave in</string>
+    <string name="plan_later_btn">Tell me later</string>
+    <string name="plan_done">Done</string>
+
+    <string name="action_impulse">Block my phone for %1$d minutes</string>
+    <string name="action_focus">Start a %1$d-minute focus block</string>
+    <string name="door_sent">Sent to Déchaîner.</string>
+    <string name="door_not_installed">Déchaîner isn\'t installed on this phone.</string>
+    <string name="door_no_permission">Not allowed. Install Déchaîner first, then this app, both built with the same key.</string>
+    <string name="door_note">This asks Déchaîner to block. It can only add blocking, never remove it, and it needs Déchaîner to be set up with device owner.</string>
+
+    <!-- Questions -->
+    <string name="q_feeling">What are you feeling right now?</string>
+    <string name="q_intensity">How strong is the urge?</string>
+    <string name="q_pull">What is it pulling you toward?</string>
+    <string name="q_place">Where are you?</string>
+    <string name="q_probe_stressed">What\'s the stress about?</string>
+    <string name="q_probe_bored">What kind of bored?</string>
+    <string name="q_probe_lonely">Could you reach someone?</string>
+    <string name="q_probe_tired">How much did you sleep last night?</string>
+    <string name="q_probe_anxious">What\'s the worry about?</string>
+    <string name="q_probe_other">Did something happen?</string>
+    <string name="q_thought">What are you telling yourself?</string>
+    <string name="q_phone_place">Where\'s your phone right now?</string>
+    <string name="q_gap">What was in place when it happened?</string>
+    <string name="q_stopper">What would have stopped it?</string>
+
+    <!-- Answers -->
+    <string name="opt_bored">Bored</string>
+    <string name="opt_stressed">Stressed</string>
+    <string name="opt_lonely">Lonely</string>
+    <string name="opt_tired">Tired</string>
+    <string name="opt_anxious">Anxious</string>
+    <string name="opt_sad">Sad</string>
+    <string name="opt_other_feeling">Something else</string>
+    <string name="opt_mild">Mild</string>
+    <string name="opt_medium">Medium</string>
+    <string name="opt_strong">Strong</string>
+    <string name="opt_overwhelming">Overwhelming</string>
+    <string name="opt_scrolling">Scrolling</string>
+    <string name="opt_explicit">Explicit content</string>
+    <string name="opt_videos_games">Videos or games</string>
+    <string name="opt_other_pull">Something else</string>
+    <string name="opt_bed">In bed</string>
+    <string name="opt_couch">On the couch</string>
+    <string name="opt_desk">At my desk</string>
+    <string name="opt_bathroom">In the bathroom</string>
+    <string name="opt_outside">Outside</string>
+    <string name="opt_other_place">Somewhere else</string>
+    <string name="opt_stress_study">Study or exams</string>
+    <string name="opt_stress_work">Work</string>
+    <string name="opt_stress_people">People</string>
+    <string name="opt_stress_money">Money</string>
+    <string name="opt_stress_unknown">I don\'t know</string>
+    <string name="opt_bored_avoiding">Avoiding something I should do</string>
+    <string name="opt_bored_nothing">Nothing to do</string>
+    <string name="opt_bored_waiting">Waiting for something</string>
+    <string name="opt_lonely_can_reach">Yes, I could message someone</string>
+    <string name="opt_lonely_no_one">No one is around</string>
+    <string name="opt_lonely_wont">I could, but I don\'t want to</string>
+    <string name="opt_sleep_low">Under 5 hours</string>
+    <string name="opt_sleep_mid">5 to 7 hours</string>
+    <string name="opt_sleep_ok">7 hours or more</string>
+    <string name="opt_anx_future">The future</string>
+    <string name="opt_anx_social">Something someone said</string>
+    <string name="opt_anx_body">My body or health</string>
+    <string name="opt_anx_unknown">I don\'t know</string>
+    <string name="opt_happened_today">Yes, something today</string>
+    <string name="opt_nothing_particular">Nothing in particular</string>
+    <string name="opt_just_once">Just this once</string>
+    <string name="opt_deserve_it">I deserve it</string>
+    <string name="opt_nobody_knows">Nobody will know</string>
+    <string name="opt_cant_stop">I can\'t stop</string>
+    <string name="opt_no_thought">Nothing, it just happens</string>
+    <string name="opt_phone_with_me">With me</string>
+    <string name="opt_phone_outside">Charging outside the room</string>
+    <string name="opt_phone_other_room">In another room</string>
+    <string name="opt_gap_blocked">My phone was blocked</string>
+    <string name="opt_gap_unblocked">Nothing was blocking it then</string>
+    <string name="opt_gap_other_device">I used another device</string>
+    <string name="opt_gap_waited">I waited for the block to end</string>
+    <string name="opt_stop_distance">Phone further away</string>
+    <string name="opt_stop_company">Someone with me</string>
+    <string name="opt_stop_earlier">An earlier block</string>
+    <string name="opt_stop_busy">Being busy</string>
+    <string name="opt_stop_sleep">Going to sleep earlier</string>
+    <string name="opt_stop_unknown">I don\'t know</string>
+
+    <!-- Why -->
+    <string name="reason_tired_late">You\'re tired or it\'s late. Self-control is at its lowest then, and the brain grabs for quick relief.</string>
+    <string name="reason_stress_escape">Stress is pushing you to escape. The urge is a shortcut to feeling better for a few minutes.</string>
+    <string name="reason_bored_avoiding">Boredom, or avoiding something. The urge fills the gap so you don\'t have to face it.</string>
+    <string name="reason_lonely">Loneliness. The urge is standing in for connection.</string>
+    <string name="reason_anxious">Anxiety. Your mind wants relief from the worry.</string>
+    <string name="reason_thought_trap">The story you\'re telling yourself is how urges win. Notice it as a story, not a fact.</string>
+    <string name="reason_general">Urges rise, peak and fade, usually within 10 to 20 minutes. This one will too.</string>
+
+    <!-- Right now -->
+    <string name="step_breathe">Breathe slowly for one minute: in for 4, out for 6.</string>
+    <string name="step_leave_room">Stand up and leave the room you\'re in.</string>
+    <string name="step_cold_water">Splash cold water on your face, or take a cold shower.</string>
+    <string name="step_walk">Walk for ten minutes, ideally outside.</string>
+    <string name="step_message_someone">Message or call someone you trust, even about nothing.</string>
+    <string name="step_phone_out">Put your phone in another room and leave it there.</string>
+    <string name="step_small_task">Do one small task for ten minutes: a few questions, tidy your desk.</string>
+    <string name="step_sleep">If you can, go to sleep. Tomorrow\'s you will thank you.</string>
+
+    <!-- Later -->
+    <string name="rule_phone_charges_outside">Charge your phone outside the bedroom from tonight.</string>
+    <string name="rule_earlier_block">Start your evening block an hour earlier.</string>
+    <string name="rule_extend_schedule">Extend a Déchaîner schedule to cover the hour this happened.</string>
+    <string name="rule_other_device">Cover your other devices too, or tell someone about them.</string>
+    <string name="rule_offline_urge">Your phone block held, so the urge went offline. Leave the room at the first sign of it, before it builds.</string>
+    <string name="rule_study_start">Fix a small start time for your hardest task, so boredom has less room.</string>
+    <string name="rule_tell_someone">Tell one person you trust what you\'re working on.</string>
+    <string name="rule_sleep_earlier">Move bedtime earlier; short sleep makes every urge stronger.</string>
+</resources>
