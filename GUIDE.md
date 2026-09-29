@@ -69,6 +69,29 @@ Open **Settings → Status**. It shows whether device owner, exact alarms, batte
 
 ---
 
+## Step 11: The Urge Journal (a second app)
+A companion app that sits next to Déchaîner. It's built from this same repository and signed with the same key.
+
+**Install order matters:** install **Déchaîner first**, then the **Urge Journal**. Both must come from the same signed release build, or Android won't let them talk to each other.
+
+**One-time setup in Déchaîner:** *Settings → Impulse lock*, set the panic button to "timer and suspend" and pick the apps to pause. The journal's "Block my phone" button uses that.
+
+**When an urge hits:**
+1. Open the journal and tap **I feel an urge**.
+2. Answer the short questions. They change depending on what you're feeling, and they take under a minute.
+3. You get a plan: what's probably behind it, what to do right now, and a **Lock it in** button that asks Déchaîner to block your phone for a length that matches how strong and how late it is.
+4. Afterwards, say how it went.
+
+**If you already slipped:** tap **I already slipped**. No judgement. It asks what was in place and what would have stopped it, blocks your phone for the next stretch to stop the spiral, and suggests one change so it's less likely next time.
+
+**The AI deep dive:** in the journal's **Settings**, pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key, and press **Test connection**. Use **Load models from my account** if a model name is rejected. Fill in **About you** with your goals and how blunt you want the coach to be; it is added to every deep dive.
+
+**Weekly review:** once you have a few entries, a **Weekly review** button appears on Home. It looks at your counts and patterns (never your notes) and suggests what to try next.
+
+**Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** shares them as text you can keep, and **Import from clipboard** restores them.
+
+Everything you write stays on your phone, except what you send for a deep dive or weekly review. The journal can only ask Déchaîner to block more, never to unblock.
+
 ## If you get locked out
 - **Lost your recovery code:** *Settings → Forced removal*. Start it, and after **4 days** you can remove everything without the code. The timer can't be sped up. This is the escape hatch, and it also works while a locked schedule is running.
 

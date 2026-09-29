@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="io.github.warleysr.dechainer.permission.URGE_ACTION"
+        android:protectionLevel="signature" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -98,6 +102,17 @@
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The urge journal's door: exported, but only apps signed with the same key hold the
+             permission, and every command it accepts only adds blocking. -->
+        <receiver
+            android:name=".UrgeActionReceiver"
+            android:exported="true"
+            android:permission="io.github.warleysr.dechainer.permission.URGE_ACTION">
+            <intent-filter>
+                <action android:name="io.github.warleysr.dechainer.URGE_ACTION" />
             </intent-filter>
         </receiver>
 

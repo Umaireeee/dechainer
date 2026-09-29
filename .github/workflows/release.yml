@@ -58,6 +58,10 @@ jobs:
           sed -i -E "s/versionCode = [0-9]+/versionCode = $RUN/" app/build.gradle.kts
           sed -i -E "s/versionName = \"([^\"]*)\"/versionName = \"\1-sched.$RUN\"/" app/build.gradle.kts
           grep -nE "versionCode|versionName" app/build.gradle.kts
+          # The journal too, so every build installs as an upgrade over the last.
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $RUN/" journal/build.gradle.kts
+          sed -i -E "s/versionName = \"([^\"]*)\"/versionName = \"\1.$RUN\"/" journal/build.gradle.kts
+          grep -nE "versionCode|versionName" journal/build.gradle.kts
 
       - name: Unit tests (must pass)
         run: |
@@ -82,8 +86,15 @@ jobs:
           "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
             --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
             --out dechainer-schedules-release.apk /tmp/aligned.apk
+          # The urge journal, signed with the same key: Android only lets it talk to Déchaîner
+          # (a signature permission) when both apps share a signing key.
+          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 journal/build/outputs/apk/release/journal-release-unsigned.apk /tmp/journal-aligned.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
+            --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
+            --out urge-journal-release.apk /tmp/journal-aligned.apk
           rm -f /tmp/key.p12
           "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs dechainer-schedules-release.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs urge-journal-release.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -96,6 +107,12 @@ jobs:
           name: release-apk-untested
           path: dechainer-schedules-release.apk
           retention-days: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: URGE-JOURNAL-RELEASE
+          path: urge-journal-release.apk
+          retention-days: 90
 
   engine-test:
     needs: build
