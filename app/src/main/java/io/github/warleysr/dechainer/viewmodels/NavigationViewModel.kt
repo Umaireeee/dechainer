@@ -5,12 +5,17 @@ import androidx.lifecycle.ViewModel
 
 /** Screen stack behind [io.github.warleysr.dechainer.activities.MainActivity]'s single-Activity routing. */
 class NavigationViewModel : ViewModel() {
-    private val stack = mutableStateListOf("restrictions")
+    companion object {
+        val ROOTS = listOf("focus", "apps", "schedules", "config")
+    }
 
-    fun selectedTab() = stack.lastOrNull() ?: "restrictions"
+    // Opens on Focus: the timer is what you come here for.
+    private val stack = mutableStateListOf("focus")
+
+    fun selectedTab() = stack.lastOrNull() ?: "focus"
 
     fun navigateTo(screen: String) {
-        if (screen in listOf("restrictions", "apps", "config")) {
+        if (screen in ROOTS) {
             stack.clear()
         }
         stack.add(screen)

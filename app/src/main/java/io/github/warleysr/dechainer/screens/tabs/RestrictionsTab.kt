@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
@@ -130,7 +131,7 @@ private fun RestrictionAccordion(
 
     val isAllEnabled = viewModel.isAllDraftsEnabled(filteredKeys)
 
-    ElevatedCard(
+    CalmCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
@@ -213,14 +214,10 @@ fun RestrictionItem(
             onCheckedChange = onCheckedChange
         )
         Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+            // Just the plain-language name; the system key underneath meant nothing to anyone.
             Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = label.ifBlank { value },
+                style = MaterialTheme.typography.bodyLarge
             )
         }
         if (isApplied) {

@@ -7,11 +7,6 @@ data class AppItem(
     val packageName: String,
     val icon: Drawable,
     val isSystem: Boolean,
-    val isHidden: Boolean = false,
     val isUninstallBlocked: Boolean = false,
-    val timeLimitMinutes: Int = 0,
-    val reopeningSeconds: Int = 0,
-    val timeWindows: List<TimeWindow> = emptyList(),
-    val isSuspended: Boolean = false,
-    val hasExplicitContent: Boolean = false
+    val isSuspended: Boolean = false
 )

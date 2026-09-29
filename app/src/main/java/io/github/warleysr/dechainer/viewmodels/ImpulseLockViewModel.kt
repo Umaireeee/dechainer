@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 /**
  * Settings behind the "I'm having impulses" panic button. Persistence goes through
  * [SecurityManager], which owns `security_prefs` and is also what
- * [io.github.warleysr.dechainer.DechainerAccessibilityService] reads to apply the suspensions.
+ * [io.github.warleysr.dechainer.data.ScheduleEnforcer] reads to apply the suspensions.
  */
 class ImpulseLockViewModel : ViewModel() {
     private val context = DechainerApplication.getInstance()

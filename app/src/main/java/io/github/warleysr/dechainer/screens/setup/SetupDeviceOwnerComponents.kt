@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.ui.theme.CalmCard
 import kotlin.system.exitProcess
 
 @Composable
@@ -24,7 +25,7 @@ fun SetupStepCard(
     buttonIcon: ImageVector,
     onClick: () -> Unit
 ) {
-    ElevatedCard(Modifier.padding(8.dp)) {
+    CalmCard(Modifier.padding(8.dp)) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(16.dp)

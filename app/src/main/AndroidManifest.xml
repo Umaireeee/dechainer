@@ -6,9 +6,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="ManifestOrder,PackageVisibilityPolicy,QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Exact alarms so schedule and time-window boundaries fire on time: auto-granted on 31-32, USE_EXACT_ALARM from 33 on. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Daily app time limits read Android's own usage log (Usage access, granted once in Settings). -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- Pomodoro: ring when a phase ends, and ask "Did you do the work?" full screen. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <queries>
         <intent>
@@ -41,53 +49,33 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The brick's home screen: off normally, switched on only for a focus block, so that
+             any reboot, crash or Home press lands back on the pinned timer. -->
+        <activity-alias
+            android:name=".activities.BrickHome"
+            android:targetActivity=".activities.MainActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
-            android:name=".activities.TimeUpActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
+            android:name=".activities.PomodoroEndActivity"
+            android:exported="false"
             android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.ReopeningLimitActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.BlockedWordActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.NsfwContentBlockedActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.OutsideTimeWindowActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.AccessibilityRequestActivity"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+
+        <receiver
+            android:name=".focus.PomodoroReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".DechainerDeviceAdminReceiver"
@@ -102,6 +90,18 @@
         </receiver>
 
         <receiver
+            android:name=".ScheduleReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".DechainerPolicyUpdateReceiver"
             android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">
@@ -111,10 +111,6 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".notifications.UsageWarningDismissReceiver"
-            android:exported="false" />
-
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
@@ -122,18 +118,6 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-
-        <service android:name=".DechainerAccessibilityService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:label="@string/app_name"
-            android:exported="false"
-            tools:ignore="AccessibilityPolicy">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
 
     </application>
 

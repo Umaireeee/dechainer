@@ -6,83 +6,49 @@ import android.content.RestrictionsManager
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
-import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.models.AppItem
-import io.github.warleysr.dechainer.models.TimeWindow
-import java.util.concurrent.TimeUnit
 
+/** The installed apps and their two states Déchaîner controls: suspended, and protected from uninstall. */
 object AppRepository {
-    private const val HIDDEN_APPS_PREFS = "hidden_apps_prefs"
-    private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
-
     private val context = DechainerApplication.getInstance()
     private val packageManager = context.packageManager
     private val dpm get() = DeviceAdmin.policyManager
     private val adminName get() = DeviceAdmin.component
-
-    private val hiddenAppsPrefs
-        get() = context.getSharedPreferences(HIDDEN_APPS_PREFS, Context.MODE_PRIVATE)
 
     @Volatile
     private var cachedApps: List<AppItem>? = null
     private val cacheLock = Any()
 
     fun getApps(forceRefresh: Boolean = false): List<AppItem> {
-        if (!forceRefresh) {
-            cachedApps?.let { return it }
-        }
+        if (!forceRefresh) cachedApps?.let { return it }
         synchronized(cacheLock) {
-            if (!forceRefresh) {
-                cachedApps?.let { return it }
-            }
+            if (!forceRefresh) cachedApps?.let { return it }
             val fresh = loadAppsFromSystem()
             cachedApps = fresh
             return fresh
         }
     }
 
-    private fun loadAppsFromSystem(): List<AppItem> {
-        val limitsPrefs = context.getSharedPreferences("app_limits", Context.MODE_PRIVATE)
-        val reopenPrefs = context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE)
-        val ratingsPrefs = context.getSharedPreferences("app_ratings", Context.MODE_PRIVATE)
-        val timeWindowsPrefs = context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
-
-        val installedApps = packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES)
-
-        return installedApps.asSequence()
+    private fun loadAppsFromSystem(): List<AppItem> =
+        packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).asSequence()
             .filter { it.packageName != context.packageName }
             .map { appInfo ->
-                val packageName = appInfo.packageName
-                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-
-                val isHidden = try { dpm.isApplicationHidden(adminName, packageName) } catch (_: Exception) { false }
-                val isUninstallBlocked = try { dpm.isUninstallBlocked(adminName, packageName) } catch (_: Exception) { false }
-                val isSuspended = try { dpm.isPackageSuspended(adminName, packageName) } catch (_: Exception) { false }
-
+                val pkg = appInfo.packageName
                 AppItem(
                     name = appInfo.loadLabel(packageManager).toString(),
-                    packageName = packageName,
+                    packageName = pkg,
                     icon = appInfo.loadIcon(packageManager),
-                    isSystem = isSystem,
-                    isHidden = isHidden,
-                    isUninstallBlocked = isUninstallBlocked,
-                    timeLimitMinutes = limitsPrefs.getInt(packageName, 0),
-                    reopeningSeconds = reopenPrefs.getInt(packageName, 0),
-                    timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
-                    isSuspended = isSuspended,
-                    hasExplicitContent = ratingsPrefs.getBoolean(packageName, false)
+                    isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+                    isUninstallBlocked = try { dpm.isUninstallBlocked(adminName, pkg) } catch (_: Exception) { false },
+                    isSuspended = try { dpm.isPackageSuspended(adminName, pkg) } catch (_: Exception) { false }
                 )
             }
             .sortedBy { it.name.lowercase() }
             .toList()
-    }
 
     fun invalidateCache() {
-        synchronized(cacheLock) {
-            cachedApps = null
-        }
+        synchronized(cacheLock) { cachedApps = null }
     }
 
     private fun updateCachedApp(packageName: String, transform: (AppItem) -> AppItem) {
@@ -91,50 +57,7 @@ object AppRepository {
         }
     }
 
-    fun setAppHidden(packageName: String, hidden: Boolean) {
-        val success = dpm.setApplicationHidden(adminName, packageName, hidden)
-        // `success` reflects the real PackageManager state at the time of the call
-        // (DevicePolicyManagerService double-checks isApplicationHidden() before
-        // returning). Only persist the new state locally when it's true - otherwise
-        // the cache/prefs would drift from reality and invert the next toggle.
-        Log.d("DechainerPolicyUpdate", "setApplicationHidden request: package=$packageName hidden=$hidden accepted=$success")
-        if (!success) {
-            invalidateCache()
-            return
-        }
-
-        updateCachedApp(packageName) { it.copy(isHidden = hidden) }
-
-        hiddenAppsPrefs.edit {
-            if (hidden) {
-                putStringSet(
-                    KEY_HIDDEN_PACKAGES,
-                    (hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet()) ?: emptySet()) + packageName
-                )
-            } else {
-                putStringSet(
-                    KEY_HIDDEN_PACKAGES,
-                    (hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet()) ?: emptySet()) - packageName
-                )
-            }
-        }
-    }
-
-    fun reapplyHiddenIfNeeded(packageName: String) {
-        val wasHidden = hiddenAppsPrefs.getStringSet(KEY_HIDDEN_PACKAGES, emptySet())
-            ?.contains(packageName) == true
-        Log.d("DechainerPolicyUpdate", "reapplyHiddenIfNeeded: package=$packageName wasHidden=$wasHidden")
-        if (!wasHidden) return
-
-        val success = dpm.setApplicationHidden(adminName, packageName, true)
-        Log.d("DechainerPolicyUpdate", "reapplyHiddenIfNeeded request: package=$packageName accepted=$success")
-        if (success) {
-            updateCachedApp(packageName) { it.copy(isHidden = true) }
-        } else {
-            invalidateCache()
-        }
-    }
-
+    /** Manual suspension. The schedule engine never releases an app it didn't suspend itself. */
     fun setAppSuspended(packageName: String, suspended: Boolean) {
         dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended)
         updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
@@ -145,40 +68,8 @@ object AppRepository {
         updateCachedApp(packageName) { it.copy(isUninstallBlocked = block) }
     }
 
-    fun setAppTimeLimit(packageName: String, minutes: Int) {
-        context.getSharedPreferences("app_limits", Context.MODE_PRIVATE).edit {
-            if (minutes > 0) putInt(packageName, minutes) else remove(packageName)
-        }
-        updateCachedApp(packageName) { it.copy(timeLimitMinutes = minutes) }
-    }
-
-    fun getAppUsage(packageName: String, inMinutes: Boolean = false): Long {
-        val used = context.getSharedPreferences("internal_usage_stats", Context.MODE_PRIVATE)
-            .getLong(packageName, 0L)
-        return if (inMinutes) TimeUnit.MILLISECONDS.toMinutes(used) else used
-    }
-
-    fun setAppReopenTime(packageName: String, seconds: Int) {
-        context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE).edit {
-            if (seconds > 0) putInt(packageName, seconds) else remove(packageName)
-        }
-        updateCachedApp(packageName) { it.copy(reopeningSeconds = seconds) }
-    }
-
-    fun getAppReopenTime(packageName: String): Int {
-        return context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE).getInt(packageName, 0)
-    }
-
-    fun setAppTimeWindows(packageName: String, windows: List<TimeWindow>) {
-        context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE).edit {
-            if (windows.isEmpty()) remove(packageName) else putString(packageName, AppTimeWindows.encode(windows))
-        }
-        updateCachedApp(packageName) { it.copy(timeWindows = windows) }
-    }
-
-    fun getApplicationRestrictions(packageName: String): Bundle {
-        return dpm.getApplicationRestrictions(adminName, packageName)
-    }
+    fun getApplicationRestrictions(packageName: String): Bundle =
+        dpm.getApplicationRestrictions(adminName, packageName)
 
     fun setApplicationRestrictions(packageName: String, restrictions: Bundle) {
         val current = dpm.getApplicationRestrictions(adminName, packageName)
@@ -188,15 +79,12 @@ object AppRepository {
 
     fun getAvailableRestrictions(packageName: String): List<RestrictionEntry> {
         val rm = context.getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
-
         try {
             val appInfo = context.packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
             if (appInfo.metaData == null) return emptyList()
         } catch (_: PackageManager.NameNotFoundException) {
             return emptyList()
         }
-
-        val restrictions = rm.getManifestRestrictions(packageName)
-        return restrictions?.toList() ?: emptyList()
+        return rm.getManifestRestrictions(packageName)?.toList() ?: emptyList()
     }
 }

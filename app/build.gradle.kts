@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.shizuku.provider)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.timber)
     implementation(libs.jsoup)
     implementation(libs.json)

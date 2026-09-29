@@ -50,7 +50,7 @@ fun SetupRecovery(paddingValues: PaddingValues) {
             stringResource(R.string.attention),
             fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline,
-            color = Color.Red,
+            color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.titleLarge
         )
         Spacer(Modifier.height(8.dp))

@@ -258,12 +258,85 @@ class SecurityManager {
         fun validateRecoveryCode(userInput: String, storedKey: String): Boolean {
             if (isSessionActive()) return true
 
-            val success =  userInput == storedKey
+            // Opening the session is now RecoveryGate's call, via beginUnlock, so the unlock
+            // delay can sit between a correct code and changes unlocking.
+            return userInput == storedKey
+        }
 
-            if (success)
+        private const val KEY_UNLOCK_DELAY_MIN = "unlock_delay_minutes"
+        private const val KEY_UNLOCK_STARTED = "unlock_started_elapsed"
+        private const val KEY_UNLOCK_AT = "unlock_at_elapsed"
+
+        private fun securityPrefs(context: Context) =
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
+
+        fun getUnlockDelayMinutes(context: Context): Int =
+            UnlockDelay.clampMinutes(securityPrefs(context).getInt(KEY_UNLOCK_DELAY_MIN, 0))
+
+        fun setUnlockDelayMinutes(context: Context, minutes: Int) =
+            securityPrefs(context).edit { putInt(KEY_UNLOCK_DELAY_MIN, UnlockDelay.clampMinutes(minutes)) }
+
+        private fun pendingUnlock(context: Context): UnlockDelay.Pending? {
+            val p = securityPrefs(context)
+            val at = p.getLong(KEY_UNLOCK_AT, 0L)
+            if (at <= 0L) return null
+            val stored = UnlockDelay.Pending(p.getLong(KEY_UNLOCK_STARTED, 0L), at)
+            val fixed = UnlockDelay.afterReboot(stored, android.os.SystemClock.elapsedRealtime())
+            if (fixed != stored) p.edit {
+                putLong(KEY_UNLOCK_STARTED, fixed.startedAt)
+                putLong(KEY_UNLOCK_AT, fixed.unlockAt)
+            }
+            return fixed
+        }
+
+        /** After a correct code: opens now with no delay, otherwise starts the countdown. True if open now. */
+        fun beginUnlock(context: Context): Boolean {
+            val delay = getUnlockDelayMinutes(context)
+            if (delay <= 0) {
                 startSession()
+                return true
+            }
+            val now = android.os.SystemClock.elapsedRealtime()
+            val pending = pendingUnlock(context)
+            // Re-entering the code while a countdown runs never restarts or shortens it.
+            if (pending == null || UnlockDelay.isExpired(pending, now)) {
+                securityPrefs(context).edit {
+                    putLong(KEY_UNLOCK_STARTED, now)
+                    putLong(KEY_UNLOCK_AT, now + delay * 60_000L)
+                }
+            }
+            return syncDelayedSession(context)
+        }
 
-            return success
+        /** Opens the session once a countdown has finished. True while a session is open. */
+        fun syncDelayedSession(context: Context): Boolean {
+            if (isSessionActive()) return true
+            val pending = pendingUnlock(context) ?: return false
+            val now = android.os.SystemClock.elapsedRealtime()
+            return when {
+                UnlockDelay.isOpen(pending, now) -> {
+                    sessionEndTime = System.currentTimeMillis() + UnlockDelay.remainingOpenMs(pending, now)
+                    // Handed to the in-memory session, so ending the session really ends it.
+                    cancelUnlock(context)
+                    true
+                }
+                UnlockDelay.isExpired(pending, now) -> {
+                    cancelUnlock(context)
+                    false
+                }
+                else -> false
+            }
+        }
+
+        fun remainingUnlockWaitMs(context: Context): Long =
+            pendingUnlock(context)?.let { UnlockDelay.remainingWaitMs(it, android.os.SystemClock.elapsedRealtime()) } ?: 0L
+
+        fun isWaitingForUnlock(context: Context): Boolean =
+            pendingUnlock(context)?.let { UnlockDelay.isWaiting(it, android.os.SystemClock.elapsedRealtime()) } ?: false
+
+        fun cancelUnlock(context: Context) = securityPrefs(context).edit {
+            remove(KEY_UNLOCK_STARTED)
+            remove(KEY_UNLOCK_AT)
         }
 
         fun startForcedRemoval(context: Context) {

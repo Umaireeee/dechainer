@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 
 @Composable
@@ -27,7 +28,7 @@ fun NoDeviceOwnerPrivileges(navViewModel: NavigationViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxSize()
     ) {
-        ElevatedCard(Modifier.padding(8.dp)) {
+        CalmCard(Modifier.padding(8.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     stringResource(R.string.not_device_owner),

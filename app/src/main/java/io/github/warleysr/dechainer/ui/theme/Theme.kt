@@ -2,7 +2,9 @@ package io.github.warleysr.dechainer.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -11,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
 private val lightScheme = lightColorScheme(
     primary = primaryLight,
@@ -89,6 +92,15 @@ private val darkScheme = darkColorScheme(
 )
 
 
+// Soft, but with hierarchy: small controls are gently rounded, sheets and dialogs are generous.
+val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
+)
+
 @Immutable
 data class ColorFamily(
     val color: Color,
@@ -103,7 +115,8 @@ val unspecified_scheme = ColorFamily(
 
 @Composable
 fun DechainerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Always night: one calm dark palette, whatever the system is set to.
+    darkTheme: Boolean = true,
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = false,
     content: @Composable() () -> Unit
@@ -121,6 +134,7 @@ fun DechainerTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }

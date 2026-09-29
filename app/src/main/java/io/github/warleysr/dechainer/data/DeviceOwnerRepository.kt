@@ -20,7 +20,6 @@ object DeviceOwnerRepository {
     private val dpm get() = DeviceAdmin.policyManager
     private val adminName get() = DeviceAdmin.component
     private val packageName = context.packageName
-    private val serviceComponent = "$packageName/.DechainerAccessibilityService"
 
     fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(packageName)
 
@@ -61,6 +60,18 @@ object DeviceOwnerRepository {
     /** Removes device-owner status, or requests it via Shizuku's `dpm set-device-owner` — returns the resulting state. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false): Boolean {
         if (remove && dpm.isAdminActive(adminName)) {
+            // Android does not un-hide apps when a Device Owner goes away, and nothing could
+            // afterwards. Bring back everything Déchaîner hid first.
+            Blocker.releaseAllHidden(context, dpm, adminName)
+            // Same for the brick's home-screen takeover: undo it while it still can be undone,
+            // so your own launcher is the home screen afterwards, not the timer.
+            try {
+                dpm.clearPackagePersistentPreferredActivities(adminName, packageName)
+                context.packageManager.setComponentEnabledSetting(
+                    android.content.ComponentName(context, "io.github.warleysr.dechainer.activities.BrickHome"),
+                    PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP
+                )
+            } catch (_: Exception) { }
             dpm.clearDeviceOwnerApp(packageName)
             return false
         }
@@ -81,6 +92,51 @@ object DeviceOwnerRepository {
     fun setPrivateDNS(host: String): Int {
         return dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
     }
+
+    /**
+     * "Automatic" Private DNS: encrypted where the network allows, plain otherwise, and no
+     * filtering. The closest thing to off a device owner can set.
+     */
+    /**
+     * Prepares pinning for the brick: Déchaîner and the dialers may run pinned (so incoming calls
+     * still show), and the pinned phone keeps the status bar, the notification shade with Quick
+     * Settings (airplane mode, mobile data, hotspot) and the power menu. Home, recents and every
+     * other app are out of reach.
+     */
+    fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
+        // Déchaîner, the dialers, and the apps you allowed: a pinned phone opens only these.
+        val pkgs = mutableSetOf(context.packageName)
+        pkgs += allowed
+        try {
+            val telecom = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager
+            telecom.defaultDialerPackage?.let { pkgs += it }
+            telecom.systemDialerPackage?.let { pkgs += it }
+        } catch (_: Exception) { }
+        dpm.setLockTaskPackages(adminName, pkgs.toTypedArray())
+        // Android only allows the notification shade (Quick Settings) together with the Home
+        // button feature: asked for alone, it's rejected with an error, and the pin never started.
+        // The Home button shows, but can't open the launcher: it isn't on the list above.
+        try {
+            dpm.setLockTaskFeatures(
+                adminName,
+                DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or
+                    DevicePolicyManager.LOCK_TASK_FEATURE_HOME or
+                    DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
+                    DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS
+            )
+        } catch (e: Exception) {
+            // Stricter over nothing: no shade, but the phone still pins.
+            timber.log.Timber.w(e, "Brick features refused; pinning without the shade")
+            try {
+                dpm.setLockTaskFeatures(
+                    adminName,
+                    DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS
+                )
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun setPrivateDnsAutomatic(): Int = dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
 
     fun getPrivateDNS(): String? {
         if (dpm.getGlobalPrivateDnsMode(adminName) != DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME)
@@ -201,64 +257,5 @@ object DeviceOwnerRepository {
             })
 
         return users
-    }
-
-    fun getAccessibilityServices(): String {
-        var services = ""
-        ShizukuRunner.command(
-            "settings get secure enabled_accessibility_services",
-            listener = object : ShizukuRunner.CommandResultListener {
-                override fun onCommandResult(output: String, done: Boolean) {
-                    println("Output: $output Done: $done")
-                    services = output
-                }
-
-                override fun onCommandError(error: String) {
-                    Log.e("Shizuku", error)
-                }
-            })
-        return services.replace("\n", "")
-    }
-
-    fun isAccessibilityGranted(): Boolean {
-        return getAccessibilityServices().contains(".DechainerAccessibilityService")
-    }
-
-    fun changeAccessibilityPermission(grant: Boolean) {
-        var services = getAccessibilityServices()
-        val isGranted = isAccessibilityGranted()
-
-        if (grant && !isGranted) {
-            if (services.isNotEmpty())
-                services += ":"
-            services += serviceComponent
-        }
-        else if (!grant && isGranted) {
-            services = "'null'"
-        }
-
-        ShizukuRunner.command(
-            "settings put secure enabled_accessibility_services $services",
-            listener = object : ShizukuRunner.CommandResultListener {
-                override fun onCommandResult(output: String, done: Boolean) {
-                    println("Output: $output Done: $done")
-                }
-
-                override fun onCommandError(error: String) {
-                    Log.e("Shizuku", error)
-                }
-            })
-
-        ShizukuRunner.command(
-            "settings put secure accessibility_enabled 1",
-            listener = object : ShizukuRunner.CommandResultListener {
-                override fun onCommandResult(output: String, done: Boolean) {
-                    println("Output: $output Done: $done")
-                }
-
-                override fun onCommandError(error: String) {
-                    Log.e("Shizuku", error)
-                }
-            })
     }
 }
