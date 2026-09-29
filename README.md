@@ -37,6 +37,9 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 - **Urge log:** name what set an urge off, wait ten minutes, log how it went, and get a weekly summary of your triggers. Stays on your phone; share it only if you choose.
 - **Quick-start presets:** Bedtime, Study hours, Exam week and Night detox open a pre-filled schedule for you to adjust.
 
+### Urge Journal (companion app)
+A second app in this repository, signed with the same key, for the moment an urge hits. One tap pauses your distraction apps and starts a ten-minute guided ride (breathing, one step, your own rule); a short check-in afterwards teaches the coach what actually works for you. It also offers an optional AI deep dive (bring your own key), a weekly review, your own "If ..., then ..." rules, and a daily heads-up before the time of day your urges cluster. Install Déchaîner first, then the journal. See the **[GUIDE](GUIDE.md)** (Step 11) and `URGE_ACTIONS.md`.
+
 New here? Read the step-by-step **[GUIDE](GUIDE.md)**.
 
 ### Battery

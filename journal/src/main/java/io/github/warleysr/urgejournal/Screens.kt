@@ -784,8 +784,10 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
                 Text(stringResource(R.string.detail_after, label("after_", it)), style = MaterialTheme.typography.bodyMedium)
             }
             if (entry.tried.isNotEmpty()) {
+                // joinToString is not inline, so the composable labels are looked up first.
+                val triedNames = entry.tried.map { s -> label("try_", s).lowercase() }
                 Text(
-                    stringResource(R.string.detail_tried, entry.tried.joinToString(", ") { s -> label("try_", s).lowercase() }),
+                    stringResource(R.string.detail_tried, triedNames.joinToString(", ")),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
