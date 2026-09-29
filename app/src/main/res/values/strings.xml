@@ -146,14 +146,14 @@
 
 
     <string name="forced_removal">Forced removal</string>
-    <string name="forced_removal_desc">Remove everything after 48 hours, no code</string>
+    <string name="forced_removal_desc">Remove everything after 4 days, no code</string>
     <string name="forced_removal_dialog_title">Start forced removal?</string>
-    <string name="forced_removal_dialog_text">If you have lost your recovery code, you can start a 48-hour timer. After this period, you will be able to remove all restrictions. This process cannot be fast-forwarded.</string>
+    <string name="forced_removal_dialog_text">If you have lost your recovery code, you can start a 4-day timer. After this period, you will be able to remove all restrictions. This process cannot be fast-forwarded.</string>
     <string name="forced_removal_confirm_checkbox">I confirm that I want to remove the restrictions</string>
     <string name="forced_removal_cancel_dialog_title">Cancel forced removal?</string>
     <string name="forced_removal_cancel_dialog_text">Are you sure you want to cancel the forced removal process? The timer will be reset.</string>
     <string name="forced_removal_finish_dialog_title">Finish forced removal?</string>
-    <string name="forced_removal_finish_dialog_text">The 48-hour period has passed. Do you want to remove all restrictions now?</string>
+    <string name="forced_removal_finish_dialog_text">The 4-day period has passed. Do you want to remove all restrictions now?</string>
     <string name="time_hours">%1$d h</string>
     <string name="time_minutes">%1$d min</string>
     <string name="time_hours_minutes">%1$d h %2$d min</string>
@@ -197,6 +197,42 @@
     <string name="schedule_anti_tamper_desc">While any schedule is enabled, automatic time is forced and date and time settings can\'t be changed, so a window can\'t be skipped by moving the clock</string>
     <string name="schedules_empty">No schedules yet. Tap \"New schedule\" to create one.</string>
     <string name="schedule_new">New schedule</string>
+    <string name="urge_log">Urge log</string>
+    <string name="urge_log_desc">Ride out an urge, then see what sets them off</string>
+    <string name="urge_intro">Urges rise, peak and fade, usually within ten minutes. Name what set this one off, wait it out, then log how it went. Everything stays on this phone.</string>
+    <string name="urge_what_set_off">What set it off?</string>
+    <string name="urge_start">I feel an urge: start the 10-minute wait</string>
+    <string name="urge_wait_hint">Stand up, drink some water, walk to another room. You don\'t have to fight it, just wait.</string>
+    <string name="urge_wait_done">Ten minutes are up. How did it go?</string>
+    <string name="urge_got_through">I got through it</string>
+    <string name="urge_gave_in">I gave in</string>
+    <string name="urge_week">This week</string>
+    <string name="urge_week_empty">No urges logged in the last 7 days.</string>
+    <string name="urge_week_counts">%1$d urges: %2$d ridden out, %3$d given in to.</string>
+    <string name="urge_week_top">Most common trigger: %1$s.</string>
+    <string name="urge_week_peak">They cluster around %1$s.</string>
+    <string name="urge_week_days">Days since I last gave in: %1$d.</string>
+    <string name="urge_share">Share with someone I trust</string>
+    <string name="urge_share_note">Opens your phone\'s share sheet. Nothing is sent unless you pick someone.</string>
+    <string name="urge_recent">Recent</string>
+    <string name="urge_result_through">Got through</string>
+    <string name="urge_result_gave_in">Gave in</string>
+    <string name="urge_trigger_bored">Bored</string>
+    <string name="urge_trigger_stressed">Stressed</string>
+    <string name="urge_trigger_lonely">Lonely</string>
+    <string name="urge_trigger_tired">Tired</string>
+    <string name="urge_trigger_anxious">Anxious</string>
+    <string name="urge_trigger_habit">Habit</string>
+    <string name="urge_trigger_other">Other</string>
+    <string name="info_urge_what">A short pause for when you feel pulled toward the phone or something you want to stay away from.</string>
+    <string name="info_urge_does">You pick what set the urge off, wait ten minutes, then log whether you got through it. The weekly summary shows your most common trigger, the hour they cluster around and how many days it has been since you last gave in.</string>
+    <string name="info_urge_how">Tap "I feel an urge" whenever it hits, not after. Share the weekly summary with a friend or partner if you want someone in your corner; it only goes where you send it.</string>
+    <string name="schedule_quick_start">Quick start</string>
+    <string name="schedule_quick_start_desc">Pick a starting point, add the few apps you need, then save. Nothing is applied until you do.</string>
+    <string name="schedule_preset_bedtime">Bedtime</string>
+    <string name="schedule_preset_study">Study hours</string>
+    <string name="schedule_preset_exam">Exam week</string>
+    <string name="schedule_preset_night">Night detox</string>
     <string name="schedule_default_name">Focus time</string>
     <string name="schedule_every_day">Every day</string>
     <string name="schedule_weekdays">Weekdays</string>
@@ -223,7 +259,7 @@
     <string name="schedule_websites_desc">One per line, e.g. instagram.com. Applies to browsers that support managed restrictions (Chrome and most Chromium browsers).</string>
     <string name="schedule_websites_add_social">Add social media sites</string>
     <string name="schedule_lock_while_active">Lock while active</string>
-    <string name="schedule_lock_while_active_desc">While the window is open, this schedule can\'t be edited, disabled or deleted, not even with the recovery code. Forced removal still works after its 48-hour wait.</string>
+    <string name="schedule_lock_while_active_desc">While the window is open, this schedule can\'t be edited, disabled or deleted, not even with the recovery code. Forced removal still works after its 4-day wait.</string>
     <string name="schedule_delete">Delete schedule</string>
     <string name="schedule_delete_confirm">Delete this schedule? Everything it is currently blocking will be released.</string>
     <string name="schedule_save">Save</string>
@@ -232,7 +268,7 @@
     <string name="schedule_locked_blocks_removal">A schedule is locked right now. Device Owner can only be removed after its window ends, or through Forced removal.</string>
     <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
     <string name="schedule_long_lock_title">Lock this for %1$s?</string>
-    <string name="schedule_long_lock_message">While this window is open you won\'t be able to edit, disable or delete this schedule, not even with your recovery code. The only way out during the window is Forced removal, which takes 48 hours.</string>
+    <string name="schedule_long_lock_message">While this window is open you won\'t be able to edit, disable or delete this schedule, not even with your recovery code. The only way out during the window is Forced removal, which takes 4 days.</string>
     <string name="schedule_long_lock_checkbox">I understand, lock it</string>
     <!-- Accountability step -->
 
@@ -311,7 +347,7 @@
     <string name="info_apps_how">Android itself suspends apps, because Déchaîner is the device owner. Limits use Android\'s own usage log, read only while the phone is awake, plus a non-wakeup alarm for the earliest moment a limit could run out: no service, no polling, no wake-ups from sleep. Needs Usage access once. Lifting a suspension takes your recovery code, and an app held by a schedule, a block or a limit stays held until it ends.</string>
     <string name="info_config_what">Settings for Déchaîner itself and its protections.</string>
     <string name="info_config_does">Private DNS, protections, impulse lock, recovery code, unlock delay, keyboard type and forced removal.</string>
-    <string name="info_config_how">Anything that weakens protection goes through your recovery code, and through the unlock delay if you\'ve set one. Forced removal is the escape hatch: it lifts everything after a 48-hour wait, without the code.</string>
+    <string name="info_config_how">Anything that weakens protection goes through your recovery code, and through the unlock delay if you\'ve set one. Forced removal is the escape hatch: it lifts everything after a 4-day wait, without the code.</string>
     <string name="info_schedules_what">Weekly block windows, plus Study mode.</string>
     <string name="info_schedules_does">A schedule suspends chosen apps, system features and websites at set times every week. With \"allow only\" on, it flips around: only the apps you list work. Duplicate a schedule, or copy apps from another, so you don\'t pick them twice.</string>
     <string name="info_schedules_how">An exact alarm wakes Déchaîner at each window\'s start and end. Nothing polls in the background, so it costs almost no battery. Automatic time is forced while schedules are on, so changing the clock can\'t skip a window. \"Lock while active\" makes a running window uneditable.</string>

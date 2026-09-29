@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.NoAdultContent
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.SelfImprovement
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.Web
 import androidx.compose.material3.*
@@ -153,13 +154,23 @@ fun ConfigTab(
                 ) }
             }
             item {
-                GroupedRow(GroupPos.Bottom) { ListItem(
+                GroupedRow(GroupPos.Middle) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.impulse_lock)) },
                     supportingContent = { Text(stringResource(R.string.impulse_lock_desc)) },
                     leadingContent = { IconTile(Icons.Outlined.LockClock) },
                     trailingContent = { Chevron() },
                     modifier = Modifier.clickable { navViewModel.navigateTo("impulse_lock") }
+                ) }
+            }
+            item {
+                GroupedRow(GroupPos.Bottom) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.urge_log)) },
+                    supportingContent = { Text(stringResource(R.string.urge_log_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.SelfImprovement) },
+                    trailingContent = { Chevron() },
+                    modifier = Modifier.clickable { navViewModel.navigateTo("urge_log") }
                 ) }
             }
             item { SectionHeader(stringResource(R.string.config_section_security)) }

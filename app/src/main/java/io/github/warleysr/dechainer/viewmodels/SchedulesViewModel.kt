@@ -105,6 +105,12 @@ class SchedulesViewModel : ViewModel() {
         isNewDraft = true
     }
 
+    /** Opens the editor pre-filled from [preset]. Nothing is saved until the person taps save. */
+    fun startPreset(preset: io.github.warleysr.dechainer.models.SchedulePreset, name: String) {
+        draft = preset.toDraft(UUID.randomUUID().toString(), name)
+        isNewDraft = true
+    }
+
     /**
      * A new schedule with everything [schedule] has — apps, services, websites, days and times —
      * to adjust and save. It starts unlocked; lock it again if you want.

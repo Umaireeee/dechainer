@@ -56,7 +56,7 @@ You can't accidentally trap yourself:
 - A set of locked schedules leaving under an hour free all week is refused.
 - Long locked windows need an extra confirmation.
 - Removing Device Owner is blocked while a schedule is locked — but **forced removal still works**,
-  with its 48-hour wait. That's the escape hatch and it stays open.
+  with its 4-day wait. That's the escape hatch and it stays open.
 - Six different things can block an app now, and none of them releases an app another still wants
   blocked.
 

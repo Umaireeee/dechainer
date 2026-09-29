@@ -46,7 +46,7 @@ class DeviceOwnerViewModel : ViewModel() {
 
     fun openShizukuSetupGuide() = DeviceOwnerRepository.openShizukuSetupGuide()
 
-    /** Forced removal, after its 48h wait. Deliberately ignores "lock while active": it is the last-resort escape. */
+    /** Forced removal, after its 4-day wait. Deliberately ignores "lock while active": it is the last-resort escape. */
     fun removeDeviceOwner() {
         processDeviceOwnerPrivileges(remove = true, ignoreScheduleLock = true)
     }
