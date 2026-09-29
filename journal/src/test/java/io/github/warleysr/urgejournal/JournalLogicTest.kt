@@ -242,4 +242,49 @@ class JournalLogicTest {
         assertTrue("tired" in digest)
         assertFalse("SECRET NOTE" in digest)
     }
+
+    // ---- Providers ----
+
+    @Test
+    fun aPastedKeyPicksTheProvider() {
+        assertEquals(Provider.OPENROUTER, Provider.detect("sk-or-v1-abcdef"))
+        assertEquals(Provider.GOOGLE, Provider.detect("AIzaSyExample"))
+        assertEquals(Provider.OPENAI, Provider.detect("sk-proj-abc"))
+        assertNull(Provider.detect("something-else"))
+        assertNull(Provider.detect(""))
+    }
+
+    @Test
+    fun endpointsAreBuiltFromTheBaseAddress() {
+        assertEquals("https://openrouter.ai/api/v1/chat/completions", AiClient.endpoint(Provider.OPENROUTER.baseUrl))
+        assertEquals(
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            AiClient.endpoint(Provider.GOOGLE.baseUrl)
+        )
+        assertEquals("https://api.groq.com/openai/v1/chat/completions", AiClient.endpoint(" https://api.groq.com/openai/v1/ "))
+    }
+
+    @Test
+    fun everyRealProviderHasADefaultModelInItsSuggestions() {
+        for (p in Provider.entries.filter { it != Provider.CUSTOM }) {
+            assertTrue(p.baseUrl.startsWith("https://"))
+            assertTrue(p.defaultModel.isNotBlank())
+            assertTrue(p.defaultModel in p.models)
+        }
+    }
+
+    @Test
+    fun serviceErrorsKeepTheirOwnMessage() {
+        val google = """[{"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}]"""
+        val r = AiClient.interpret(400, google) as AiResult.Failed
+        assertEquals(AiError.BAD_KEY, r.error)
+        assertTrue("API key not valid" in r.detail)
+
+        val openrouter = """{"error":{"message":"No endpoints found for nope/model","code":404}}"""
+        val m = AiClient.interpret(404, openrouter) as AiResult.Failed
+        assertEquals(AiError.BAD_MODEL, m.error)
+        assertTrue("nope/model" in m.detail)
+
+        assertEquals(AiError.BAD_MODEL, (AiClient.interpret(400, """{"error":{"message":"Unknown model: Gemini"}}""") as AiResult.Failed).error)
+    }
 }

@@ -20,8 +20,11 @@ android {
 
     buildTypes {
         release {
-            // Small app with no reflection to protect; a plain build is easier to debug.
-            isMinifyEnabled = false
+            // Shrinks the code to what is used; without it the APK carries every library class.
+            isMinifyEnabled = true
+            // Resources stay whole: labels are looked up by name at run time.
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
     compileOptions {
@@ -32,6 +35,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        // The app is English only; drop the other languages' strings that libraries bring along.
+        localeFilters += listOf("en")
+    }
 }
 
 dependencies {
@@ -41,7 +49,6 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
     testImplementation(libs.junit)
     testImplementation(libs.json)
 }

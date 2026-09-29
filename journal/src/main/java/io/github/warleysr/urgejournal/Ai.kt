@@ -9,9 +9,54 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * The AI deep dive. It goes through OpenRouter with the person's own key, so there is no server of
- * ours in between. The key and the model name are kept in this app's private storage.
+ * The AI providers the journal can talk to. They all speak the same "chat completions" dialect, so
+ * one client covers them; only the address, the key's look and the default model differ. The
+ * person's own key is used, so there is no server of ours in between.
  */
+enum class Provider(
+    val label: String,
+    val baseUrl: String,
+    val defaultModel: String,
+    val models: List<String>,
+    val keyHint: String
+) {
+    GOOGLE(
+        "Google AI Studio (free)",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        "gemini-2.5-flash",
+        listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"),
+        "aistudio.google.com/apikey"
+    ),
+    OPENROUTER(
+        "OpenRouter",
+        "https://openrouter.ai/api/v1",
+        "deepseek/deepseek-chat",
+        listOf("deepseek/deepseek-chat", "google/gemini-2.5-flash", "openai/gpt-4o-mini"),
+        "openrouter.ai/keys"
+    ),
+    OPENAI(
+        "OpenAI",
+        "https://api.openai.com/v1",
+        "gpt-4o-mini",
+        listOf("gpt-4o-mini", "gpt-4.1-mini"),
+        "platform.openai.com/api-keys"
+    ),
+    CUSTOM("Other (OpenAI-compatible)", "", "", emptyList(), "");
+
+    companion object {
+        /** Guesses the provider from how a key looks, so pasting one is enough. */
+        fun detect(key: String): Provider? {
+            val k = key.trim()
+            return when {
+                k.startsWith("sk-or-") -> OPENROUTER
+                k.startsWith("AIza") -> GOOGLE
+                k.startsWith("sk-") -> OPENAI
+                else -> null
+            }
+        }
+    }
+}
+
 class AiSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("ai", Context.MODE_PRIVATE)
 
@@ -19,52 +64,70 @@ class AiSettings(context: Context) {
         get() = prefs.getString("key", "") ?: ""
         set(v) = prefs.edit { putString("key", v.trim()) }
 
+    /** The chosen provider, or the one the key looks like, or OpenRouter as a last resort. */
+    var provider: Provider
+        get() = Provider.entries.firstOrNull { it.name == prefs.getString("provider", null) }
+            ?: Provider.detect(key) ?: Provider.OPENROUTER
+        set(v) = prefs.edit { putString("provider", v.name) }
+
+    /** The address for [Provider.CUSTOM], e.g. https://api.groq.com/openai/v1 */
+    var customBase: String
+        get() = prefs.getString("custom_base", "") ?: ""
+        set(v) = prefs.edit { putString("custom_base", v.trim()) }
+
     var model: String
-        get() = prefs.getString("model", DEFAULT_MODEL)?.ifBlank { DEFAULT_MODEL } ?: DEFAULT_MODEL
+        get() = prefs.getString("model", "")?.ifBlank { null } ?: provider.defaultModel
         set(v) = prefs.edit { putString("model", v.trim()) }
 
-    /** Has the person agreed that their answers are sent to OpenRouter to write the report? */
-    var consent: Boolean
-        get() = prefs.getBoolean("consent", false)
-        set(v) = prefs.edit { putBoolean("consent", v) }
+    val baseUrl: String get() = if (provider == Provider.CUSTOM) customBase else provider.baseUrl
 
-    companion object {
-        const val DEFAULT_MODEL = "deepseek/deepseek-chat"
-    }
+    /** Ready to call: a key, an address, and a model. */
+    val configured: Boolean get() = key.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank()
+
+    /** Has the person agreed to send their answers to this provider? Changing provider asks again. */
+    var consent: Boolean
+        get() = prefs.getString("consent_for", null) == provider.name
+        set(v) = prefs.edit { if (v) putString("consent_for", provider.name) else remove("consent_for") }
 }
 
 /** What went wrong, in terms the person can act on. */
-enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY }
+enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL }
 
 sealed interface AiResult {
     data class Ok(val text: String) : AiResult
-    data class Failed(val error: AiError) : AiResult
+    /** [detail] is the service's own short message, when it sent one, to help find the cause. */
+    data class Failed(val error: AiError, val detail: String = "") : AiResult
 }
 
 object AiClient {
-    private const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+    /** The full address of the chat endpoint for a provider's base address. */
+    fun endpoint(baseUrl: String): String = baseUrl.trim().trimEnd('/') + "/chat/completions"
 
     /** Blocking; call it off the main thread. */
-    fun chat(key: String, model: String, system: String, user: String): AiResult {
+    fun chat(provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String): AiResult {
         return try {
             val body = JSONObject()
                 .put("model", model)
-                .put("temperature", 0.6)
-                .put("max_tokens", 2200)
                 .put(
                     "messages",
                     JSONArray()
                         .put(JSONObject().put("role", "system").put("content", system))
                         .put(JSONObject().put("role", "user").put("content", user))
                 )
-            val conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+            // OpenAI's newer models take a different name for the cap and refuse a custom temperature.
+            if (provider == Provider.OPENAI) {
+                body.put("max_completion_tokens", 4096)
+            } else {
+                body.put("max_tokens", 4096).put("temperature", 0.6)
+            }
+            val conn = (URL(endpoint(baseUrl)).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
-                readTimeout = 90_000
+                readTimeout = 120_000
                 doOutput = true
                 setRequestProperty("Authorization", "Bearer $key")
                 setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("X-Title", "Urge Journal")
+                if (provider == Provider.OPENROUTER) setRequestProperty("X-Title", "Urge Journal")
             }
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
@@ -80,18 +143,39 @@ object AiClient {
     }
 
     /** Maps an HTTP status and body to a result. Split out so it can be tested without a network. */
-    fun interpret(code: Int, body: String): AiResult = when {
-        code == 401 || code == 403 -> AiResult.Failed(AiError.BAD_KEY)
-        code == 402 -> AiResult.Failed(AiError.NO_CREDITS)
-        code == 429 -> AiResult.Failed(AiError.RATE_LIMIT)
-        code >= 500 -> AiResult.Failed(AiError.SERVER)
-        code in 200..299 -> content(body)?.let { AiResult.Ok(it) } ?: AiResult.Failed(AiError.EMPTY)
-        else -> AiResult.Failed(AiError.SERVER)
+    fun interpret(code: Int, body: String): AiResult {
+        val detail = errorMessage(body)
+        return when {
+            code == 401 || code == 403 -> AiResult.Failed(AiError.BAD_KEY, detail)
+            code == 402 -> AiResult.Failed(AiError.NO_CREDITS, detail)
+            code == 429 -> AiResult.Failed(AiError.RATE_LIMIT, detail)
+            code == 404 -> AiResult.Failed(AiError.BAD_MODEL, detail)
+            // Google answers a bad key with 400, and a bad model name with 400 too.
+            code == 400 && detail.contains("api key", ignoreCase = true) -> AiResult.Failed(AiError.BAD_KEY, detail)
+            code == 400 && detail.contains("model", ignoreCase = true) -> AiResult.Failed(AiError.BAD_MODEL, detail)
+            code >= 500 -> AiResult.Failed(AiError.SERVER, detail)
+            code in 200..299 -> content(body)?.let { AiResult.Ok(it) } ?: AiResult.Failed(AiError.EMPTY)
+            else -> AiResult.Failed(AiError.SERVER, detail)
+        }
     }
 
     fun content(json: String): String? = runCatching {
         JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
     }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /** The service's own error text, whatever shape it came in, trimmed short. */
+    fun errorMessage(body: String): String {
+        if (body.isBlank()) return ""
+        val text = runCatching {
+            val o = JSONObject(body)
+            o.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: o.optString("message").takeIf { it.isNotBlank() }
+                ?: runCatching { JSONArray(body).getJSONObject(0).getJSONObject("error").getString("message") }.getOrNull()
+        }.getOrNull() ?: runCatching {
+            JSONArray(body).getJSONObject(0).getJSONObject("error").getString("message")
+        }.getOrNull()
+        return (text ?: "").replace('\n', ' ').take(180)
+    }
 }
 
 /** Builds what is sent to the model. Only the answers, the optional note and an anonymous digest. */

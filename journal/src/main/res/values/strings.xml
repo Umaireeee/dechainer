@@ -164,7 +164,7 @@
     <string name="note_continue">Continue</string>
 
     <string name="consent_title">Send this to an AI?</string>
-    <string name="consent_body">To write your deep dive, your answers and the note you wrote are sent to OpenRouter and the AI model you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
+    <string name="consent_body">To write your deep dive, your answers and the note you wrote are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
     <string name="consent_yes">Send</string>
     <string name="consent_no">Not now</string>
 
@@ -184,11 +184,11 @@
     <string name="detail_back">Back</string>
 
     <string name="settings_ai">AI deep dive</string>
-    <string name="settings_ai_body">Uses OpenRouter with your own key, so there is no account with us and nothing in between. Get a key at openrouter.ai, add a little credit, and paste it here.</string>
-    <string name="settings_key">OpenRouter API key</string>
+    <string name="settings_ai_body">Bring your own key from any of these. Pasting one picks the service for you. Google AI Studio has a free tier, so you can start at no cost. There\'s no account with us and nothing in between.</string>
+    <string name="settings_key">API key</string>
     <string name="settings_model">Model</string>
-    <string name="settings_model_hint">Default: deepseek/deepseek-chat. Paste any model name from openrouter.ai/models.</string>
-    <string name="settings_consent">I agree my answers and notes are sent to OpenRouter to write the report.</string>
+    <string name="settings_model_hint">Tap a suggestion below, or paste any model name your service offers.</string>
+    <string name="settings_consent">I agree my answers and notes are sent to %1$s to write the report.</string>
     <string name="settings_save">Save</string>
     <string name="settings_saved">Saved</string>
     <string name="settings_privacy">Your data</string>
@@ -204,4 +204,11 @@
     <string name="error_network">Couldn\'t reach OpenRouter. Check your connection and try again.</string>
     <string name="error_server">The AI service had a problem. Try again in a moment.</string>
     <string name="error_empty">The AI sent back nothing usable. Try again, or pick another model in Settings.</string>
+    <string name="settings_key_hint">Get a key at %1$s</string>
+    <string name="settings_base">Service address</string>
+    <string name="settings_base_hint">The base address of an OpenAI-compatible service, for example https://api.groq.com/openai/v1</string>
+    <string name="settings_test">Test connection</string>
+    <string name="settings_testing">Checking…</string>
+    <string name="settings_test_ok">Works. The model answered.</string>
+    <string name="error_bad_model">That model name isn\'t available on this service. Pick one of the suggestions.</string>
 </resources>

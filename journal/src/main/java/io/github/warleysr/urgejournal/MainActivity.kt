@@ -30,7 +30,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Brush.verticalGradient(listOf(Color(0xFF1C1A17), Color(0xFF231F1A)))),
-                    color = Color.Transparent
+                    color = Color.Transparent,
+                    // Without this the text falls back to black on the dark page.
+                    contentColor = MaterialTheme.colorScheme.onBackground
                 ) {
                     App()
                 }
@@ -50,7 +52,7 @@ sealed interface AiState {
     /** The note suggests crisis, so care is shown instead of a report. */
     data object Support : AiState
     data class Ready(val text: String) : AiState
-    data class Failed(val error: AiError) : AiState
+    data class Failed(val error: AiError, val detail: String = "") : AiState
 }
 
 @Composable
@@ -85,7 +87,7 @@ private fun App() {
             ai = AiState.Support
             return
         }
-        if (settings.key.isBlank()) {
+        if (!settings.configured) {
             ai = AiState.NeedsKey
             return
         }
@@ -94,17 +96,19 @@ private fun App() {
             return
         }
         ai = AiState.Loading
+        val provider = settings.provider
+        val baseUrl = settings.baseUrl
         val key = settings.key
         val model = settings.model
         val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()))
         thread {
-            when (val r = AiClient.chat(key, model, Prompt.SYSTEM, user)) {
+            when (val r = AiClient.chat(provider, baseUrl, key, model, Prompt.SYSTEM, user)) {
                 is AiResult.Ok -> {
                     store.setReport(entry.time, r.text)
                     refresh()
                     ai = AiState.Ready(r.text)
                 }
-                is AiResult.Failed -> ai = AiState.Failed(r.error)
+                is AiResult.Failed -> ai = AiState.Failed(r.error, r.detail)
             }
         }
     }
@@ -186,6 +190,7 @@ private fun App() {
                 PlanScreen(
                     entry = entry,
                     ai = ai,
+                    providerLabel = settings.provider.label,
                     onConsent = { yes ->
                         if (yes) {
                             settings.consent = true

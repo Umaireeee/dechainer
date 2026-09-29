@@ -59,22 +59,30 @@ fun Ember(text: String, onClick: () -> Unit) {
         animationSpec = infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "emberScale"
     )
-    Box(
-        Modifier
-            .size(196.dp)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(Brush.radialGradient(listOf(Color(0xFFEBC98F), Color(0xFFD9A55B), Color(0xFFB07C35))))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text,
-            color = Color(0xFF2A1F10),
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(28.dp)
+    // A soft glow behind the ember, so it reads as light rather than a flat disc.
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(290.dp)) {
+        Box(
+            Modifier
+                .size(290.dp)
+                .background(Brush.radialGradient(listOf(Color(0x40D9A55B), Color(0x00D9A55B))))
         )
+        Box(
+            Modifier
+                .size(196.dp)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34))))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text,
+                color = Color(0xFF2A1F10),
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(28.dp)
+            )
+        }
     }
 }
 
@@ -137,6 +145,31 @@ fun Bullets(items: List<String>) {
                         .background(MaterialTheme.colorScheme.primary)
                 )
                 Text(item, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+/** Steps to do in order, each with a numbered ember disc. */
+@Composable
+fun NumberedSteps(items: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items.forEachIndexed { i, item ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "${i + 1}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Text(item, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(top = 2.dp))
             }
         }
     }

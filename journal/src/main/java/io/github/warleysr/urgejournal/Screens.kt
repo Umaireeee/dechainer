@@ -9,6 +9,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +22,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -48,6 +54,8 @@ private fun Page(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
+            // Keep clear of the status bar, the navigation bar and the keyboard.
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -73,8 +81,14 @@ fun HomeScreen(
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
     Page {
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(greetingRes(hour)), style = MaterialTheme.typography.headlineMedium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(greetingRes(hour)),
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
+        }
         Text(
             week.daysSinceGaveIn?.let { stringResource(R.string.home_days_since, it) }
                 ?: stringResource(R.string.home_no_slips),
@@ -129,7 +143,6 @@ fun HomeScreen(
                 }
             }
         }
-        TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -206,6 +219,7 @@ fun NoteScreen(slipped: Boolean, onDone: (String) -> Unit, onBack: () -> Unit) {
 fun PlanScreen(
     entry: Entry,
     ai: AiState,
+    providerLabel: String,
     onConsent: (Boolean) -> Unit,
     onRetry: () -> Unit,
     onSettings: () -> Unit,
@@ -221,7 +235,7 @@ fun PlanScreen(
         AlertDialog(
             onDismissRequest = { onConsent(false) },
             title = { Text(stringResource(R.string.consent_title)) },
-            text = { Text(stringResource(R.string.consent_body)) },
+            text = { Text(stringResource(R.string.consent_body, providerLabel)) },
             confirmButton = { TextButton(onClick = { onConsent(true) }) { Text(stringResource(R.string.consent_yes)) } },
             dismissButton = { TextButton(onClick = { onConsent(false) }) { Text(stringResource(R.string.consent_no)) } }
         )
@@ -262,7 +276,7 @@ fun PlanScreen(
         }
 
         Eyebrow(stringResource(R.string.plan_now))
-        Bullets(plan.steps.map { stringResource(stepRes(it)) })
+        NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
 
         // Without a deep dive, still say why it's probably happening.
         if (ai !is AiState.Ready) {
@@ -277,9 +291,12 @@ fun PlanScreen(
             is AiState.Ready -> ReportView(ai.text)
             is AiState.Failed -> Panel {
                 Text(stringResource(errorRes(ai.error)), style = MaterialTheme.typography.bodyLarge)
+                if (ai.detail.isNotBlank()) {
+                    Text(ai.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.deep_retry)) }
-                    if (ai.error == AiError.BAD_KEY) TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
+                    if (ai.error == AiError.BAD_KEY || ai.error == AiError.BAD_MODEL) TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
                 }
             }
             is AiState.NeedsKey -> Panel {
@@ -333,7 +350,10 @@ fun ReportView(raw: String) {
         if (report.why.isNotBlank()) {
             Panel { Text(report.why, style = MaterialTheme.typography.bodyLarge) }
         }
-        ReportList(R.string.deep_right_now, report.rightNow)
+        if (report.rightNow.isNotEmpty()) {
+            Eyebrow(stringResource(R.string.deep_right_now))
+            NumberedSteps(report.rightNow)
+        }
         ReportList(R.string.deep_today, report.today)
         ReportList(R.string.deep_this_week, report.thisWeek)
         ReportList(R.string.deep_long_term, report.longTerm)
@@ -411,13 +431,31 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
     }
 }
 
+private sealed interface TestState {
+    data object Idle : TestState
+    data object Running : TestState
+    data object Ok : TestState
+    data class Failed(val error: AiError, val detail: String) : TestState
+}
+
 @Composable
 fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> Unit) {
     var key by remember { mutableStateOf(settings.key) }
+    var provider by remember { mutableStateOf(settings.provider) }
+    var customBase by remember { mutableStateOf(settings.customBase) }
     var model by remember { mutableStateOf(settings.model) }
     var consent by remember { mutableStateOf(settings.consent) }
     var confirmDelete by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
+    var test by remember { mutableStateOf<TestState>(TestState.Idle) }
+
+    fun pick(p: Provider) {
+        provider = p
+        model = p.defaultModel
+        consent = false
+        saved = false
+        test = TestState.Idle
+    }
 
     if (confirmDelete) {
         AlertDialog(
@@ -441,9 +479,38 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        // Which service. Pasting a key picks it automatically.
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Provider.entries.forEach { p ->
+                FilterChip(selected = provider == p, onClick = { pick(p) }, label = { Text(p.label) })
+            }
+        }
+        if (provider != Provider.CUSTOM) {
+            Text(
+                stringResource(R.string.settings_key_hint, provider.keyHint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            OutlinedTextField(
+                value = customBase,
+                onValueChange = { customBase = it; saved = false; test = TestState.Idle },
+                label = { Text(stringResource(R.string.settings_base)) },
+                supportingText = { Text(stringResource(R.string.settings_base_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
         OutlinedTextField(
             value = key,
-            onValueChange = { key = it; saved = false },
+            onValueChange = { new ->
+                key = new
+                saved = false
+                test = TestState.Idle
+                val guess = Provider.detect(new)
+                if (guess != null && guess != provider) pick(guess)
+            },
             label = { Text(stringResource(R.string.settings_key)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
@@ -452,28 +519,73 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
         )
         OutlinedTextField(
             value = model,
-            onValueChange = { model = it; saved = false },
+            onValueChange = { model = it; saved = false; test = TestState.Idle },
             label = { Text(stringResource(R.string.settings_model)) },
             supportingText = { Text(stringResource(R.string.settings_model_hint)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
+        if (provider.models.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                provider.models.forEach { m ->
+                    AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().clickable { consent = !consent; saved = false },
             verticalAlignment = Alignment.CenterVertically
         ) {
             androidx.compose.material3.Checkbox(checked = consent, onCheckedChange = { consent = it; saved = false })
-            Text(stringResource(R.string.settings_consent), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.settings_consent, provider.label), style = MaterialTheme.typography.bodyMedium)
         }
+
         Button(
             onClick = {
                 settings.key = key
+                settings.provider = provider
+                settings.customBase = customBase
                 settings.model = model
                 settings.consent = consent
                 saved = true
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text(stringResource(if (saved) R.string.settings_saved else R.string.settings_save)) }
+
+        // A quick check that the key, the address and the model name actually work together.
+        val canTest = key.isNotBlank() && model.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
+        OutlinedButton(
+            onClick = {
+                test = TestState.Running
+                val p = provider
+                val base = if (p == Provider.CUSTOM) customBase else p.baseUrl
+                val k = key.trim()
+                val m = model.trim()
+                Thread {
+                    test = when (val r = AiClient.chat(p, base, k, m, "Reply with the single word OK.", "Say OK.")) {
+                        is AiResult.Ok -> TestState.Ok
+                        is AiResult.Failed -> TestState.Failed(r.error, r.detail)
+                    }
+                }.start()
+            },
+            enabled = canTest && test != TestState.Running,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(stringResource(R.string.settings_test)) }
+        when (val t = test) {
+            is TestState.Running -> Breathing(stringResource(R.string.settings_testing))
+            is TestState.Ok -> Text(
+                stringResource(R.string.settings_test_ok),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            is TestState.Failed -> {
+                Text(stringResource(errorRes(t.error)), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                if (t.detail.isNotBlank()) {
+                    Text(t.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            else -> {}
+        }
 
         Eyebrow(stringResource(R.string.settings_privacy))
         Text(
@@ -486,6 +598,7 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
             Text(stringResource(R.string.delete_title))
         }
         TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -528,4 +641,5 @@ private fun errorRes(e: AiError): Int = when (e) {
     AiError.NETWORK -> R.string.error_network
     AiError.SERVER -> R.string.error_server
     AiError.EMPTY -> R.string.error_empty
+    AiError.BAD_MODEL -> R.string.error_bad_model
 }
