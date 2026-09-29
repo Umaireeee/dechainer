@@ -299,4 +299,54 @@ class JournalLogicTest {
         assertEquals(emptyList<String>(), AiClient.parseModels("nope"))
         assertEquals(emptyList<String>(), AiClient.parseModels("""{"data":[]}"""))
     }
+
+    // ---- Final-version additions ----
+
+    @Test
+    fun afterASlipByDayThePlanOffersFocusToGetBackOnTrack() {
+        val a = mapOf(Q.FEELING to Opt.TIRED)
+        assertEquals(DoorAction.FOCUS_BLOCK, Coach.plan(a, 14, true).secondary?.kind)
+        assertNull(Coach.plan(a, 23, true).secondary)
+    }
+
+    @Test
+    fun theAboutTextReachesThePromptsAndNotesStayOutOfTheWeeklyOne() {
+        val e = Entry(ms(20, 14), false, mapOf(Q.FEELING to Opt.BORED), null, note = "PRIVATE NOTE")
+        assertTrue("About them (their own words): ACCA exams in December" in Prompt.user(e, "", "ACCA exams in December"))
+        val weekly = Prompt.weeklyUser(listOf(e), ms(20, 15), "ACCA exams in December", zone)
+        assertTrue("ACCA exams in December" in weekly)
+        assertFalse("PRIVATE NOTE" in weekly)
+        assertTrue("Last 7 days: 1 entries" in weekly)
+        assertTrue("SUNDAY" in weekly || "MONDAY" in weekly)
+    }
+
+    @Test
+    fun aboutTextIsCappedWhereItIsSent() {
+        val long = "x".repeat(ABOUT_LIMIT + 500)
+        val e = Entry(ms(20, 14), false, mapOf(Q.FEELING to Opt.BORED), null)
+        val sent = Prompt.user(e, "", long).lines().first { it.startsWith("About them") }
+        assertTrue(sent.length <= "About them (their own words): ".length + ABOUT_LIMIT)
+    }
+
+    @Test
+    fun mergingABackupKeepsOneEntryPerTime() {
+        val mine = listOf(Entry(1L, false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED), Entry(3L, true, emptyMap(), null))
+        val backup = listOf(Entry(1L, false, mapOf(Q.FEELING to Opt.LONELY), null), Entry(2L, false, emptyMap(), null), Entry(2L, true, emptyMap(), null))
+        val merged = Entry.merge(mine, backup)
+        assertEquals(listOf(1L, 2L, 3L), merged.map { it.time })
+        // The entry already on this phone wins.
+        assertEquals(Opt.BORED, merged.first().answers[Q.FEELING])
+    }
+
+    @Test
+    fun theWeeklyReviewReplyParsesLikeADeepDive() {
+        val reply = """{"headline":"A steadier week","why":"Most urges came late.","right_now":["Start the block at 21:30"],
+            "today":[],"this_week":["If it is 22:00, then the phone charges in the hall."],"long_term":["Sleep more"],
+            "understand":[],"pattern":"Late nights","encouragement":"Three ridden out is real."}"""
+        val r = ReportParser.parse(reply)!!
+        assertEquals("A steadier week", r.headline)
+        assertEquals(listOf("Start the block at 21:30"), r.rightNow)
+        assertTrue(r.today.isEmpty())
+        assertEquals("Late nights", r.pattern)
+    }
 }

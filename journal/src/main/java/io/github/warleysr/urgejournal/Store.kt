@@ -25,10 +25,34 @@ class JournalStore(context: Context) {
     @Synchronized
     fun setReport(time: Long, report: String) = update(time) { it.copy(report = report) }
 
-    /** Deletes every entry. Used by "delete all my data". */
+    /** Deletes every entry and the saved weekly review. Used by "delete all my data". */
     @Synchronized
     fun clear() {
-        prefs.edit(commit = true) { remove(KEY) }
+        prefs.edit(commit = true) { remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME) }
+    }
+
+    /** The whole journal as text, for a backup the person keeps. */
+    fun exportJson(): String = Entry.listToJson(all())
+
+    /** Adds entries from a backup; returns how many were new. Nothing existing is changed. */
+    @Synchronized
+    fun importJson(text: String): Int {
+        val incoming = Entry.listFromJson(text)
+        if (incoming.isEmpty()) return 0
+        val before = all()
+        val merged = Entry.merge(before, incoming).takeLast(LIMIT)
+        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(merged)) }
+        return (merged.size - before.size).coerceAtLeast(0)
+    }
+
+    /** The last weekly review and when it was written, if any. */
+    fun lastReview(): Pair<Long, String>? {
+        val text = prefs.getString(REVIEW_TEXT, null) ?: return null
+        return prefs.getLong(REVIEW_TIME, 0L) to text
+    }
+
+    fun saveReview(text: String, time: Long = System.currentTimeMillis()) {
+        prefs.edit(commit = true) { putString(REVIEW_TEXT, text); putLong(REVIEW_TIME, time) }
     }
 
     private fun update(time: Long, change: (Entry) -> Entry) {
@@ -38,6 +62,8 @@ class JournalStore(context: Context) {
 
     private companion object {
         const val KEY = "entries"
+        const val REVIEW_TEXT = "review_text"
+        const val REVIEW_TIME = "review_time"
         const val LIMIT = 2000
     }
 }
@@ -51,14 +77,20 @@ object Door {
 
     enum class Result { SENT, NOT_INSTALLED, NO_PERMISSION }
 
+    fun isInstalled(context: Context): Boolean =
+        runCatching { context.packageManager.getPackageInfo(PKG, 0) }.isSuccess
+
+    /** Whether Android has granted this app the right to talk to Déchaîner (same signing key). */
+    fun hasPermission(context: Context): Boolean =
+        context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
+
     /**
      * Asks Déchaîner to block. SENT means the request left this app; Déchaîner still has to be
      * Device Owner for it to take effect.
      */
     fun send(context: Context, action: DoorAction): Result {
-        val installed = runCatching { context.packageManager.getPackageInfo(PKG, 0) }.isSuccess
-        if (!installed) return Result.NOT_INSTALLED
-        if (context.checkSelfPermission(PERMISSION) != PackageManager.PERMISSION_GRANTED) return Result.NO_PERMISSION
+        if (!isInstalled(context)) return Result.NOT_INSTALLED
+        if (!hasPermission(context)) return Result.NO_PERMISSION
         context.sendBroadcast(
             Intent(ACTION).apply {
                 component = ComponentName(PKG, RECEIVER)

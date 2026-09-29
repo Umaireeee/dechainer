@@ -215,4 +215,26 @@
     <string name="settings_loading_models">Loading…</string>
     <string name="settings_models_none">Couldn\'t load the list. Check the key and try again, or type a model name yourself.</string>
     <string name="settings_models_hint">Type part of a name, like flash, to filter. Tap one to use it.</string>
+    <string name="setup_title">Getting set up</string>
+    <string name="setup_dechainer">Install Déchaîner first, so the block button has something to control.</string>
+    <string name="setup_permission">This app can\'t reach Déchaîner yet. Reinstall this app after Déchaîner, both from the same build.</string>
+    <string name="setup_ai">Add an AI key in Settings for the deep dive (Google AI Studio has a free tier).</string>
+    <string name="review_button">Weekly review</string>
+    <string name="review_title">Your week</string>
+    <string name="review_intro">What your last days show, and what to try next. Only counts and patterns are used, never your notes.</string>
+    <string name="review_loading">Looking at your week…</string>
+    <string name="review_refresh">Write it again</string>
+    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal (never your notes) are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
+    <string name="recent_more">Show more</string>
+    <string name="deep_more">Show the rest</string>
+    <string name="deep_less">Show less</string>
+    <string name="settings_about">About you</string>
+    <string name="settings_about_body">Tell the coach what matters and how to talk to you. It is added to every deep dive and weekly review, so the advice fits your real goals.</string>
+    <string name="settings_about_label">My goals and how to coach me</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_backup_body">Your entries live only on this phone, and uninstalling erases them. Export copies them as text you can save. To restore, copy that text and tap Import.</string>
+    <string name="settings_export">Export</string>
+    <string name="settings_import">Import from clipboard</string>
+    <string name="settings_import_ok">Imported %1$d entries.</string>
+    <string name="settings_import_none">Nothing new found in the clipboard.</string>
 </resources>

@@ -80,6 +80,11 @@ class AiSettings(context: Context) {
             ?: Provider.detect(key) ?: Provider.OPENROUTER
         set(v) = prefs.edit { putString("provider", v.name) }
 
+    /** What the person wants coached: their goals and how blunt to be. Added to every request. */
+    var about: String
+        get() = prefs.getString("about", "") ?: ""
+        set(v) = prefs.edit { putString("about", v.trim().take(ABOUT_LIMIT)) }
+
     /** The address for [Provider.CUSTOM], e.g. https://api.groq.com/openai/v1 */
     var customBase: String
         get() = prefs.getString("custom_base", "") ?: ""
@@ -99,6 +104,8 @@ class AiSettings(context: Context) {
         get() = prefs.getString("consent_for", null) == provider.name
         set(v) = prefs.edit { if (v) putString("consent_for", provider.name) else remove("consent_for") }
 }
+
+const val ABOUT_LIMIT = 600
 
 /** What went wrong, in terms the person can act on. */
 enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL }
@@ -236,6 +243,8 @@ Rules:
 - Use well-established, practical methods: urge surfing, changing the environment, implementation intentions ("If X, then Y"), sleep and stress management, and reaching out to people.
 - The person's phone can be blocked by a companion app; you may refer to putting distance between them and the phone, but do not invent app features.
 - If they already slipped, do not dwell on it. Focus on the next hour, on what the gap in their setup was, and on one specific rule to close it.
+- If the person has told you their goals or how they want to be coached ("About them"), tie every suggestion to those goals and follow their wishes on tone.
+- Where it fits, protect their real priorities (studies, work, sleep, people) by giving one small, concrete first step they can start within five minutes.
 - If the note suggests they may hurt themselves or are in crisis, respond only with a short, warm message encouraging them to contact local emergency services or a crisis line, and leave the other fields empty.
 
 Reply with ONLY one JSON object, no other text, in exactly this shape:
@@ -251,7 +260,8 @@ Reply with ONLY one JSON object, no other text, in exactly this shape:
  "encouragement": "one honest sentence, no fluff"
 }"""
 
-    fun user(entry: Entry, digest: String): String = buildString {
+    fun user(entry: Entry, digest: String, about: String = ""): String = buildString {
+        if (about.isNotBlank()) appendLine("About them (their own words): ${about.trim().take(ABOUT_LIMIT)}")
         appendLine(if (entry.slipped) "This person just SLIPPED (acted on the urge)." else "This person is having an urge right now.")
         appendLine("Local hour: ${java.time.Instant.ofEpochMilli(entry.time).atZone(java.time.ZoneId.systemDefault()).hour}:00")
         Q.entries.forEach { q ->
@@ -266,7 +276,47 @@ Reply with ONLY one JSON object, no other text, in exactly this shape:
             appendLine("History digest: $digest")
         }
     }
+
+    /** The weekly review's input: counts and patterns only. Notes and reports are never included. */
+    fun weeklyUser(entries: List<Entry>, now: Long, about: String = "", zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val week = Insights.week(entries, now, zone)
+        return buildString {
+            if (about.isNotBlank()) appendLine("About them (their own words): ${about.trim().take(ABOUT_LIMIT)}")
+            appendLine("Last 7 days: ${week.total} entries, ${week.resisted} ridden out, ${week.gaveIn} given in to or slipped.")
+            week.topFeeling?.let { appendLine("Most common feeling: ${Plain.answer(it)}.") }
+            week.peakHour?.let { appendLine("Busiest hour: %02d:00.".format(it)) }
+            week.daysSinceGaveIn?.let { appendLine("Days since the last slip: $it.") }
+            appendLine("Day by day (oldest first):")
+            Insights.days(entries, now, zone).forEach { d ->
+                appendLine("- ${d.date.dayOfWeek}: ${d.resisted} ridden out, ${d.gaveIn} given in")
+            }
+            val month = Insights.summary(entries, now, zone)
+            if (month.isNotBlank()) appendLine("Longer view: $month")
+        }
+    }
 }
+
+/** The weekly look back. It reuses the deep dive's shape so the same screen can show it. */
+const val WEEKLY_SYSTEM = """You are a calm, direct coach doing a weekly review with one person who is building self-control over compulsive phone use, and over sexual urges when those are part of it. You get counts and patterns from their urge journal, never their private notes. They like depth and want to understand themselves, not be lectured.
+
+Rules:
+- Be specific to the numbers you are given. Never write advice that would fit anyone.
+- No shame, no moralising, no diagnosis, no promises. A slip is information.
+- Name what worked as well as what didn't. If there is too little data, say so plainly and give a small plan to gather more.
+- If they gave their goals ("About them"), tie the plan to those goals.
+
+Reply with ONLY one JSON object, no other text, in exactly this shape (the names are fixed; use them as described):
+{
+ "headline": "one sentence on how the week went",
+ "why": "3 to 5 sentences on what the data shows: when, what feelings, what situations, what seemed to help",
+ "right_now": ["the one or two things to do first this coming week"],
+ "today": [],
+ "this_week": ["2 to 3 experiments for the coming week, including one rule written as 'If ..., then ...'"],
+ "long_term": ["2 points on the underlying need and how to grow past this"],
+ "understand": [{"title": "a concept worth learning", "body": "2 to 3 plain sentences"}],
+ "pattern": "the single strongest pattern in their data",
+ "encouragement": "one honest sentence, no fluff"
+}"""
 
 /** A parsed deep dive. Every field can be empty; the screen shows what there is. */
 data class Report(

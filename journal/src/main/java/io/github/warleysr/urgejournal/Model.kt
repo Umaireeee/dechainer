@@ -185,9 +185,9 @@ object Coach {
 
         val minutes = if (slipped && late) 180 else IMPULSE_MINUTES[level]
         val primary = DoorAction(DoorAction.IMPULSE_BLOCK, minutes)
-        // A calm daytime urge born of stress or boredom is a chance to turn it into work.
-        val secondary = if (!slipped && !late && (feeling == Opt.STRESSED || feeling == Opt.BORED))
-            DoorAction(DoorAction.FOCUS_BLOCK, 25) else null
+        // By day, an urge (or a slip) is best followed by real work: a short committed focus block
+        // turns the pull into a start, and after a slip it stops one lapse becoming a lost day.
+        val secondary = if (!late) DoorAction(DoorAction.FOCUS_BLOCK, 25) else null
 
         val steps = linkedSetOf<Step>()
         if (slipped) {
@@ -303,6 +303,12 @@ data class Entry(
         }
 
         fun listToJson(entries: List<Entry>): String = JSONArray(entries.map { it.toJson() }).toString()
+
+        /** Adds [incoming] to [existing], keeping one entry per time (the existing one wins). */
+        fun merge(existing: List<Entry>, incoming: List<Entry>): List<Entry> {
+            val known = existing.map { it.time }.toSet()
+            return (existing + incoming.filter { it.time !in known }.distinctBy { it.time }).sortedBy { it.time }
+        }
     }
 }
 

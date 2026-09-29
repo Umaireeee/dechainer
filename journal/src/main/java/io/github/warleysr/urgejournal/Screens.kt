@@ -1,5 +1,8 @@
 package io.github.warleysr.urgejournal
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,17 +73,47 @@ private fun greetingRes(hour: Int): Int = when {
     else -> R.string.greeting_evening
 }
 
+/** What still needs setting up, so the first minutes aren't a guessing game. */
+data class SetupState(
+    val dechainerInstalled: Boolean,
+    val canReachDechainer: Boolean,
+    val aiReady: Boolean
+) {
+    val complete: Boolean get() = dechainerInstalled && canReachDechainer && aiReady
+}
+
+@Composable
+private fun SetupRow(done: Boolean, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            if (done) "✓" else "○",
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (done) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
 @Composable
 fun HomeScreen(
     entries: List<Entry>,
     hour: Int,
+    setup: SetupState,
     onUrge: () -> Unit,
     onSlip: () -> Unit,
     onOpen: (Entry) -> Unit,
+    onReview: () -> Unit,
     onSettings: () -> Unit
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
+    var shown by remember { mutableIntStateOf(8) }
+    val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -102,6 +136,17 @@ fun HomeScreen(
             TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
         }
 
+        if (!setup.complete) {
+            Eyebrow(stringResource(R.string.setup_title))
+            Panel {
+                SetupRow(setup.dechainerInstalled, stringResource(R.string.setup_dechainer))
+                if (setup.dechainerInstalled) {
+                    SetupRow(setup.canReachDechainer, stringResource(R.string.setup_permission))
+                }
+                SetupRow(setup.aiReady, stringResource(R.string.setup_ai))
+            }
+        }
+
         Eyebrow(stringResource(R.string.week_title))
         Panel {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -117,10 +162,15 @@ fun HomeScreen(
                 Text(stringResource(R.string.week_peak, "%02d:00".format(it)), style = MaterialTheme.typography.bodyMedium)
             }
         }
+        if (recentCount >= 3) {
+            OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.review_button))
+            }
+        }
 
         if (entries.isNotEmpty()) {
             Eyebrow(stringResource(R.string.recent_title))
-            entries.takeLast(8).reversed().forEach { e ->
+            entries.takeLast(shown).reversed().forEach { e ->
                 val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
                     .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
                 val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) } ?: ""
@@ -141,6 +191,9 @@ fun HomeScreen(
                         color = if (e.gaveIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
                 }
+            }
+            if (entries.size > shown) {
+                TextButton(onClick = { shown += 20 }) { Text(stringResource(R.string.recent_more)) }
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -343,6 +396,9 @@ fun ReportView(raw: String) {
         Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
         return
     }
+    var expanded by remember(raw) { mutableStateOf(false) }
+    val hasMore = report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
+        report.understand.isNotEmpty() || report.pattern.isNotBlank()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (report.headline.isNotBlank()) {
             Text(report.headline, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
@@ -354,21 +410,30 @@ fun ReportView(raw: String) {
             Eyebrow(stringResource(R.string.deep_right_now))
             NumberedSteps(report.rightNow)
         }
-        ReportList(R.string.deep_today, report.today)
         ReportList(R.string.deep_this_week, report.thisWeek)
-        ReportList(R.string.deep_long_term, report.longTerm)
-        if (report.understand.isNotEmpty()) {
-            Eyebrow(stringResource(R.string.deep_understand))
-            report.understand.forEach { (title, body) ->
-                Panel {
-                    if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.titleLarge)
-                    if (body.isNotBlank()) Text(body, style = MaterialTheme.typography.bodyLarge)
+
+        // The rest is a tap away, so the first screen stays short enough to act on.
+        if (expanded) {
+            ReportList(R.string.deep_today, report.today)
+            ReportList(R.string.deep_long_term, report.longTerm)
+            if (report.understand.isNotEmpty()) {
+                Eyebrow(stringResource(R.string.deep_understand))
+                report.understand.forEach { (title, body) ->
+                    Panel {
+                        if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.titleLarge)
+                        if (body.isNotBlank()) Text(body, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
             }
+            if (report.pattern.isNotBlank()) {
+                Eyebrow(stringResource(R.string.deep_pattern))
+                Text(report.pattern, style = MaterialTheme.typography.bodyLarge)
+            }
         }
-        if (report.pattern.isNotBlank()) {
-            Eyebrow(stringResource(R.string.deep_pattern))
-            Text(report.pattern, style = MaterialTheme.typography.bodyLarge)
+        if (hasMore) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(stringResource(if (expanded) R.string.deep_less else R.string.deep_more))
+            }
         }
         if (report.encouragement.isNotBlank()) {
             Text(
@@ -385,6 +450,61 @@ private fun ReportList(titleRes: Int, items: List<String>) {
     if (items.isEmpty()) return
     Eyebrow(stringResource(titleRes))
     Bullets(items)
+}
+
+@Composable
+fun ReviewScreen(
+    state: AiState,
+    providerLabel: String,
+    onConsent: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
+    onSettings: () -> Unit,
+    onBack: () -> Unit
+) {
+    if (state is AiState.NeedsConsent) {
+        AlertDialog(
+            onDismissRequest = { onConsent(false) },
+            title = { Text(stringResource(R.string.consent_title)) },
+            text = { Text(stringResource(R.string.review_consent_body, providerLabel)) },
+            confirmButton = { TextButton(onClick = { onConsent(true) }) { Text(stringResource(R.string.consent_yes)) } },
+            dismissButton = { TextButton(onClick = { onConsent(false) }) { Text(stringResource(R.string.consent_no)) } }
+        )
+    }
+    Page {
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.review_title), style = MaterialTheme.typography.headlineMedium)
+        Text(
+            stringResource(R.string.review_intro),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        when (state) {
+            is AiState.Loading -> Panel { Breathing(stringResource(R.string.review_loading)) }
+            is AiState.Ready -> {
+                ReportView(state.text)
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.review_refresh))
+                }
+            }
+            is AiState.Failed -> Panel {
+                Text(stringResource(errorRes(state.error)), style = MaterialTheme.typography.bodyLarge)
+                if (state.detail.isNotBlank()) {
+                    Text(state.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onRefresh) { Text(stringResource(R.string.deep_retry)) }
+                    TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
+                }
+            }
+            is AiState.NeedsKey -> Panel {
+                Text(stringResource(R.string.deep_needs_key), style = MaterialTheme.typography.bodyLarge)
+                OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.deep_add_key)) }
+            }
+            else -> {}
+        }
+        TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
+        Spacer(Modifier.height(16.dp))
+    }
 }
 
 @Composable
@@ -439,12 +559,22 @@ private sealed interface TestState {
 }
 
 @Composable
-fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> Unit) {
+fun SettingsScreen(
+    settings: AiSettings,
+    store: JournalStore,
+    onDeleteAll: () -> Unit,
+    onImported: () -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
     var key by remember { mutableStateOf(settings.key) }
     var provider by remember { mutableStateOf(settings.provider) }
     var customBase by remember { mutableStateOf(settings.customBase) }
     var model by remember { mutableStateOf(settings.model) }
     var consent by remember { mutableStateOf(settings.consent) }
+    var about by remember { mutableStateOf(settings.about) }
+    var backupMessage by remember { mutableStateOf<Int?>(null) }
+    var backupCount by remember { mutableIntStateOf(0) }
     var confirmDelete by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     var test by remember { mutableStateOf<TestState>(TestState.Idle) }
@@ -592,6 +722,7 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
                 settings.customBase = customBase
                 settings.model = model
                 settings.consent = consent
+                settings.about = about
                 saved = true
             },
             modifier = Modifier.fillMaxWidth()
@@ -630,6 +761,52 @@ fun SettingsScreen(settings: AiSettings, onDeleteAll: () -> Unit, onBack: () -> 
                 }
             }
             else -> {}
+        }
+
+        Eyebrow(stringResource(R.string.settings_about))
+        Text(
+            stringResource(R.string.settings_about_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = about,
+            onValueChange = { about = it.take(ABOUT_LIMIT); saved = false },
+            label = { Text(stringResource(R.string.settings_about_label)) },
+            minLines = 3,
+            maxLines = 8,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Eyebrow(stringResource(R.string.settings_backup))
+        Text(
+            stringResource(R.string.settings_backup_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, store.exportJson())
+                }
+                context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }) { Text(stringResource(R.string.settings_export)) }
+            OutlinedButton(onClick = {
+                val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                val added = store.importJson(clip)
+                backupCount = added
+                backupMessage = if (added > 0) R.string.settings_import_ok else R.string.settings_import_none
+                if (added > 0) onImported()
+            }) { Text(stringResource(R.string.settings_import)) }
+        }
+        backupMessage?.let {
+            Text(
+                stringResource(it, backupCount),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.tertiary
+            )
         }
 
         Eyebrow(stringResource(R.string.settings_privacy))

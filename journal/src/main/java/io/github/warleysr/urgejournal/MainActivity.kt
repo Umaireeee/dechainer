@@ -41,9 +41,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, INTERVIEW, NOTE, PLAN, DETAIL, SETTINGS }
+private enum class Screen { HOME, INTERVIEW, NOTE, PLAN, DETAIL, SETTINGS, REVIEW }
 
-/** Where the AI deep dive is for the current entry. */
+/** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
     data object Idle : AiState
     data object NeedsKey : AiState
@@ -54,6 +54,9 @@ sealed interface AiState {
     data class Ready(val text: String) : AiState
     data class Failed(val error: AiError, val detail: String = "") : AiState
 }
+
+/** A cached weekly review counts as fresh for this long. */
+private const val REVIEW_FRESH_MS = 12L * 60 * 60 * 1000
 
 @Composable
 private fun App() {
@@ -68,18 +71,30 @@ private fun App() {
     var current by remember { mutableStateOf<Entry?>(null) }
     var detail by remember { mutableStateOf<Entry?>(null) }
     var ai by remember { mutableStateOf<AiState>(AiState.Idle) }
+    var review by remember { mutableStateOf<AiState>(AiState.Idle) }
+    // Bumped whenever the screen moves on, so a slow reply can't land on the wrong screen.
+    var runId by remember { mutableIntStateOf(0) }
 
     fun refresh() {
         entries = store.all()
     }
 
     fun goHome() {
+        runId++
         hour = LocalTime.now().hour
         refresh()
         current = null
         detail = null
         ai = AiState.Idle
+        review = AiState.Idle
         screen = Screen.HOME
+    }
+
+    /** Which gate an AI call is stopped by, or null if it can go ahead. */
+    fun gate(): AiState? = when {
+        !settings.configured -> AiState.NeedsKey
+        !settings.consent -> AiState.NeedsConsent
+        else -> null
     }
 
     fun runAi(entry: Entry) {
@@ -87,28 +102,61 @@ private fun App() {
             ai = AiState.Support
             return
         }
-        if (!settings.configured) {
-            ai = AiState.NeedsKey
-            return
-        }
-        if (!settings.consent) {
-            ai = AiState.NeedsConsent
-            return
-        }
+        gate()?.let { ai = it; return }
         ai = AiState.Loading
+        val id = ++runId
         val provider = settings.provider
         val baseUrl = settings.baseUrl
         val key = settings.key
         val model = settings.model
-        val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()))
+        val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), settings.about)
         thread {
-            when (val r = AiClient.chat(provider, baseUrl, key, model, Prompt.SYSTEM, user)) {
+            val result = try {
+                AiClient.chat(provider, baseUrl, key, model, Prompt.SYSTEM, user)
+            } catch (e: Throwable) {
+                AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
+            }
+            // A finished report is always worth keeping, even if the person has moved on.
+            if (result is AiResult.Ok) store.setReport(entry.time, result.text)
+            if (id != runId) return@thread
+            when (result) {
                 is AiResult.Ok -> {
-                    store.setReport(entry.time, r.text)
                     refresh()
-                    ai = AiState.Ready(r.text)
+                    ai = AiState.Ready(result.text)
                 }
-                is AiResult.Failed -> ai = AiState.Failed(r.error, r.detail)
+                is AiResult.Failed -> ai = AiState.Failed(result.error, result.detail)
+            }
+        }
+    }
+
+    fun runReview(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!force) {
+            val cached = store.lastReview()
+            if (cached != null && now - cached.first < REVIEW_FRESH_MS) {
+                review = AiState.Ready(cached.second)
+                return
+            }
+        }
+        gate()?.let { review = it; return }
+        review = AiState.Loading
+        val id = ++runId
+        val provider = settings.provider
+        val baseUrl = settings.baseUrl
+        val key = settings.key
+        val model = settings.model
+        val user = Prompt.weeklyUser(store.all(), now, settings.about)
+        thread {
+            val result = try {
+                AiClient.chat(provider, baseUrl, key, model, WEEKLY_SYSTEM, user)
+            } catch (e: Throwable) {
+                AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
+            }
+            if (result is AiResult.Ok) store.saveReview(result.text)
+            if (id != runId) return@thread
+            review = when (result) {
+                is AiResult.Ok -> AiState.Ready(result.text)
+                is AiResult.Failed -> AiState.Failed(result.error, result.detail)
             }
         }
     }
@@ -136,6 +184,11 @@ private fun App() {
         if (QuestionTree.next(next, hour, slipped) == null) screen = Screen.NOTE
     }
 
+    fun undoLastAnswer() {
+        val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
+        if (last != null) answers = answers - last
+    }
+
     fun stepBack() {
         val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
         if (last == null) goHome() else answers = answers - last
@@ -145,9 +198,18 @@ private fun App() {
         Screen.HOME -> HomeScreen(
             entries = entries,
             hour = hour,
+            setup = SetupState(
+                dechainerInstalled = Door.isInstalled(context),
+                canReachDechainer = Door.hasPermission(context),
+                aiReady = settings.configured
+            ),
             onUrge = { startInterview(false) },
             onSlip = { startInterview(true) },
             onOpen = { detail = it; screen = Screen.DETAIL },
+            onReview = {
+                screen = Screen.REVIEW
+                runReview(force = false)
+            },
             onSettings = { screen = Screen.SETTINGS }
         )
 
@@ -168,17 +230,14 @@ private fun App() {
 
         Screen.NOTE -> {
             BackHandler {
-                // Undo the last answer and return to the questions.
-                val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
-                if (last != null) answers = answers - last
+                undoLastAnswer()
                 screen = Screen.INTERVIEW
             }
             NoteScreen(
                 slipped = slipped,
                 onDone = { finish(it) },
                 onBack = {
-                    val last = QuestionTree.sequence(answers[Q.FEELING], hour, slipped).lastOrNull { it in answers }
-                    if (last != null) answers = answers - last
+                    undoLastAnswer()
                     screen = Screen.INTERVIEW
                 }
             )
@@ -226,23 +285,47 @@ private fun App() {
             }
         }
 
+        Screen.REVIEW -> {
+            BackHandler { goHome() }
+            ReviewScreen(
+                state = review,
+                providerLabel = settings.provider.label,
+                onConsent = { yes ->
+                    if (yes) {
+                        settings.consent = true
+                        runReview(force = true)
+                    } else {
+                        review = AiState.Idle
+                    }
+                },
+                onRefresh = { runReview(force = true) },
+                onSettings = { screen = Screen.SETTINGS },
+                onBack = { goHome() }
+            )
+        }
+
         Screen.SETTINGS -> {
-            BackHandler { screen = if (current != null) Screen.PLAN else Screen.HOME }
+            val backTo = when {
+                current != null -> Screen.PLAN
+                review !is AiState.Idle -> Screen.REVIEW
+                else -> Screen.HOME
+            }
+            BackHandler { screen = backTo }
             SettingsScreen(
                 settings = settings,
+                store = store,
                 onDeleteAll = {
                     store.clear()
                     goHome()
                 },
+                onImported = { refresh() },
                 onBack = {
+                    screen = backTo
+                    // Back from adding a key: try the AI again now.
                     val entry = current
-                    if (entry != null) {
-                        screen = Screen.PLAN
-                        // Back from adding a key: try the deep dive now.
-                        if (ai is AiState.NeedsKey || ai is AiState.Failed) runAi(entry)
-                    } else {
-                        screen = Screen.HOME
-                    }
+                    if (backTo == Screen.PLAN && entry != null && (ai is AiState.NeedsKey || ai is AiState.Failed)) runAi(entry)
+                    if (backTo == Screen.REVIEW && (review is AiState.NeedsKey || review is AiState.Failed)) runReview(force = true)
+                    if (backTo == Screen.HOME) refresh()
                 }
             )
         }
