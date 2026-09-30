@@ -1083,5 +1083,13 @@ class JournalLogicTest {
         assertTrue("Never flatter" in Prompt.systemFor(true))
         assertFalse("each with a short reason" in Prompt.systemFor(true))
     }
+
+    @Test
+    fun theTrapIsTheirOwnWordsAndLateNightsSkipToday() {
+        val sys = Prompt.systemFor(true)
+        assertTrue("word for word, with nothing added" in sys)
+        assertTrue("leave \"today\" empty" in sys)
+        assertTrue("never the same insight again" in sys)
+    }
 }
 

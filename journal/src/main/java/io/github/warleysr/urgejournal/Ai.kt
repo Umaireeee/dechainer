@@ -592,9 +592,10 @@ How to write
 - Second person, plain words. Warm and direct: kind to the person, never soft on the facts. No emojis, no markdown, no headings or bullet characters inside the strings.
 - Steps start with a verb and name a place or an object, and each can be started within a minute. The first takes under a minute. At most three. No "Step 1:" prefixes.
 - Keep every string under 40 words, unless the depth note at the end allows more.
-- Every section adds something new. "today" and "this_week" never repeat a step from "right_now" or the rule in "your_line"; "understand" and "pattern" never restate "reality_check". If a section would only repeat, leave it empty.
+- Every section adds something new. "today" and "this_week" never repeat a step from "right_now" or the rule in "your_line"; "understand" and "pattern" never restate "reality_check"; "long_term" goes deeper than "realization" (the need and a concrete way to meet it), never the same insight again. If a section would only repeat, leave it empty.
+- Late at night (22:00 to 05:00) "right_now" already covers tonight, so leave "today" empty. Leave "pattern" empty when "reality_check" already names the pattern.
 - The "If ..., then ..." line uses their own cue and an action they can really do. If they already wrote a rule that covers this moment and did not follow it, say so plainly and make the first step following that rule now; "your_line" then restates it, tightened only if it was vague. Otherwise, if they wrote rules, sharpen one instead of repeating it.
-- "trap" is the exact thought they use (their words if they gave them); "reply" is the honest sentence to say back to it, in their voice.
+- "trap" is the thought they chose or wrote, word for word, with nothing added to it (if they chose "just once", the trap is "Just once."); "reply" is the honest sentence to say back to it, in their voice.
 - "question" is one sharp, specific question they can answer to themselves in a minute, the kind a good coach asks. Not rhetorical, not a slogan.
 - After a slip: no shame, no drama, no streaks. Say which gap let it through and the one change that closes it.
 - Use what has worked for them and drop what has failed. Tie the advice to their goals from "About them" and follow their wishes on tone.
@@ -630,7 +631,7 @@ Reply with ONLY one JSON object: no code fences, no text before or after it, no 
  "encouragement": "the spark: one or two sentences tying the next step to the life they want, earned and specific to them"
 }"""
 
-    private const val DEPTH_DEEP = """Depth: this person wants a thorough, substantial read, so these lengths replace the shorter ones. "reality_check": 3 to 4 sentences that use their numbers. "realization": 2 sentences. "right_now": 3 steps, with a few natural words on why they fit them where that helps. "trap" and "reply": one sentence each. "today": 1 to 2 items. "this_week": 2 items. "long_term": 2 items on the need under the urge. "understand": at most ONE idea, 3 to 4 sentences, told as their own pattern the way you'd explain it to a friend, not a textbook. Still say each thing once, and still keep the whole reply readable in a couple of minutes."""
+    private const val DEPTH_DEEP = """Depth: this person wants a thorough, substantial read, so these lengths replace the shorter ones. "reality_check": 3 to 4 sentences, never more. "realization": 2 sentences. "right_now": 3 steps, with a few natural words on why they fit them where that helps. "trap" and "reply": one sentence each. "today": 1 to 2 items. "this_week": 2 items. "long_term": 2 items on the need under the urge. "understand": at most ONE idea, 3 to 4 sentences, told as their own pattern the way you'd explain it to a friend, not a textbook. Still say each thing once, and still keep the whole reply readable in a couple of minutes."""
 
     private const val DEPTH_SHORT = """Depth: keep it tight, so these lengths replace the longer ones. "reality_check": 1 to 2 sentences. "realization": 1 sentence. "right_now": 2 steps. Leave "today", "this_week", "long_term", "understand" and "pattern" empty."""
 
