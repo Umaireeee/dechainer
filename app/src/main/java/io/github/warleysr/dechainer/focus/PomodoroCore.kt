@@ -111,7 +111,6 @@ object PomodoroCore {
         if (!state.isRunning) state
         else state.copy(endsAt = 0L, pausedRemaining = (state.endsAt - now).coerceAtLeast(1_000L))
 
-    /** Back to an idle focus session, keeping the cycle count. */
     /**
      * The state that starts a committed block, or [state] itself when the timer is not idle. The
      * idle check lives here, next to the change, so two quick block requests can never replace a
@@ -121,6 +120,7 @@ object PomodoroCore {
         if (!state.isIdle) state
         else startFor(PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt), now, firstSessionMinutes)
 
+    /** Back to an idle focus session, keeping the cycle count. */
     fun stop(state: PomodoroState): PomodoroState =
         PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = state.focusDoneInCycle)
 
@@ -314,7 +314,6 @@ object FocusLogMath {
         raw?.replace(SEPARATORS, " ")?.replace(SPACES, " ")?.trim()?.take(max)?.trim()
             ?.takeIf { it.isNotEmpty() }
 
-    /** Minutes per tag, most first. Untagged sessions come under null. */
     /** [value] per tag (minutes by default), most first; tags with nothing are left out. */
     fun minutesByTag(sessions: List<FocusSession>, value: (FocusSession) -> Int = { it.minutes }): List<Pair<String?, Int>> =
         sessions.groupBy { it.tag }.map { (tag, list) -> tag to list.sumOf(value) }

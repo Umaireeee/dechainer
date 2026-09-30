@@ -80,4 +80,17 @@ class UsageLimitsTest {
         val limits = mapOf("a" to 30)
         assertEquals(LimitMath.MIN_DELAY_MS, LimitMath.nextCheckDelay(limits, mapOf("a" to 30 * min - 2_000L), 300 * min))
     }
+
+    @Test
+    fun anAppOutOfTimeTodayStaysOutUntilMidnight() {
+        val limits = mapOf("a" to 30, "b" to 60)
+        // Recorded today: still out, even if the usage log can no longer be read.
+        assertEquals(setOf("a"), LimitMath.carried("2026-09-30", setOf("a"), "2026-09-30", limits))
+        // A new day starts clean.
+        assertTrue(LimitMath.carried("2026-09-29", setOf("a"), "2026-09-30", limits).isEmpty())
+        // A limit that was removed (with the recovery code) frees its app at once.
+        assertTrue(LimitMath.carried("2026-09-30", setOf("a"), "2026-09-30", mapOf("b" to 60)).isEmpty())
+        // Nothing recorded yet.
+        assertTrue(LimitMath.carried(null, emptySet(), "2026-09-30", limits).isEmpty())
+    }
 }

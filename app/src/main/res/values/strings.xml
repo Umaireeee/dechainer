@@ -499,8 +499,8 @@
     <string name="focus_lecture_unmark">Not a finished lecture</string>
     <string name="focus_brick_source">Focus block</string>
     <string name="focus_setting_brick">Brick the phone during blocks</string>
-    <string name="focus_setting_brick_desc">For the whole block, breaks included: only Déchaîner, incoming calls and Quick Settings (airplane mode, mobile data, hotspot).</string>
-    <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
+    <string name="focus_setting_brick_desc">For the whole block, breaks included: only Déchaîner, incoming calls, the Urge Journal and Quick Settings (airplane mode, mobile data, hotspot).</string>
+    <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge Journal (from its Quick Settings tile) and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_next_subject">Next session is for:</string>
     <string name="focus_block_start">Start focus block</string>
     <string name="focus_block_no_way_out">Bricked until the end. No way out.</string>

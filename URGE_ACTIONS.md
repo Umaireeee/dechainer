@@ -9,7 +9,7 @@ Déchaîner exposes one broadcast receiver so a companion app, signed with the *
 | Extra `kind` | What it does | `minutes` (capped) |
 |---|---|---|
 | `IMPULSE_BLOCK` | The panic button, remotely: locks Déchaîner and suspends the apps the panic button is set to. Never shortens a block already running. | 15 to 360 |
-| `FOCUS_BLOCK` | A committed focus block. Leaving early takes the recovery code. | 25 to 120 |
+| `FOCUS_BLOCK` | A committed focus block: the phone is bricked until it ends. Nothing ends it early, not even the recovery code. | 25 to 120 |
 | `RIDE_LOCK` | The ride lock: every app with an icon is suspended except calls, emergency apps, the alarm clock, Déchaîner and the journal. Nothing ends it early; a new request can only make it longer. The clock is locked while it runs. | 10 to 30 |
 
 Rules that will not change:

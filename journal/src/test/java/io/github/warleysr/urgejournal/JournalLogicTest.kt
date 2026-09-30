@@ -993,4 +993,15 @@ class JournalLogicTest {
         assertEquals(listOf("one"), r.today)
         assertTrue(r.pattern.startsWith("Your danger window"))
     }
+
+    @Test
+    fun aReplyCutOffNearTheEndIsKeptButAFragmentIsNot() {
+        val nearlyDone = """{"headline":"This is the 3pm dodge.","reality_check":"Four of nine urges came at your desk.","right_now":["Put the phone in the drawer.","Write one sen"""
+        assertTrue(AiClient.usablePartial(nearlyDone))
+        // Only the start of a headline: nothing worth showing yet.
+        assertFalse(AiClient.usablePartial("""{"headline":"This is the 3pm"""))
+        assertFalse(AiClient.usablePartial(""))
+        assertFalse(AiClient.usablePartial("Sorry, something went"))
+    }
 }
+

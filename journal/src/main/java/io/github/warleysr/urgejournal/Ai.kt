@@ -334,6 +334,8 @@ object AiClient {
         onText: (String) -> Unit
     ): AiResult {
         if (!validEndpoint(baseUrl)) return AiResult.Failed(AiError.BAD_URL)
+        // Everything received so far, so a connection that drops near the end loses nothing readable.
+        var received = ""
         return try {
             val conn = open(provider, baseUrl, key, buildBody(provider, model, system, user, stream = true), stream = true)
             val code = conn.responseCode
@@ -348,16 +350,26 @@ object AiClient {
                 conn.disconnect()
                 return interpret(code, text)
             }
-            val full = conn.inputStream.bufferedReader(Charsets.UTF_8).use { Sse.read(it, onText) }
+            val full = conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                Sse.read(reader) { text -> received = text; onText(text) }
+            }
             conn.disconnect()
             if (full.isBlank()) AiResult.Failed(AiError.EMPTY) else AiResult.Ok(full)
         } catch (e: Sse.StreamFailure) {
             AiResult.Failed(AiError.SERVER, e.message.orEmpty().take(320))
         } catch (_: IOException) {
-            AiResult.Failed(AiError.NETWORK)
+            // Cut off mid-reply (a tunnel, a network switch): keep it if what came already reads as a report.
+            if (usablePartial(received)) AiResult.Ok(received) else AiResult.Failed(AiError.NETWORK)
         } catch (_: RuntimeException) {
             AiResult.Failed(AiError.SERVER)
         }
+    }
+
+    /** Whether a reply cut off part-way already says something worth showing: a headline and at least one step. */
+    fun usablePartial(text: String): Boolean {
+        if (text.isBlank()) return false
+        val report = ReportParser.parse(text) ?: return false
+        return report.headline.isNotBlank() && (report.rightNow.isNotEmpty() || report.realityCheck.isNotBlank())
     }
 
     /** Maps an HTTP status and body to a result. Split out so it can be tested without a network. */
