@@ -87,8 +87,6 @@ sealed interface AiState {
     data object Loading : AiState
     /** The reply is arriving: [text] is everything written so far. */
     data class Streaming(val text: String) : AiState
-    /** The note suggests crisis, so care is shown instead of a report. */
-    data object Support : AiState
     data class Ready(val text: String) : AiState
     data class Failed(val error: AiError, val detail: String = "") : AiState
 }
@@ -198,10 +196,8 @@ private fun App(activity: MainActivity) {
     }
 
     fun runAi(entry: Entry) {
-        if (Safety.needsSupport(entry.note)) {
-            ai = AiState.Support
-            return
-        }
+        // Words that sound like a crisis don't stop the coach: the plan screen shows the support
+        // card at once, and the coach, told so, answers with care instead of tips (see Prompt).
         gate()?.let { ai = it; return }
         ai = AiState.Loading
         val id = ++runId
@@ -266,7 +262,12 @@ private fun App(activity: MainActivity) {
         thread {
             val result = try {
                 var lastPush = 0L
-                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about)) { text ->
+                // The last review, if it's from an earlier week, so this one can follow up on it.
+                val previous = store.lastReview()?.let { (at, text) ->
+                    val days = ((now - at) / (24L * 60 * 60 * 1000)).toInt()
+                    if (days >= 3) Prompt.PreviousReview(days, text) else null
+                }
+                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous)) { text ->
                     val nowMs = System.currentTimeMillis()
                     if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
                         lastPush = nowMs

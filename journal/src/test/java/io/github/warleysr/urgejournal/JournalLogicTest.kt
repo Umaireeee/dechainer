@@ -1003,5 +1003,40 @@ class JournalLogicTest {
         assertFalse(AiClient.usablePartial(""))
         assertFalse(AiClient.usablePartial("Sorry, something went"))
     }
+
+    @Test
+    fun aCrisisNoteGetsTheCoachToStayNotToCoach() {
+        val sys = Prompt.systemFor(true)
+        // The crisis rule names the exact fields, so the reply lands where the screen shows it.
+        assertTrue("Stay with them" in sys)
+        assertTrue("never leave them with nothing to do" in sys)
+        val e = Entry(ms(20, 2), false, mapOf(Q.FEELING to Opt.SAD), null, note = "I don't want to live like this anymore")
+        assertTrue("flagged these words as a possible crisis" in Prompt.user(e, ""))
+        val calm = Entry(ms(20, 2), false, mapOf(Q.FEELING to Opt.BORED), null, note = "bored after dinner")
+        assertFalse("possible crisis" in Prompt.user(calm, ""))
+    }
+
+    @Test
+    fun theWeeklyReviewComparesWithTheWeekBeforeAndFollowsUp() {
+        val now = ms(20, 15)
+        val lastWeek = (8..11).map { Entry(ms(it, 22), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.GAVE_IN) }
+        val thisWeek = (15..16).map { Entry(ms(it, 22), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.RESISTED) }
+        val previous = Prompt.PreviousReview(
+            7, """{"headline":"h","your_line":"If it is 22:00, then the phone charges in the hall.","right_now":["Move the charger tonight."],"this_week":["Log every urge after 21:00."]}"""
+        )
+        val weekly = Prompt.weeklyUser(lastWeek + thisWeek, now, "", zone, previous)
+        assertTrue("The 7 days before that: 4 entries, 0 ridden out, 4 given in to or slipped." in weekly)
+        assertTrue("Your previous review, 7 days ago, asked them to try:" in weekly)
+        assertTrue("- If it is 22:00, then the phone charges in the hall." in weekly)
+        assertTrue("- Log every urge after 21:00." in weekly)
+        // A brand-new journal has no week before to compare with, and says nothing about one.
+        assertFalse("days before that" in Prompt.weeklyUser(thisWeek, now, "", zone))
+        assertTrue("remembers" in WEEKLY_SYSTEM)
+    }
+
+    @Test
+    fun theDeadWhyFieldIsNoLongerAskedFor() {
+        for (sys in listOf(Prompt.systemFor(true), WEEKLY_SYSTEM)) assertFalse("\"why\"" in sys)
+    }
 }
 
