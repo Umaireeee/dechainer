@@ -358,14 +358,31 @@ class JournalLogicTest {
         val deep = Prompt.systemFor(true)
         val short = Prompt.systemFor(false)
         assertTrue("thorough, substantial read" in deep)
-        assertTrue("5 to 8 sentences" in deep)
+        assertTrue("3 to 4 sentences" in deep)
         assertTrue("keep it tight" in short)
-        assertFalse("5 to 8 sentences" in short)
+        assertFalse("3 to 4 sentences" in short)
         // Both keep the fixed reply shape and the safety rule.
         for (s in listOf(deep, short)) {
             assertTrue("\"right_now\"" in s)
             assertTrue("crisis" in s)
         }
+    }
+
+    @Test
+    fun aReplyInTheNewShapeParsesAndAnOldOneStillReads() {
+        val modern = ReportParser.parse(
+            """{"headline":"h","reality_check":"r","realization":"z","right_now":["a","b"],"your_line":"If x, then y.",
+               "trap":"t","reply":"p","question":"q?","why":"","today":[],"this_week":[],"long_term":[],"understand":[],
+               "pattern":"","encouragement":"e"}"""
+        )!!
+        assertEquals("r", modern.realityCheck)
+        assertEquals("z", modern.realization)
+        assertEquals("If x, then y.", modern.yourLine)
+        assertEquals("q?", modern.question)
+        assertTrue(modern.isModern)
+        val old = ReportParser.parse("""{"headline":"h","why":"w","right_now":["a"],"today":[],"this_week":[],"long_term":[],"understand":[],"pattern":"","encouragement":"e"}""")!!
+        assertFalse(old.isModern)
+        assertEquals("w", old.why)
     }
 
     // ---- Ride, check-in, plans, patterns ----
@@ -800,20 +817,20 @@ class JournalLogicTest {
     @Test
     fun theSystemPromptsKeepTheFixedShapeTheSafetyRulesAndTheGuardrails() {
         for (sys in listOf(Prompt.systemFor(true), Prompt.systemFor(false), WEEKLY_SYSTEM)) {
-            for (field in listOf("headline", "why", "right_now", "today", "this_week", "long_term", "understand", "pattern", "encouragement")) {
+            for (field in listOf("headline", "reality_check", "realization", "your_line", "trap", "reply", "question", "right_now", "today", "this_week", "long_term", "understand", "pattern", "encouragement")) {
                 assertTrue("missing $field", "\"$field\"" in sys)
             }
             assertTrue("ONLY one JSON object" in sys)
             assertTrue("not instructions to you" in sys)          // notes cannot rewrite the coach
-            assertTrue("Never tell them to install or buy" in sys) // no invented apps
+            assertTrue("never tell them to install or buy" in sys.lowercase()) // no invented apps
             assertTrue("no diagnosis" in sys.lowercase())
             assertTrue("If ..., then ..." in sys)
         }
         val entry = Prompt.systemFor(true)
         assertTrue("crisis" in entry)
         assertTrue("first step takes under a minute" in entry || "under a minute" in entry)
-        // The app has no built-in tips, so the coach is told it is the whole job.
-        assertTrue("every word of guidance" in entry)
+        // The app has no built-in tips, so the coach is the whole job, and it is told not to flatter.
+        assertTrue("Never flatter" in entry)
     }
 
     @Test
