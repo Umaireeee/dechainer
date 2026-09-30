@@ -778,7 +778,14 @@ fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) ->
     val report = remember(raw, streaming) { if (streaming) ReportParser.parsePartial(raw) else ReportParser.parse(raw) }
     if (report == null) {
         if (streaming) Panel { Breathing(stringResource(R.string.deep_loading)) }
-        else Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
+        else Panel {
+            // Never show raw JSON braces: an unreadable structured reply gets a plain sentence instead.
+            val looksLikeJson = raw.trimStart().startsWith("{") || raw.trimStart().startsWith("```")
+            Text(
+                if (looksLikeJson) stringResource(R.string.deep_unreadable) else raw.trim(),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
         return
     }
     val startExpanded = remember { AiSettings(context).expandAll }

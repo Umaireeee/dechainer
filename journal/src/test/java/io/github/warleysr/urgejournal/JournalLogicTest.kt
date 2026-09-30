@@ -980,4 +980,17 @@ class JournalLogicTest {
         assertEquals(0, bar.gaveIn)
         assertEquals(1, bar.open)
     }
+
+    @Test
+    fun aReplyCutOffMidSentenceIsStillReadNotShownAsRawJson() {
+        val cut = """{"headline":"h","reality_check":"r","realization":"z","right_now":["a","b"],"your_line":"If x, then y.",
+            "trap":"t","reply":"p","question":"q?","why":"","today":["one"],"understand":[{"title":"T","body":"B"}],
+            "pattern":"Your danger window has been 01:00 to 02:00, and loneliness has"""
+        val r = ReportParser.parse(cut)!!
+        assertEquals("h", r.headline)
+        assertEquals("If x, then y.", r.yourLine)
+        assertEquals(listOf("a", "b"), r.rightNow)
+        assertEquals(listOf("one"), r.today)
+        assertTrue(r.pattern.startsWith("Your danger window"))
+    }
 }
