@@ -73,6 +73,7 @@ fun SchedulesScreen(
     val scope = rememberCoroutineScope()
     val lockedMsg = stringResource(R.string.schedule_locked_message)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
+    val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
     val defaultName = stringResource(R.string.schedule_default_name)
     val antiTamperLabel = stringResource(R.string.schedule_anti_tamper)
     val copySuffix = stringResource(R.string.schedule_copy_suffix)
@@ -387,6 +388,7 @@ fun ScheduleEditorScreen(
             SchedulesViewModel.SaveResult.NO_FREE_TIME ->
                 scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
             SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
+            SchedulesViewModel.SaveResult.NOT_SAVED -> scope.launch { snackbarHostState.showSnackbar(notSavedMsg) }
         }
     }
 

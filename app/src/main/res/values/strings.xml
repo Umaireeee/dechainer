@@ -242,6 +242,7 @@
     <string name="schedule_error_nothing">Select at least one app, service or website</string>
     <string name="removal_needs_code">Set a recovery code first. Device Owner can\'t be removed without one, except through Forced removal.</string>
     <string name="schedule_locked_blocks_removal">A locked schedule, focus block or ride lock is running. Device Owner can only be removed after it ends, or through Forced removal.</string>
+    <string name="schedule_error_not_saved">Could not save this schedule. Nothing was changed; try again.</string>
     <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
     <string name="schedule_long_lock_title">Lock this for %1$s?</string>
     <string name="schedule_long_lock_message">While this window is open you won\'t be able to edit, disable or delete this schedule, not even with your recovery code. The only way out during the window is Forced removal, which takes 4 days.</string>
