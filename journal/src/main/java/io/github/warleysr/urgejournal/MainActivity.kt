@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, STARTING, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW }
+private enum class Screen { HOME, STARTING, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW, TALK, KEPT }
 
 /** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
@@ -132,6 +132,9 @@ private fun App(activity: MainActivity) {
     var detail by remember { mutableStateOf<Entry?>(null) }
     var ai by remember { mutableStateOf<AiState>(AiState.Idle) }
     var review by remember { mutableStateOf<AiState>(AiState.Idle) }
+    var talk by remember { mutableStateOf<AiState>(AiState.Idle) }
+    var talkText by remember { mutableStateOf("") }
+    var kept by remember { mutableStateOf(store.kept()) }
     // Bumped whenever the screen moves on, so a slow reply can't land on the wrong screen.
     var runId by remember { mutableIntStateOf(0) }
     // A ride is the ten minutes at the peak of an urge; the check-in after it feeds the coach.
@@ -185,6 +188,9 @@ private fun App(activity: MainActivity) {
         detail = null
         ai = AiState.Idle
         review = AiState.Idle
+        talk = AiState.Idle
+        talkText = ""
+        kept = store.kept()
         screen = Screen.HOME
     }
 
@@ -215,7 +221,8 @@ private fun App(activity: MainActivity) {
                     entry,
                     Insights.summary(history, System.currentTimeMillis()),
                     about,
-                    Prompt.extras(history, entry, store.plans().map { it.text })
+                    Prompt.extras(history, entry, store.plans().map { it.text }),
+                    Insights.lifeFacts(store.days(), LocalDate.now(), window = 3)
                 )
                 var lastPush = 0L
                 AiClient.chatStream(provider, baseUrl, key, model, system, user) { text ->
@@ -267,7 +274,7 @@ private fun App(activity: MainActivity) {
                     val days = ((now - at) / (24L * 60 * 60 * 1000)).toInt()
                     if (days >= 3) Prompt.PreviousReview(days, text) else null
                 }
-                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous)) { text ->
+                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous, days = store.days())) { text ->
                     val nowMs = System.currentTimeMillis()
                     if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
                         lastPush = nowMs
@@ -280,6 +287,46 @@ private fun App(activity: MainActivity) {
             if (result is AiResult.Ok) store.saveReview(result.text)
             if (id != runId) return@thread
             review = when (result) {
+                is AiResult.Ok -> AiState.Ready(result.text)
+                is AiResult.Failed -> AiState.Failed(result.error, result.detail)
+            }
+        }
+    }
+
+    fun runTalk(text: String) {
+        talkText = text
+        gate()?.let { talk = it; return }
+        talk = AiState.Loading
+        val id = ++runId
+        val provider = settings.provider
+        val baseUrl = settings.baseUrl
+        val key = settings.key
+        val model = settings.model
+        val about = settings.about
+        thread {
+            val result = try {
+                val history = store.all()
+                val user = Prompt.talkUser(
+                    text, about,
+                    Insights.summary(history, System.currentTimeMillis()),
+                    Insights.lifeFacts(store.days(), LocalDate.now()),
+                    store.plans().map { it.text }
+                )
+                var lastPush = 0L
+                AiClient.chatStream(provider, baseUrl, key, model, TALK_SYSTEM, user) { partial ->
+                    val nowMs = System.currentTimeMillis()
+                    if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
+                        lastPush = nowMs
+                        talk = AiState.Streaming(partial)
+                    }
+                }
+            } catch (e: Throwable) {
+                AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
+            }
+            // A talk is worth keeping whether or not they are still on the screen.
+            if (result is AiResult.Ok) store.keep(Kept.Kind.TALK, result.text)
+            if (id != runId) return@thread
+            talk = when (result) {
                 is AiResult.Ok -> AiState.Ready(result.text)
                 is AiResult.Failed -> AiState.Failed(result.error, result.detail)
             }
@@ -484,10 +531,13 @@ private fun App(activity: MainActivity) {
                 onSlip = { startInterview(true) },
                 onOpen = { detail = it; detailBack = Screen.HOME; screen = Screen.DETAIL },
                 onLog = { screen = Screen.LOG },
-                onDay = { result ->
-                    store.setDay(LocalDate.now(), result)
+                onDay = { log ->
+                    store.setDay(LocalDate.now(), log)
                     cardsTick++
                 },
+                onTalk = { talk = AiState.Idle; screen = Screen.TALK },
+                onKept = { kept = store.kept(); screen = Screen.KEPT },
+                keptCount = kept.size,
                 onFocus = { minutes -> Door.send(context, DoorAction(DoorAction.FOCUS_BLOCK, minutes)) },
                 onReview = {
                     screen = Screen.REVIEW
@@ -686,10 +736,41 @@ private fun App(activity: MainActivity) {
             )
         }
 
+        Screen.TALK -> {
+            BackHandler { goHome() }
+            TalkScreen(
+                state = talk,
+                initial = talkText,
+                providerLabel = settings.provider.label,
+                onSend = { text -> runTalk(text) },
+                onConsent = { yes ->
+                    if (yes) {
+                        settings.consent = true
+                        runTalk(talkText)
+                    } else {
+                        talk = AiState.Idle
+                    }
+                },
+                onSettings = { screen = Screen.SETTINGS },
+                onNew = { runId++; talk = AiState.Idle; talkText = "" },
+                onBack = { goHome() }
+            )
+        }
+
+        Screen.KEPT -> {
+            BackHandler { goHome() }
+            KeptScreen(
+                items = kept,
+                onRemove = { k -> store.unkeep(k.id); kept = store.kept() },
+                onBack = { goHome() }
+            )
+        }
+
         Screen.SETTINGS -> {
             val backTo = when {
                 current != null -> Screen.PLAN
                 review !is AiState.Idle -> Screen.REVIEW
+                talk !is AiState.Idle -> Screen.TALK
                 else -> Screen.HOME
             }
             BackHandler { screen = backTo }
@@ -716,6 +797,7 @@ private fun App(activity: MainActivity) {
                     val entry = current
                     if (backTo == Screen.PLAN && entry != null && (ai is AiState.NeedsKey || ai is AiState.Failed)) runAi(entry)
                     if (backTo == Screen.REVIEW && (review is AiState.NeedsKey || review is AiState.Failed)) runReview(force = true)
+                    if (backTo == Screen.TALK && (talk is AiState.NeedsKey || talk is AiState.Failed)) runTalk(talkText)
                     if (backTo == Screen.HOME) refresh()
                 }
             )

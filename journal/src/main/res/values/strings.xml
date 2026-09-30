@@ -381,14 +381,14 @@
     <string name="focus_body">Déchaîner bricks your phone until the time is up, breaks included: only Déchaîner, incoming calls, your alarm clock, this journal (from its Quick Settings tile) and Quick Settings keep working, plus any apps you allowed in its timer settings. Nothing ends it early, not even your recovery code, so pick a length you can keep. How many minutes?</string>
     <string name="focus_minutes">%1$d min</string>
     <string name="focus_sent">Sent to Déchaîner. Your focus block is starting.</string>
-    <string name="day_title">Did today go the way you planned?</string>
+    <string name="day_title">How was today?</string>
     <string name="day_planned">Yes, it went to plan</string>
     <string name="day_partly">Partly</string>
     <string name="day_not">Not really</string>
     <string name="week_plan_days">Went to plan: %1$d of the last %2$d days you checked in.</string>
-    <string name="reminders_evening">Evening check-in: did today go to plan?</string>
+    <string name="reminders_evening">Evening check-in: how was today?</string>
     <string name="notif_evening_title">Evening check-in</string>
-    <string name="notif_evening_text">Did today go the way you planned? Two taps.</string>
+    <string name="notif_evening_text">Sleep, study, body, people: thirty seconds.</string>
 
     <string name="starting_title">Starting your ride in %1$d…</string>
     <string name="starting_body">This locks your other apps. If you didn\'t mean to start it, cancel now.</string>
@@ -403,4 +403,39 @@
 
     <string name="plan_fallback_note">The AI isn\'t available right now, so these are the app\'s basic tips. Add a key in Settings or try again for a personal plan.</string>
     <string name="deep_writing">Still writing…</string>
+    <!-- What came just before -->
+    <string name="q_before">What came just before?</string>
+    <string name="opt_before_scrolling">I was scrolling</string>
+    <string name="opt_before_avoiding">Putting off a task</string>
+    <string name="opt_before_awake">Lying awake in bed</string>
+    <string name="opt_before_alone">Alone after a hard moment</string>
+    <string name="opt_before_tired">Tired or hungry</string>
+    <string name="opt_before_nothing">Nothing in particular</string>
+    <!-- The evening life check-in -->
+    <string name="area_slept">Slept well</string>
+    <string name="area_studied">Studied</string>
+    <string name="area_moved">Moved my body</string>
+    <string name="area_connected">Talked to someone</string>
+    <string name="day_areas_hint">Tap what happened today, then how it went against your plan.</string>
+    <string name="day_note_hint">One line about today (optional)</string>
+    <!-- Kept deep dives -->
+    <string name="keep_button">Keep this deep dive</string>
+    <string name="keep_done">Kept. It\'s in Kept deep dives on the home screen.</string>
+    <string name="kept_title">Kept deep dives</string>
+    <string name="kept_empty">Nothing kept yet. Tap \"Keep this deep dive\" under any reply you want to read again on a hard day.</string>
+    <string name="kept_remove">Remove</string>
+    <string name="kept_untitled">A deep dive</string>
+    <string name="kept_urge">After an urge</string>
+    <string name="kept_slip">After a slip</string>
+    <string name="kept_week">Weekly review</string>
+    <string name="kept_talk">Talk with your coach</string>
+    <string name="home_kept">Kept deep dives (%1$d)</string>
+    <!-- Talk to your coach -->
+    <string name="home_talk">Talk to your coach</string>
+    <string name="talk_title">Talk to your coach</string>
+    <string name="talk_intro">No urge needed. Your week, your study, a decision, how you\'re really doing: write it the way you\'d say it to a friend who\'s on your side.</string>
+    <string name="talk_hint">What\'s on your mind?</string>
+    <string name="talk_send">Ask the coach</string>
+    <string name="talk_again">Talk about something else</string>
+    <string name="talk_consent_body">What you write here, your goals and counts from your journal (never your urge notes) are sent to %1$s to write the reply. OK?</string>
 </resources>

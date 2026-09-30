@@ -9,7 +9,7 @@ import java.time.temporal.ChronoUnit
 
 /** The questions, in the order the interview may ask them. Which ones come up depends on the answers. */
 enum class Q {
-    FEELING, INTENSITY, PULL, PLACE,
+    FEELING, INTENSITY, PULL, BEFORE, PLACE,
     PROBE_STRESSED, PROBE_BORED, PROBE_LONELY, PROBE_TIRED, PROBE_ANXIOUS, PROBE_OTHER,
     THOUGHT, PHONE_PLACE, GAP, STOPPER
 }
@@ -22,6 +22,8 @@ enum class Opt {
     MILD, MEDIUM, STRONG, OVERWHELMING,
     // What it pulls toward
     SCROLLING, EXPLICIT, VIDEOS_GAMES, OTHER_PULL,
+    // What came just before
+    BEFORE_SCROLLING, BEFORE_AVOIDING, BEFORE_AWAKE, BEFORE_ALONE, BEFORE_TIRED, BEFORE_NOTHING,
     // Where you are
     BED, COUCH, DESK, BATHROOM, OUTSIDE, OTHER_PLACE,
     // Follow-ups by feeling
@@ -46,6 +48,7 @@ val Q.options: List<Opt>
         Q.FEELING -> listOf(Opt.BORED, Opt.STRESSED, Opt.LONELY, Opt.TIRED, Opt.ANXIOUS, Opt.SAD, Opt.OTHER_FEELING)
         Q.INTENSITY -> listOf(Opt.MILD, Opt.MEDIUM, Opt.STRONG, Opt.OVERWHELMING)
         Q.PULL -> listOf(Opt.SCROLLING, Opt.EXPLICIT, Opt.VIDEOS_GAMES, Opt.OTHER_PULL)
+        Q.BEFORE -> listOf(Opt.BEFORE_SCROLLING, Opt.BEFORE_AVOIDING, Opt.BEFORE_AWAKE, Opt.BEFORE_ALONE, Opt.BEFORE_TIRED, Opt.BEFORE_NOTHING)
         Q.PLACE -> listOf(Opt.BED, Opt.COUCH, Opt.DESK, Opt.BATHROOM, Opt.OUTSIDE, Opt.OTHER_PLACE)
         Q.PROBE_STRESSED -> listOf(Opt.STRESS_STUDY, Opt.STRESS_WORK, Opt.STRESS_PEOPLE, Opt.STRESS_MONEY, Opt.STRESS_UNKNOWN)
         Q.PROBE_BORED -> listOf(Opt.BORED_AVOIDING, Opt.BORED_NOTHING, Opt.BORED_WAITING)
@@ -65,6 +68,7 @@ object Plain {
         Q.FEELING -> "Feeling"
         Q.INTENSITY -> "Urge strength"
         Q.PULL -> "Pulled toward"
+        Q.BEFORE -> "What came just before the urge"
         Q.PLACE -> "Location"
         Q.THOUGHT -> "What they were telling themselves"
         Q.PHONE_PLACE -> "Where the phone was (late at night)"
@@ -74,6 +78,12 @@ object Plain {
     }
 
     private val overrides = mapOf(
+        Opt.BEFORE_SCROLLING to "they had been scrolling",
+        Opt.BEFORE_AVOIDING to "they were putting off a task",
+        Opt.BEFORE_AWAKE to "they were lying awake in bed",
+        Opt.BEFORE_ALONE to "they were alone after a hard moment",
+        Opt.BEFORE_TIRED to "they were tired or hungry",
+        Opt.BEFORE_NOTHING to "nothing in particular came before it",
         Opt.SLEEP_LOW to "slept under 5 hours",
         Opt.SLEEP_MID to "slept 5 to 7 hours",
         Opt.SLEEP_OK to "slept 7+ hours",
@@ -130,6 +140,7 @@ object QuestionTree {
     fun sequence(feeling: Opt?, hour: Int, slipped: Boolean, quick: Boolean = false): List<Q> = buildList {
         if (quick && !slipped) {
             add(Q.FEELING)
+            add(Q.BEFORE)
             add(Q.PLACE)
             add(Q.THOUGHT)
             if (isLate(hour)) add(Q.PHONE_PLACE)
@@ -140,6 +151,7 @@ object QuestionTree {
         add(Q.PULL)
         add(Q.PLACE)
         if (feeling != null) add(probeFor(feeling))
+        add(Q.BEFORE)
         add(Q.THOUGHT)
         if (isLate(hour)) add(Q.PHONE_PLACE)
         if (slipped) {
@@ -239,6 +251,9 @@ object Coach {
         }
         if (answers[Q.PLACE] == Opt.BED || answers[Q.PLACE] == Opt.BATHROOM) steps += Step.LEAVE_ROOM
         if (answers[Q.PHONE_PLACE] == Opt.PHONE_WITH_ME) steps += Step.PHONE_OUT
+        // Scrolling or lying awake came first: the phone leaving is the step that breaks the chain.
+        if (answers[Q.BEFORE] == Opt.BEFORE_SCROLLING || answers[Q.BEFORE] == Opt.BEFORE_AWAKE) steps += Step.PHONE_OUT
+        if (answers[Q.BEFORE] == Opt.BEFORE_AVOIDING) steps += Step.SMALL_TASK
         if (level >= 2) {
             steps += Step.COLD_WATER
             steps += Step.WALK
@@ -290,6 +305,38 @@ object Coach {
 
 /** The evening answer to "did today go the way you planned?". Text is `day_<name lowercase>`. */
 enum class DayResult { PLANNED, PARTLY, NOT }
+
+/** The parts of a day that hold the rest up. Text is `area_<name lowercase>`. */
+enum class Area { SLEPT, STUDIED, MOVED, CONNECTED }
+
+/**
+ * One evening check-in: how the day went against the plan, which parts of a good day happened,
+ * and one line in their own words. A day saved by an older version is just its result.
+ */
+data class DayLog(val result: DayResult, val areas: Set<Area> = emptySet(), val note: String = "") {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("r", result.name)
+        if (areas.isNotEmpty()) put("a", JSONArray(areas.map { it.name }))
+        if (note.isNotBlank()) put("n", note)
+    }
+
+    companion object {
+        /** Reads a stored day: an object from this version, or a bare result name from an older one. */
+        fun fromStored(raw: Any?): DayLog? = when (raw) {
+            is String -> runCatching { DayLog(DayResult.valueOf(raw)) }.getOrNull()
+            is JSONObject -> runCatching {
+                DayLog(
+                    DayResult.valueOf(raw.getString("r")),
+                    raw.optJSONArray("a")?.let { a ->
+                        (0 until a.length()).mapNotNull { i -> runCatching { Area.valueOf(a.getString(i)) }.getOrNull() }.toSet()
+                    }.orEmpty(),
+                    raw.optString("n", "").trim().take(200)
+                )
+            }.getOrNull()
+            else -> null
+        }
+    }
+}
 
 enum class Outcome { RESISTED, GAVE_IN }
 
@@ -501,10 +548,28 @@ object Insights {
     }
 
     /** How the day went against the plan, answered in the evening. */
-    fun planDays(days: Map<LocalDate, DayResult>, today: LocalDate, window: Int = 7): Pair<Int, Int>? {
+    fun planDays(days: Map<LocalDate, DayLog>, today: LocalDate, window: Int = 7): Pair<Int, Int>? {
         val recent = days.filterKeys { !it.isAfter(today) && ChronoUnit.DAYS.between(it, today) < window }
         if (recent.isEmpty()) return null
-        return recent.count { it.value == DayResult.PLANNED } to recent.size
+        return recent.count { it.value.result == DayResult.PLANNED } to recent.size
+    }
+
+    /**
+     * The evening check-ins of the [window] days ending [today], as plain facts for the coach:
+     * how many days were checked in, how each part of a good day went, and how the days went
+     * against the plan. Counts only; their evening lines stay private. Empty with no check-ins.
+     */
+    fun lifeFacts(days: Map<LocalDate, DayLog>, today: LocalDate, window: Int = 7): List<String> {
+        val recent = days.filterKeys { !it.isAfter(today) && ChronoUnit.DAYS.between(it, today) < window }.values
+        if (recent.isEmpty()) return emptyList()
+        val n = recent.size
+        fun c(a: Area) = recent.count { a in it.areas }
+        return listOf(
+            "Evening check-ins in the last $window days: $n. Slept well on ${c(Area.SLEPT)} of them, studied on ${c(Area.STUDIED)}, " +
+                "moved their body on ${c(Area.MOVED)}, talked to someone on ${c(Area.CONNECTED)}.",
+            "Days against their plan: ${recent.count { it.result == DayResult.PLANNED }} went to plan, " +
+                "${recent.count { it.result == DayResult.PARTLY }} partly, ${recent.count { it.result == DayResult.NOT }} not really."
+        )
     }
 
     /**
@@ -770,12 +835,13 @@ fun composeStored(rows: List<JSONObject>, unreadable: List<Any>): String {
  * back. Backups made before rules were included (a bare list of entries) still read.
  */
 object Backup {
-    data class Contents(val entries: List<Entry>, val plans: List<MyPlan>)
+    data class Contents(val entries: List<Entry>, val plans: List<MyPlan>, val kept: List<Kept> = emptyList())
 
-    fun compose(entries: List<Entry>, plans: List<MyPlan>): String = JSONObject()
+    fun compose(entries: List<Entry>, plans: List<MyPlan>, kept: List<Kept> = emptyList()): String = JSONObject()
         .put("version", 2)
         .put("entries", JSONArray(entries.map { it.toJson() }))
         .put("plans", JSONArray(plans.map { it.toJson() }))
+        .put("kept", JSONArray(kept.map { it.toJson() }))
         .toString()
 
     fun parse(text: String): Contents {
@@ -784,7 +850,8 @@ object Backup {
         val o = runCatching { JSONObject(t) }.getOrNull() ?: return Contents(emptyList(), emptyList())
         return Contents(
             Entry.listFromJson(o.optJSONArray("entries")?.toString()),
-            MyPlan.listFromJson(o.optJSONArray("plans")?.toString())
+            MyPlan.listFromJson(o.optJSONArray("plans")?.toString()),
+            Kept.parseList(o.optJSONArray("kept")?.toString()).items
         )
     }
 
@@ -793,6 +860,26 @@ object Backup {
         val ids = existing.map { it.id }.toMutableSet()
         val texts = existing.map { it.text.trim().lowercase() }.toMutableSet()
         return incoming.filter { p -> ids.add(p.id) && texts.add(p.text.trim().lowercase()) }
+    }
+}
+
+/**
+ * A deep dive the person chose to keep, to reread on a hard day. [kind] says where it came from
+ * (text is `kept_<kind>`); [text] is the reply exactly as the coach wrote it.
+ */
+data class Kept(val id: Long, val kind: Kind, val text: String) {
+    enum class Kind { URGE, SLIP, WEEK, TALK }
+
+    fun toJson(): JSONObject = JSONObject().put("i", id).put("k", kind.name).put("t", text)
+
+    companion object {
+        fun fromJson(o: JSONObject): Kept? = runCatching {
+            Kept(o.getLong("i"), Kind.valueOf(o.getString("k")), o.getString("t").also { require(it.isNotBlank()) })
+        }.getOrNull()
+
+        fun parseList(text: String?): Stored<Kept> = parseStored(text) { fromJson(it) }
+
+        fun composeList(items: List<Kept>, unreadable: List<Any>): String = composeStored(items.map { it.toJson() }, unreadable)
     }
 }
 

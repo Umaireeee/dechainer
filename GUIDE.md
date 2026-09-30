@@ -82,7 +82,9 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Start a focus block in one tap:** the journal's Home has **Start a focus block** (25, 50 or 90 minutes). It asks Déchaîner to brick your phone until the time is up, exactly like a block started in Déchaîner. Nothing ends it early, not even your recovery code, so pick a length you can keep.
 
-**Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "Did today go the way you planned?" with three answers, and the week panel shows how many days went to plan.
+**Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "How was today?": tap what happened (slept well, studied, moved your body, talked to someone), add one line if you like, then say how the day went against your plan. Thirty seconds. The weekly review and the coach use these counts (never your line) to see how your sleep, study, body and people connect to your urges.
+
+**What came just before?** The interview now asks what you were doing just before the urge (scrolling, putting off a task, lying awake, alone after a hard moment, tired or hungry). That's usually where an urge really starts, and the coach names it.
 
 **Make it your own:** after an urge, the plan screen has **Make it your own**. Write an "If ..., then ..." rule in your own words (the coach suggests wording you can tap in). Your rules are shown on later rides and plans, and you can edit or remove them in Settings. Rules you write yourself work better than ones handed to you.
 
@@ -94,11 +96,15 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **The AI deep dive:** in the journal's **Settings**, pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key, and press **Test connection**. Use **Load models from my account** if a model name is rejected. Fill in **About you** with your goals and how blunt you want the coach to be; it is added to every deep dive.
 
-**Weekly review:** once you have a few entries, a **Weekly review** button appears on Home. It looks at your counts and patterns (never your notes) and suggests what to try next.
+**Weekly review:** once you have a few entries, a **Weekly review** button appears on Home. It looks at your counts and patterns (never your notes), your evening check-ins, and what it suggested last time, and suggests what to try next.
+
+**Talk to your coach:** a button on Home, no urge needed. Write about your week, your study, a decision or how you're really doing, and the coach answers with the same honest, warm deep dive. Every talk is kept.
+
+**Kept deep dives:** under any deep dive, tap **Keep this deep dive**. Home shows **Kept deep dives**: your own collection to reread on a hard day. Backups include them, with your rules.
 
 **Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** shares them as text you can keep, and **Import from clipboard** restores them.
 
-Everything you write stays on your phone, except what you send for a deep dive or weekly review. The journal can only ask Déchaîner to block more, never to unblock.
+Everything you write stays on your phone, except what you send for a deep dive, a weekly review or a talk with your coach. The journal can only ask Déchaîner to block more, never to unblock.
 
 ## If you get locked out
 - **Lost your recovery code:** *Settings → Forced removal*. Start it, and after **4 days** you can remove everything without the code. The timer can't be sped up. This is the escape hatch, and it also works while a locked schedule is running.

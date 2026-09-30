@@ -140,8 +140,11 @@ fun HomeScreen(
     onDismissHeavy: () -> Unit,
     onShare: () -> Unit,
     onLog: () -> Unit,
-    onDay: (DayResult) -> Unit,
-    onFocus: (Int) -> Door.Result
+    onDay: (DayLog) -> Unit,
+    onFocus: (Int) -> Door.Result,
+    onTalk: () -> Unit,
+    onKept: () -> Unit,
+    keptCount: Int
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
@@ -225,10 +228,37 @@ fun HomeScreen(
         }
 
         if (cards.askDay) {
+            // The evening check-in: the parts of a good day, one line, then how it went against the plan.
+            var areas by remember { mutableStateOf(emptySet<Area>()) }
+            var note by remember { mutableStateOf("") }
             Panel {
                 Text(stringResource(R.string.day_title), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    stringResource(R.string.day_areas_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Area.entries.chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        pair.forEach { a ->
+                            FilterChip(
+                                selected = a in areas,
+                                onClick = { areas = if (a in areas) areas - a else areas + a },
+                                label = { Text(label("area_", a)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it.replace('\n', ' ').take(200) },
+                    placeholder = { Text(stringResource(R.string.day_note_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 DayResult.entries.forEach { r ->
-                    OutlinedButton(onClick = { onDay(r) }, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { onDay(DayLog(r, areas, note.trim())) }, modifier = Modifier.fillMaxWidth()) {
                         Text(label("day_", r))
                     }
                 }
@@ -310,6 +340,15 @@ fun HomeScreen(
         if (recentCount >= 3) {
             OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.review_button))
+            }
+        }
+        // The coach, any time: no urge needed.
+        OutlinedButton(onClick = onTalk, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.home_talk))
+        }
+        if (keptCount > 0) {
+            OutlinedButton(onClick = onKept, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.home_kept, keptCount))
             }
         }
 
@@ -717,7 +756,7 @@ fun PlanScreen(
         when (ai) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
             is AiState.Streaming -> ReportView(ai.text, streaming = true)
-            is AiState.Ready -> ReportView(ai.text, onSaveRule = onSavePlan)
+            is AiState.Ready -> ReportView(ai.text, onSaveRule = onSavePlan, keep = if (entry.slipped) Kept.Kind.SLIP else Kept.Kind.URGE)
             is AiState.Failed -> Panel {
                 Text(stringResource(errorRes(ai.error)), style = MaterialTheme.typography.bodyLarge)
                 if (ai.detail.isNotBlank()) {
@@ -816,7 +855,7 @@ fun PlanScreen(
  * then what to do now and the one line to run next time. Older saved replies keep their old layout.
  */
 @Composable
-fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) -> Unit)? = null) {
+fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) -> Unit)? = null, keep: Kept.Kind? = null) {
     val context = LocalContext.current
     // While the reply is still being written, read what has arrived so far.
     val report = remember(raw, streaming) { if (streaming) ReportParser.parsePartial(raw) else ReportParser.parse(raw) }
@@ -921,6 +960,22 @@ fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) ->
             )
         }
         if (streaming) Breathing(stringResource(R.string.deep_writing))
+        // Worth reading again on a hard day: kept in "Kept deep dives".
+        if (keep != null && !streaming) {
+            val store = remember { JournalStore(context) }
+            var isKept by remember(raw) { mutableStateOf(store.isKept(raw)) }
+            if (isKept) {
+                Text(
+                    stringResource(R.string.keep_done),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            } else {
+                OutlinedButton(onClick = { isKept = store.keep(keep, raw) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.keep_button))
+                }
+            }
+        }
     }
 }
 
@@ -961,7 +1016,7 @@ fun ReviewScreen(
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.review_loading)) }
             is AiState.Streaming -> ReportView(state.text, streaming = true)
             is AiState.Ready -> {
-                ReportView(state.text)
+                ReportView(state.text, keep = Kept.Kind.WEEK)
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.review_refresh))
                 }
@@ -981,6 +1036,126 @@ fun ReviewScreen(
                 OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.deep_add_key)) }
             }
             else -> {}
+        }
+        TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** Talk to the coach about anything, with no urge: their week, study, a decision, how they're doing. */
+@Composable
+fun TalkScreen(
+    state: AiState,
+    initial: String,
+    providerLabel: String,
+    onSend: (String) -> Unit,
+    onConsent: (Boolean) -> Unit,
+    onSettings: () -> Unit,
+    onNew: () -> Unit,
+    onBack: () -> Unit
+) {
+    // What they wrote survives a trip to Settings and back.
+    var text by remember { mutableStateOf(initial) }
+    if (state is AiState.NeedsConsent) {
+        AlertDialog(
+            onDismissRequest = { onConsent(false) },
+            title = { Text(stringResource(R.string.consent_title)) },
+            text = { Text(stringResource(R.string.talk_consent_body, providerLabel)) },
+            confirmButton = { TextButton(onClick = { onConsent(true) }) { Text(stringResource(R.string.consent_yes)) } },
+            dismissButton = { TextButton(onClick = { onConsent(false) }) { Text(stringResource(R.string.consent_no)) } }
+        )
+    }
+    val asked = state !is AiState.Idle && state !is AiState.NeedsConsent
+    Page {
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.talk_title), style = MaterialTheme.typography.headlineMedium)
+        if (!asked) {
+            Text(
+                stringResource(R.string.talk_intro),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(TALK_LIMIT) },
+                placeholder = { Text(stringResource(R.string.talk_hint)) },
+                minLines = 6,
+                maxLines = 14,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                stringResource(R.string.note_privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(onClick = { onSend(text) }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.talk_send))
+            }
+        } else {
+            // What they brought, so the reply reads against it.
+            Panel { Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
+            if (Safety.needsSupport(text)) SupportCard()
+        }
+        when (state) {
+            is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
+            is AiState.Streaming -> ReportView(state.text, streaming = true)
+            is AiState.Ready -> {
+                ReportView(state.text, keep = Kept.Kind.TALK)
+                OutlinedButton(onClick = { text = ""; onNew() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.talk_again))
+                }
+            }
+            is AiState.Failed -> Panel {
+                Text(stringResource(errorRes(state.error)), style = MaterialTheme.typography.bodyLarge)
+                if (state.detail.isNotBlank()) {
+                    Text(state.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { onSend(text) }) { Text(stringResource(R.string.deep_retry)) }
+                    TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
+                }
+            }
+            is AiState.NeedsKey -> Panel {
+                Text(stringResource(R.string.deep_needs_key), style = MaterialTheme.typography.bodyLarge)
+                OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.deep_add_key)) }
+            }
+            else -> {}
+        }
+        TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** The deep dives worth reading again, newest first: each one opens to its full text. */
+@Composable
+fun KeptScreen(items: List<Kept>, onRemove: (Kept) -> Unit, onBack: () -> Unit) {
+    var open by remember { mutableStateOf<Long?>(null) }
+    Page {
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.kept_title), style = MaterialTheme.typography.headlineMedium)
+        if (items.isEmpty()) {
+            Text(
+                stringResource(R.string.kept_empty),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        items.forEach { k ->
+            val whenText = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+                .format(Instant.ofEpochMilli(k.id).atZone(ZoneId.systemDefault()))
+            val headline = remember(k.text) { ReportParser.parse(k.text)?.headline?.takeIf { it.isNotBlank() } }
+            Panel(highlight = open == k.id) {
+                Column(Modifier.fillMaxWidth().clickable { open = if (open == k.id) null else k.id }) {
+                    Text(label("kept_", k.kind) + " · " + whenText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(headline ?: stringResource(R.string.kept_untitled), style = MaterialTheme.typography.titleMedium)
+                }
+                if (open == k.id) {
+                    ReportView(k.text)
+                    TextButton(onClick = { onRemove(k); open = null }) {
+                        Text(stringResource(R.string.kept_remove), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
         }
         TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
         Spacer(Modifier.height(16.dp))
@@ -1025,7 +1200,7 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
         }
         Eyebrow(stringResource(R.string.deep_title))
         val report = entry.report
-        if (report != null) ReportView(report)
+        if (report != null) ReportView(report, keep = if (entry.slipped) Kept.Kind.SLIP else Kept.Kind.URGE)
         else Text(
             stringResource(R.string.detail_no_report),
             style = MaterialTheme.typography.bodyLarge,
