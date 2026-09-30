@@ -82,25 +82,42 @@ class AiSettings(context: Context) {
             cachedKey?.let { return it }
             val value = prefs.getString("key_enc", null)?.let { SecretBox.open(it) ?: "" } ?: run {
                 val old = prefs.getString("key", "") ?: ""
-                if (old.isNotBlank()) key = old
+                // A key an earlier version stored in plain text stays as it is if it can't be encrypted now.
+                if (old.isNotBlank()) saveKey(old, allowPlain = true)
                 old
             }
             cachedKey = value
             return value
         }
         set(v) {
-            val clean = v.trim()
-            cachedKey = clean
-            val sealed = if (clean.isEmpty()) null else SecretBox.seal(clean)
-            prefs.edit {
-                when {
-                    clean.isEmpty() -> { remove("key_enc"); remove("key") }
-                    sealed != null -> { putString("key_enc", sealed); remove("key") }
-                    // No Keystore on this phone: better a working key than none.
-                    else -> { remove("key_enc"); putString("key", clean) }
-                }
-            }
+            saveKey(v, allowPlain = false)
         }
+
+    /**
+     * Saves the key, encrypted. If this phone can't encrypt it, nothing is saved and false comes
+     * back, unless [allowPlain]: the person is asked first and only then is it kept as plain text.
+     */
+    fun saveKey(v: String, allowPlain: Boolean = false): Boolean {
+        val clean = v.trim()
+        if (clean.isEmpty()) {
+            prefs.edit { remove("key_enc"); remove("key") }
+            cachedKey = ""
+            return true
+        }
+        return when (KeyPolicy.decide(SecretBox.seal(clean), allowPlain)) {
+            KeyStorage.SEALED -> {
+                prefs.edit { putString("key_enc", SecretBox.seal(clean)); remove("key") }
+                cachedKey = clean
+                true
+            }
+            KeyStorage.PLAIN -> {
+                prefs.edit { remove("key_enc"); putString("key", clean) }
+                cachedKey = clean
+                true
+            }
+            KeyStorage.REFUSED -> false
+        }
+    }
 
     /** The chosen provider, or the one the key looks like, or OpenRouter as a last resort. */
     var provider: Provider
@@ -194,7 +211,19 @@ object SecretBox {
 }
 
 /** What went wrong, in terms the person can act on. */
-enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL }
+enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL, BAD_URL }
+
+/** What to do with an API key when the Keystore may not be able to encrypt it. */
+enum class KeyStorage { SEALED, PLAIN, REFUSED }
+
+object KeyPolicy {
+    /** Encrypted when it can be; plain text only when the person has been told and agreed; otherwise not saved. */
+    fun decide(sealed: String?, allowPlain: Boolean): KeyStorage = when {
+        sealed != null -> KeyStorage.SEALED
+        allowPlain -> KeyStorage.PLAIN
+        else -> KeyStorage.REFUSED
+    }
+}
 
 sealed interface AiResult {
     data class Ok(val text: String) : AiResult
@@ -206,8 +235,34 @@ object AiClient {
     /** The full address of the chat endpoint for a provider's base address. */
     fun endpoint(baseUrl: String): String = baseUrl.trim().trimEnd('/') + "/chat/completions"
 
-    /** Blocking; call it off the main thread. */
+    /** The model to try instead when Google says the chosen one does not exist. */
+    const val GOOGLE_FALLBACK_MODEL = "gemini-flash-latest"
+
+    /** A different model worth trying after [error], or null. Only Google, only for a bad model name, and never the same one twice. */
+    fun fallbackModel(provider: Provider, model: String, error: AiError): String? =
+        if (provider == Provider.GOOGLE && error == AiError.BAD_MODEL &&
+            model.trim().removePrefix("models/") != GOOGLE_FALLBACK_MODEL
+        ) GOOGLE_FALLBACK_MODEL else null
+
+    /** True for an http or https address with a host. Anything else is reported as a bad address, not a network problem. */
+    fun validEndpoint(baseUrl: String): Boolean = try {
+        val url = java.net.URL(endpoint(baseUrl))
+        (url.protocol == "https" || url.protocol == "http") && url.host.isNotBlank()
+    } catch (_: java.net.MalformedURLException) {
+        false
+    }
+
+    /** Blocking; call it off the main thread. Retries once with a fallback model when Google rejects the chosen one. */
     fun chat(provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String): AiResult {
+        val first = chatOnce(provider, baseUrl, key, model, system, user)
+        if (first is AiResult.Failed) {
+            fallbackModel(provider, model, first.error)?.let { return chatOnce(provider, baseUrl, key, it, system, user) }
+        }
+        return first
+    }
+
+    private fun chatOnce(provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String): AiResult {
+        if (!validEndpoint(baseUrl)) return AiResult.Failed(AiError.BAD_URL)
         return try {
             val body = JSONObject()
                 .put("model", model.trim().removePrefix("models/"))

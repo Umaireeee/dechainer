@@ -947,6 +947,7 @@ fun SettingsScreen(
     var backupMessage by remember { mutableStateOf<Int?>(null) }
     var backupCount by remember { mutableIntStateOf(0) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var askPlainKey by remember { mutableStateOf(false) }
     var hideInRecents by remember { mutableStateOf(privacy.hideInRecents) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
@@ -967,6 +968,33 @@ fun SettingsScreen(
         consent = false
         saved = false
         test = TestState.Idle
+    }
+
+    fun finishSave() {
+        settings.provider = provider
+        settings.customBase = customBase
+        settings.model = model
+        settings.consent = consent
+        settings.about = about
+        settings.deep = deep
+        settings.expandAll = expandAll
+        saved = true
+    }
+
+    if (askPlainKey) {
+        AlertDialog(
+            onDismissRequest = { askPlainKey = false },
+            title = { Text(stringResource(R.string.key_plain_title)) },
+            text = { Text(stringResource(R.string.key_plain_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    settings.saveKey(key, allowPlain = true)
+                    askPlainKey = false
+                    finishSave()
+                }) { Text(stringResource(R.string.key_plain_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { askPlainKey = false }) { Text(stringResource(R.string.key_plain_no)) } }
+        )
     }
 
     if (confirmDelete) {
@@ -1215,15 +1243,8 @@ fun SettingsScreen(
 
         Button(
             onClick = {
-                settings.key = key
-                settings.provider = provider
-                settings.customBase = customBase
-                settings.model = model
-                settings.consent = consent
-                settings.about = about
-                settings.deep = deep
-                settings.expandAll = expandAll
-                saved = true
+                // The key first: if this phone cannot encrypt it, nothing is saved until the person agrees.
+                if (settings.saveKey(key)) finishSave() else askPlainKey = true
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text(stringResource(if (saved) R.string.settings_saved else R.string.settings_save)) }
@@ -1389,4 +1410,5 @@ private fun errorRes(e: AiError): Int = when (e) {
     AiError.SERVER -> R.string.error_server
     AiError.EMPTY -> R.string.error_empty
     AiError.BAD_MODEL -> R.string.error_bad_model
+    AiError.BAD_URL -> R.string.error_bad_url
 }

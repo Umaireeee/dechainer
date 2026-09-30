@@ -759,4 +759,39 @@ class JournalLogicTest {
     fun clockTimesAreFormattedInThePhonesZone() {
         assertEquals("14:32", Times.clockAt(ms(5, 14) + 32 * 60_000L, zone))
     }
+
+    // ---- Batch 4 (journal) ----
+
+    @Test
+    fun aKeyIsNeverSavedAsPlainTextWithoutAgreement() {
+        assertEquals(KeyStorage.SEALED, KeyPolicy.decide("sealed-text", allowPlain = false))
+        assertEquals(KeyStorage.SEALED, KeyPolicy.decide("sealed-text", allowPlain = true))
+        assertEquals(KeyStorage.REFUSED, KeyPolicy.decide(null, allowPlain = false))
+        assertEquals(KeyStorage.PLAIN, KeyPolicy.decide(null, allowPlain = true))
+    }
+
+    @Test
+    fun googleFallsBackToTheLatestFlashModelOnAnUnknownModel() {
+        assertEquals("gemini-flash-latest", AiClient.fallbackModel(Provider.GOOGLE, "gemini-3.8-flash", AiError.BAD_MODEL))
+        assertEquals("gemini-flash-latest", AiClient.fallbackModel(Provider.GOOGLE, "models/old-model", AiError.BAD_MODEL))
+        // Never the same model twice, never for other errors, never for other providers.
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "gemini-flash-latest", AiError.BAD_MODEL))
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "models/gemini-flash-latest", AiError.BAD_MODEL))
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "gemini-3.8-flash", AiError.BAD_KEY))
+        assertNull(AiClient.fallbackModel(Provider.OPENAI, "gpt-x", AiError.BAD_MODEL))
+    }
+
+    @Test
+    fun aMalformedServiceAddressIsItsOwnErrorNotANetworkProblem() {
+        assertTrue(AiClient.validEndpoint("https://api.example.com/v1"))
+        assertTrue(AiClient.validEndpoint("http://localhost:8080/v1"))
+        assertFalse(AiClient.validEndpoint(""))
+        assertFalse(AiClient.validEndpoint("not a url"))
+        assertFalse(AiClient.validEndpoint("ftp://example.com"))
+        assertFalse(AiClient.validEndpoint("file:///etc/passwd"))
+        assertFalse(AiClient.validEndpoint("https://"))
+        // No network is touched: the address is rejected first.
+        assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "not a url", "k", "m", "s", "u"))
+        assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "", "k", "m", "s", "u"))
+    }
 }

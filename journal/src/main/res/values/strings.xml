@@ -370,4 +370,10 @@
     <string name="starting_body">This locks your other apps. If you didn\'t mean to start it, cancel now.</string>
     <string name="starting_cancel">Cancel</string>
     <string name="settings_hide_recents">Hide the app in recent apps and block screenshots</string>
+
+    <string name="error_bad_url">That service address doesn\'t look right. Check it in Settings; it should start with https://.</string>
+    <string name="key_plain_title">This phone can\'t protect your key</string>
+    <string name="key_plain_body">Android\'s secure storage isn\'t working here, so your AI key can\'t be encrypted. You can keep it as plain text in this app\'s private storage, or not save it. Anyone with a copy of the app\'s files could read a plain-text key.</string>
+    <string name="key_plain_yes">Save it anyway</string>
+    <string name="key_plain_no">Don\'t save</string>
 </resources>
