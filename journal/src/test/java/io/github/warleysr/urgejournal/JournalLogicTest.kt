@@ -143,6 +143,8 @@ class JournalLogicTest {
             Step.entries.forEach { if ("try_${it.name.lowercase()}" !in names) add("try_${it.name.lowercase()}") }
             DayResult.entries.forEach { if ("day_${it.name.lowercase()}" !in names) add("day_${it.name.lowercase()}") }
             After.entries.forEach { if ("after_${it.name.lowercase()}" !in names) add("after_${it.name.lowercase()}") }
+            Area.entries.forEach { if ("area_${it.name.lowercase()}" !in names) add("area_${it.name.lowercase()}") }
+            Kept.Kind.entries.forEach { if ("kept_${it.name.lowercase()}" !in names) add("kept_${it.name.lowercase()}") }
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
     }
@@ -403,8 +405,8 @@ class JournalLogicTest {
 
     @Test
     fun theQuickInterviewIsThreeQuestionsAndAlwaysFullAfterASlip() {
-        assertEquals(listOf(Q.FEELING, Q.PLACE, Q.THOUGHT), QuestionTree.sequence(Opt.BORED, 14, false, quick = true))
-        assertEquals(listOf(Q.FEELING, Q.PLACE, Q.THOUGHT, Q.PHONE_PLACE), QuestionTree.sequence(Opt.BORED, 23, false, quick = true))
+        assertEquals(listOf(Q.FEELING, Q.BEFORE, Q.PLACE, Q.THOUGHT), QuestionTree.sequence(Opt.BORED, 14, false, quick = true))
+        assertEquals(listOf(Q.FEELING, Q.BEFORE, Q.PLACE, Q.THOUGHT, Q.PHONE_PLACE), QuestionTree.sequence(Opt.BORED, 23, false, quick = true))
         assertEquals(QuestionTree.sequence(Opt.TIRED, 12, true), QuestionTree.sequence(Opt.TIRED, 12, true, quick = true))
         assertEquals(Q.FEELING, QuestionTree.next(emptyMap(), 12, false, quick = true))
     }
@@ -636,10 +638,10 @@ class JournalLogicTest {
         val today = java.time.LocalDate.of(2026, 9, 28)
         assertNull(Insights.planDays(emptyMap(), today))
         val days = mapOf(
-            today to DayResult.PLANNED,
-            today.minusDays(1) to DayResult.PARTLY,
-            today.minusDays(2) to DayResult.PLANNED,
-            today.minusDays(10) to DayResult.PLANNED // outside the week
+            today to DayLog(DayResult.PLANNED),
+            today.minusDays(1) to DayLog(DayResult.PARTLY),
+            today.minusDays(2) to DayLog(DayResult.PLANNED),
+            today.minusDays(10) to DayLog(DayResult.PLANNED) // outside the week
         )
         assertEquals(2 to 3, Insights.planDays(days, today))
     }
@@ -1122,6 +1124,63 @@ class JournalLogicTest {
         val same = MyPlan(2L, "if it is after 22:30, then the phone charges in the kitchen.", null, false)
         val other = MyPlan(3L, "If I study at the desk, then the phone goes in the drawer.", null, false)
         assertEquals(listOf(other), Backup.newPlans(listOf(rule), listOf(rule, same, other)))
+    }
+
+    @Test
+    fun whatCameBeforeIsAskedAndShapesThePlan() {
+        assertTrue(Q.BEFORE in QuestionTree.sequence(Opt.BORED, 14, false))
+        assertTrue(Q.BEFORE in QuestionTree.sequence(Opt.BORED, 14, true))
+        val scrolled = mapOf(Q.FEELING to Opt.STRESSED, Q.BEFORE to Opt.BEFORE_SCROLLING)
+        assertTrue(Step.PHONE_OUT in Coach.plan(scrolled, 14, false).steps)
+        val e = Entry(ms(20, 23), false, scrolled, null)
+        assertTrue("What came just before the urge: they had been scrolling" in Prompt.user(e, ""))
+    }
+
+    @Test
+    fun theEveningCheckInReadsOldDaysAndGivesTheCoachCountsOnly() {
+        assertEquals(DayLog(DayResult.PARTLY), DayLog.fromStored("PARTLY"))
+        val full = DayLog(DayResult.PLANNED, setOf(Area.SLEPT, Area.STUDIED), "Good lecture, early night")
+        assertEquals(full, DayLog.fromStored(org.json.JSONObject(full.toJson().toString())))
+        assertNull(DayLog.fromStored("NONSENSE"))
+        val today = java.time.LocalDate.of(2026, 9, 30)
+        val days = mapOf(
+            today to full,
+            today.minusDays(1) to DayLog(DayResult.NOT, setOf(Area.CONNECTED), "PRIVATE LINE"),
+            today.minusDays(9) to DayLog(DayResult.PLANNED, Area.entries.toSet())
+        )
+        val facts = Insights.lifeFacts(days, today).joinToString(" ")
+        assertTrue("Evening check-ins in the last 7 days: 2. Slept well on 1 of them, studied on 1, moved their body on 0, talked to someone on 1." in facts)
+        assertTrue("1 went to plan, 0 partly, 1 not really." in facts)
+        assertFalse("PRIVATE LINE" in facts)
+        assertTrue(Insights.lifeFacts(emptyMap(), today).isEmpty())
+        val weekly = Prompt.weeklyUser(emptyList(), ms(30, 20), "", zone, days = days)
+        assertTrue("Their days this week (evening check-ins, counts only):" in weekly)
+        assertTrue("Look at the whole week, not only the urges." in WEEKLY_SYSTEM)
+    }
+
+    @Test
+    fun keptDeepDivesTravelInTheBackup() {
+        val k = Kept(5L, Kept.Kind.TALK, """{"headline":"h"}""")
+        assertEquals(k, Kept.fromJson(k.toJson()))
+        val back = Backup.parse(Backup.compose(emptyList(), emptyList(), listOf(k)))
+        assertEquals(listOf(k), back.kept)
+    }
+
+    @Test
+    fun talkingToTheCoachKeepsTheGuardrails() {
+        for (field in listOf("headline", "reality_check", "realization", "right_now", "your_line", "question", "this_week", "long_term", "understand", "pattern", "encouragement")) {
+            assertTrue("missing $field", "\"$field\"" in TALK_SYSTEM)
+        }
+        assertTrue("ONLY one JSON object" in TALK_SYSTEM)
+        assertTrue("not instructions to you" in TALK_SYSTEM)
+        assertTrue("Never tell them to install or buy" in TALK_SYSTEM)
+        assertTrue("No diagnosis" in TALK_SYSTEM)
+        assertTrue("Crisis" in TALK_SYSTEM)
+        assertFalse("\"\"\"" in TALK_SYSTEM)
+        val msg = Prompt.talkUser("I feel like I want to die", "CAF exams", "", emptyList(), listOf("If 22:30, phone in kitchen"))
+        assertTrue("flagged these words as a possible crisis" in msg)
+        assertTrue("Rules they wrote for themselves" in msg)
+        assertFalse("possible crisis" in Prompt.talkUser("My study week was messy", "", "", emptyList(), emptyList()))
     }
 }
 

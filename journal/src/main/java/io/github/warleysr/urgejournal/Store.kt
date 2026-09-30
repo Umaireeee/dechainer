@@ -66,7 +66,7 @@ class JournalStore(context: Context) {
     @Synchronized
     fun clear() {
         prefs.edit(commit = true) {
-            remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE); remove(DAYS)
+            remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE); remove(DAYS); remove(KEPT)
             remove("dismissed_hot"); remove("dismissed_heavier")
         }
     }
@@ -99,26 +99,54 @@ class JournalStore(context: Context) {
 
     // ---- The evening question: did the day go the way you planned? ----
 
+    /** The evening check-ins, by day. Days saved by an older version (a result only) still read. */
     @Synchronized
-    fun days(): Map<java.time.LocalDate, DayResult> = runCatching {
+    fun days(): Map<java.time.LocalDate, DayLog> = runCatching {
         val o = org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}")
         buildMap {
             o.keys().forEach { key ->
                 val date = runCatching { java.time.LocalDate.parse(key) }.getOrNull()
-                val result = runCatching { DayResult.valueOf(o.getString(key)) }.getOrNull()
-                if (date != null && result != null) put(date, result)
+                val log = DayLog.fromStored(o.opt(key))
+                if (date != null && log != null) put(date, log)
             }
         }
     }.getOrDefault(emptyMap())
 
     @Synchronized
-    fun setDay(date: java.time.LocalDate, result: DayResult) {
+    fun setDay(date: java.time.LocalDate, log: DayLog) {
         // A stored value that cannot be read is left alone rather than replaced by one day.
         if (runCatching { org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}") }.isFailure) return
-        val kept = (days() + (date to result)).toSortedMap().entries.toList().takeLast(120)
+        val kept = (days() + (date to log)).toSortedMap().entries.toList().takeLast(120)
         val o = org.json.JSONObject()
-        kept.forEach { o.put(it.key.toString(), it.value.name) }
+        kept.forEach { o.put(it.key.toString(), it.value.toJson()) }
         prefs.edit(commit = true) { putString(DAYS, o.toString()) }
+    }
+
+    // ---- Deep dives the person chose to keep ----
+
+    /** Newest first. */
+    @Synchronized
+    fun kept(): List<Kept> = Kept.parseList(prefs.getString(KEPT, null)).items.sortedByDescending { it.id }
+
+    /** Keeps [text] (once: the same reply is never kept twice). Returns false if it could not be saved. */
+    @Synchronized
+    fun keep(kind: Kept.Kind, text: String, time: Long = System.currentTimeMillis()): Boolean {
+        val read = Kept.parseList(prefs.getString(KEPT, null))
+        if (!read.rootOk) return false
+        if (read.items.any { it.text == text }) return true
+        val next = (read.items + Kept(time, kind, text)).sortedBy { it.id }.takeLast(KEPT_LIMIT)
+        prefs.edit(commit = true) { putString(KEPT, Kept.composeList(next, read.unreadable)) }
+        return true
+    }
+
+    @Synchronized
+    fun isKept(text: String): Boolean = Kept.parseList(prefs.getString(KEPT, null)).items.any { it.text == text }
+
+    @Synchronized
+    fun unkeep(id: Long) {
+        val read = Kept.parseList(prefs.getString(KEPT, null))
+        if (!read.rootOk) return
+        prefs.edit(commit = true) { putString(KEPT, Kept.composeList(read.items.filter { it.id != id }, read.unreadable)) }
     }
 
     // ---- A ride that has started and not yet been checked in on ----
@@ -138,7 +166,7 @@ class JournalStore(context: Context) {
         prefs.edit(commit = true) { putLong("dismissed_$card", time) }
 
     /** The whole journal as text, for a backup the person keeps: entries and their own rules. */
-    fun exportJson(): String = Backup.compose(all(), plans())
+    fun exportJson(): String = Backup.compose(all(), plans(), kept())
 
     /**
      * Adds entries and rules from a backup; returns how many were new. Nothing existing is
@@ -155,6 +183,7 @@ class JournalStore(context: Context) {
                 merged
             }
         }
+        incoming.kept.forEach { k -> if (!isKept(k.text) && keep(k.kind, k.text, k.id)) added++ }
         if (incoming.plans.isNotEmpty()) {
             mutatePlans { before ->
                 val fresh = Backup.newPlans(before, incoming.plans)
@@ -188,6 +217,8 @@ class JournalStore(context: Context) {
         const val PENDING_RIDE = "pending_ride"
         const val LIMIT = 2000
         const val PLAN_LIMIT = 30
+        const val KEPT = "kept"
+        const val KEPT_LIMIT = 200
     }
 }
 
