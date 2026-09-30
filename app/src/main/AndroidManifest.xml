@@ -116,6 +116,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Read-only status for the journal (is Déchaîner Device Owner, is a lock running). Same
+             signature permission as the door: only an app signed with the same key can read it. -->
+        <provider
+            android:name=".RideStatusProvider"
+            android:authorities="io.github.warleysr.dechainer.status"
+            android:exported="true"
+            android:readPermission="io.github.warleysr.dechainer.permission.URGE_ACTION"
+            android:writePermission="io.github.warleysr.dechainer.permission.URGE_ACTION" />
+
         <receiver
             android:name=".DechainerPolicyUpdateReceiver"
             android:exported="true"
