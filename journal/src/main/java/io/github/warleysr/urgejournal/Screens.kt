@@ -575,6 +575,45 @@ fun NoteScreen(slipped: Boolean, onDone: (String) -> Unit, onBack: () -> Unit) {
     }
 }
 
+/**
+ * For a moment that sounds like a crisis: what to do in the next few minutes, and the person to
+ * reach, one tap away. Shown whatever the AI does, and without it too.
+ */
+@Composable
+fun SupportCard() {
+    val context = LocalContext.current
+    val contact = remember { SupportContact(context) }
+    val ask = stringResource(R.string.support_message_body)
+    Panel(highlight = true) {
+        Text(stringResource(R.string.support_body), style = MaterialTheme.typography.bodyLarge)
+        NumberedSteps(
+            listOf(
+                stringResource(R.string.support_step_reach),
+                stringResource(R.string.support_step_safe),
+                stringResource(R.string.support_step_ground)
+            )
+        )
+        if (contact.number.isNotBlank()) {
+            val who = contact.name.ifBlank { contact.number }
+            Button(onClick = { openDialer(context, contact.number) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.support_call, who))
+            }
+            OutlinedButton(onClick = { openMessage(context, contact.number, ask) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.support_message, who))
+            }
+        } else {
+            Text(
+                stringResource(R.string.support_no_contact),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        OutlinedButton(onClick = { openDialer(context) }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.support_open_phone))
+        }
+    }
+}
+
 @Composable
 fun PlanScreen(
     entry: Entry,
@@ -605,16 +644,22 @@ fun PlanScreen(
         )
     }
 
+    // Words that sound like a crisis: people first. Support comes before anything else, and nothing
+    // here blocks apps or hands out urge tips; blocking could cut off the very person to message.
+    val crisis = Safety.needsSupport(entry.note)
+
     Page {
         Spacer(Modifier.height(8.dp))
         Text(
-            stringResource(if (entry.slipped) R.string.plan_title_slip else R.string.plan_title),
+            stringResource(if (crisis) R.string.support_title else if (entry.slipped) R.string.plan_title_slip else R.string.plan_title),
             style = MaterialTheme.typography.headlineMedium
         )
 
+        if (crisis) SupportCard()
+
         // Time-critical first: the block, then the first steps.
-        Eyebrow(stringResource(R.string.plan_lock))
-        Panel(highlight = true) {
+        if (!crisis) Eyebrow(stringResource(R.string.plan_lock))
+        if (!crisis) Panel(highlight = true) {
             listOfNotNull(plan.primary, plan.secondary).forEachIndexed { i, action ->
                 val text = if (action.kind == DoorAction.FOCUS_BLOCK)
                     stringResource(R.string.action_focus, action.minutes)
@@ -646,7 +691,7 @@ fun PlanScreen(
 
         // The AI is the coach whenever it is available. The app's own basic tips are only a safety
         // net for when it is not: no key, no connection, a service error, or consent declined.
-        val builtInFallback = ai is AiState.Failed || ai is AiState.NeedsKey || ai is AiState.Idle
+        val builtInFallback = !crisis && (ai is AiState.Failed || ai is AiState.NeedsKey || ai is AiState.Idle)
         val aiHasSteps = ai is AiState.Ready && ReportParser.parse(ai.text)?.rightNow?.isNotEmpty() == true
         if (builtInFallback) {
             Text(
@@ -655,7 +700,7 @@ fun PlanScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (builtInFallback || (ai is AiState.Ready && !aiHasSteps)) {
+        if (builtInFallback || (!crisis && ai is AiState.Ready && !aiHasSteps)) {
             Eyebrow(stringResource(R.string.plan_now))
             NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
         }
@@ -684,9 +729,6 @@ fun PlanScreen(
             is AiState.NeedsKey -> Panel {
                 Text(stringResource(R.string.deep_needs_key), style = MaterialTheme.typography.bodyLarge)
                 OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.deep_add_key)) }
-            }
-            is AiState.Support -> Panel(highlight = true) {
-                Text(stringResource(R.string.support_body), style = MaterialTheme.typography.bodyLarge)
             }
             else -> {}
         }
@@ -1033,6 +1075,9 @@ fun SettingsScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var askPlainKey by remember { mutableStateOf(false) }
     var hideInRecents by remember { mutableStateOf(privacy.hideInRecents) }
+    val supportContact = remember { SupportContact(context) }
+    var contactName by remember { mutableStateOf(supportContact.name) }
+    var contactNumber by remember { mutableStateOf(supportContact.number) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
     var evening by remember { mutableIntStateOf(reminders.eveningMinute) }
@@ -1120,6 +1165,31 @@ fun SettingsScreen(
     Page {
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium)
+
+        // Set on a calm day, so on a hard one the person is a tap away. Saved as it is typed.
+        Eyebrow(stringResource(R.string.contact_title))
+        Panel {
+            Text(
+                stringResource(R.string.contact_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = contactName,
+                onValueChange = { contactName = it.take(40); supportContact.name = contactName },
+                label = { Text(stringResource(R.string.contact_name)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = contactNumber,
+                onValueChange = { contactNumber = SupportContact.cleanNumber(it); supportContact.number = contactNumber },
+                label = { Text(stringResource(R.string.contact_number)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         Eyebrow(stringResource(R.string.reminders_title))
         Panel {

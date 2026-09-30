@@ -90,3 +90,10 @@ Read in full: RecoveryGate, UnlockDelay, ConfigTab, the schedule list/editor/vie
 - **Unlocking was forever:** `authenticated` never reset. Now an impulse lock (including one the journal starts) sends you back to the countdown and ends any recovery session; a challenge finished after it started doesn't let you in; and after more than 5 minutes in the background the app asks to be unlocked again (`RELOCK_AFTER_MS`).
 - **Protections could open a gap in a locked window:** switching off a restriction a schedule/block holds (the clock lock) now re-syncs at once, so it is put straight back.
 - **Newly installed browsers** get the blocklist, SafeSearch and the secure-DNS lock right after install (package listener in `DechainerApplication`), instead of resolving around the DNS filter until the next re-apply. Only while Déchaîner's process is alive; it usually is.
+
+## Update: crisis support and prompt fixes (2026-09-30)
+- **Crisis no longer ends the conversation.** Before, a note matching `Safety` showed one paragraph and nothing else. Now the plan screen leads with `SupportCard` (three steps for the next minutes, **Call / Text** the saved person with a ready "can you call me?" message, and *Open the phone app*), hides blocking and urge tips (blocking could cut off the person to message), and the AI still answers: the user message says the note was flagged, and the system prompt has a fixed crisis shape (headline, three steps, encouragement, one question; everything else empty).
+- **Someone to call** (`SupportContact`, Settings, first section): name + number, on the phone only, never sent to the AI.
+- **Ride lock** leaves the default SMS app open (calls were already open).
+- **Weekly review** now gets the previous 7 days' counts and what its previous review (3+ days old) suggested (`Prompt.PreviousReview`), and is told to follow up honestly.
+- The dead `"why"` key is gone from both schemas (the parser still reads it from old saved reports).

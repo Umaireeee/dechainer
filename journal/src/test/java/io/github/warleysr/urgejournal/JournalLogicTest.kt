@@ -204,7 +204,7 @@ class JournalLogicTest {
         assertTrue("Feeling: lonely" in text)
         assertTrue("no one around" in text)
         assertTrue("Roommate is away" in text)
-        assertTrue("History digest: Last 30 days: 5 entries." in text)
+        assertTrue("History digest (last 30 days, this entry included): Last 30 days: 5 entries." in text)
     }
 
     @Test
@@ -1002,6 +1002,108 @@ class JournalLogicTest {
         assertFalse(AiClient.usablePartial("""{"headline":"This is the 3pm"""))
         assertFalse(AiClient.usablePartial(""))
         assertFalse(AiClient.usablePartial("Sorry, something went"))
+    }
+
+    @Test
+    fun aCrisisNoteGetsTheCoachToStayNotToCoach() {
+        val sys = Prompt.systemFor(true)
+        // The crisis rule names the exact fields, so the reply lands where the screen shows it.
+        assertTrue("Stay with them" in sys)
+        assertTrue("never leave them with nothing to do" in sys)
+        val e = Entry(ms(20, 2), false, mapOf(Q.FEELING to Opt.SAD), null, note = "I don't want to live like this anymore")
+        assertTrue("flagged these words as a possible crisis" in Prompt.user(e, ""))
+        val calm = Entry(ms(20, 2), false, mapOf(Q.FEELING to Opt.BORED), null, note = "bored after dinner")
+        assertFalse("possible crisis" in Prompt.user(calm, ""))
+    }
+
+    @Test
+    fun theWeeklyReviewComparesWithTheWeekBeforeAndFollowsUp() {
+        val now = ms(20, 15)
+        val lastWeek = (8..11).map { Entry(ms(it, 22), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.GAVE_IN) }
+        val thisWeek = (15..16).map { Entry(ms(it, 22), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.RESISTED) }
+        val previous = Prompt.PreviousReview(
+            7, """{"headline":"h","your_line":"If it is 22:00, then the phone charges in the hall.","right_now":["Move the charger tonight."],"this_week":["Log every urge after 21:00."]}"""
+        )
+        val weekly = Prompt.weeklyUser(lastWeek + thisWeek, now, "", zone, previous)
+        assertTrue("The 7 days before that: 4 entries, 0 ridden out, 4 given in to or slipped." in weekly)
+        assertTrue("Your previous review, 7 days ago, asked them to try:" in weekly)
+        assertTrue("- If it is 22:00, then the phone charges in the hall." in weekly)
+        assertTrue("- Log every urge after 21:00." in weekly)
+        // A brand-new journal has no week before to compare with, and says nothing about one.
+        assertFalse("days before that" in Prompt.weeklyUser(thisWeek, now, "", zone))
+        assertTrue("remembers" in WEEKLY_SYSTEM)
+    }
+
+    @Test
+    fun theDeadWhyFieldIsNoLongerAskedFor() {
+        for (sys in listOf(Prompt.systemFor(true), WEEKLY_SYSTEM)) assertFalse("\"why\"" in sys)
+    }
+
+    @Test
+    fun aLateEntryGetsTheLateNightCountSoTheCoachNeedNotGuess() {
+        val history = listOf(
+            Entry(ms(12, 23), false, mapOf(Q.FEELING to Opt.STRESSED), Outcome.GAVE_IN),
+            Entry(ms(14, 23), true, mapOf(Q.FEELING to Opt.TIRED), null),
+            Entry(ms(15, 15), false, mapOf(Q.FEELING to Opt.BORED), Outcome.GAVE_IN),
+            Entry(ms(16, 22), false, mapOf(Q.FEELING to Opt.STRESSED), Outcome.RESISTED)
+        )
+        val late = Entry(ms(20, 23), false, mapOf(Q.FEELING to Opt.STRESSED), null)
+        val lines = Prompt.extras(history + late, late, emptyList(), zone).joinToString("\n")
+        assertTrue("Late at night (22:00 to 05:00) in the last 30 days: 3 other entries, 2 given in to or slipped." in lines)
+        val day = Entry(ms(20, 14), false, mapOf(Q.FEELING to Opt.STRESSED), null)
+        assertFalse("Late at night" in Prompt.extras(history + day, day, emptyList(), zone).joinToString(" "))
+        val sys = Prompt.systemFor(true)
+        assertTrue("do not add up, split, re-count or estimate" in sys)
+        assertTrue("never a nightly focus block" in sys)
+    }
+
+    @Test
+    fun thePlaceIsAFactNotAGuessAndSectionsMustNotRepeat() {
+        val history = listOf(
+            Entry(ms(12, 23), false, mapOf(Q.PLACE to Opt.BED), Outcome.GAVE_IN),
+            Entry(ms(13, 23), false, mapOf(Q.PLACE to Opt.BED), Outcome.RESISTED),
+            Entry(ms(14, 15), false, mapOf(Q.PLACE to Opt.DESK), Outcome.RESISTED)
+        )
+        val now = Entry(ms(20, 23), false, mapOf(Q.PLACE to Opt.BED), null)
+        assertTrue("Logged at the same place (bed) 2 times before: 1 ridden out, 1 given in to." in Prompt.extras(history + now, now, emptyList(), zone).joinToString(" "))
+        val sys = Prompt.systemFor(true)
+        assertTrue("Every section adds something new" in sys)
+        // The banned verdict is described, not quoted, so it isn't planted.
+        assertFalse("not luck" in sys)
+    }
+
+    @Test
+    fun theCoachSpeaksLikeAPersonAndEndsWithASpark() {
+        for (sys in listOf(Prompt.systemFor(true), WEEKLY_SYSTEM)) {
+            assertTrue("Voice" in sys)
+            assertTrue("the spark" in sys)
+            assertTrue("No slogans" in sys)
+        }
+        // Honesty stays: warm is not the same as flattering.
+        assertTrue("Never flatter" in Prompt.systemFor(true))
+        assertFalse("each with a short reason" in Prompt.systemFor(true))
+    }
+
+    @Test
+    fun theTrapIsTheirOwnWordsAndLateNightsSkipToday() {
+        val sys = Prompt.systemFor(true)
+        assertTrue("word for word, with nothing added" in sys)
+        assertTrue("leave \"today\" empty" in sys)
+        assertTrue("never the same insight again" in sys)
+    }
+
+    @Test
+    fun theMergedCoachingRulesAreThereAndNoVerdictWordToEcho() {
+        val sys = Prompt.systemFor(true)
+        assertTrue("earliest link in the chain" in sys)
+        assertTrue("makes a second round impossible" in sys)
+        assertTrue("Never suggest starting heavy study late at night" in sys)
+        assertTrue("Never merge two facts into a new claim" in sys)
+        assertTrue("they send no reminders" in sys)
+        assertTrue("Five strong sections beat eleven average ones" in sys)
+        assertTrue("one slip changes nothing about who they are" in sys)
+        // A label for a forbidden thing gets repeated back to the person, so none is used.
+        assertFalse("verdict" in sys)
     }
 }
 

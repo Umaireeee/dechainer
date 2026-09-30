@@ -239,3 +239,38 @@ class PrivacySettings(context: Context) {
         get() = prefs.getBoolean("hide", true)
         set(v) = prefs.edit { putBoolean("hide", v) }
 }
+
+/**
+ * The one person to reach in a hard moment, saved on a calm day so they are one tap away on a bad
+ * one. Kept on this phone only; never sent to the AI.
+ */
+class SupportContact(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("support", Context.MODE_PRIVATE)
+
+    var name: String
+        get() = prefs.getString("name", "") ?: ""
+        set(v) = prefs.edit { putString("name", v.trim().take(40)) }
+
+    var number: String
+        get() = prefs.getString("number", "") ?: ""
+        set(v) = prefs.edit { putString("number", cleanNumber(v)) }
+
+    companion object {
+        /** Digits and the usual phone punctuation, nothing else. */
+        fun cleanNumber(raw: String): String = raw.filter { it.isDigit() || it in "+ -()" }.trim().take(24)
+    }
+}
+
+/** Opens the phone app, with [number] typed in when there is one. Calls need no permission this way. */
+fun openDialer(context: Context, number: String = "") {
+    val uri = android.net.Uri.parse("tel:" + android.net.Uri.encode(number))
+    runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+/** Opens a text message to [number] with [body] already written, so asking for help is one tap. */
+fun openMessage(context: Context, number: String, body: String) {
+    val uri = android.net.Uri.parse("smsto:" + android.net.Uri.encode(number))
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_SENDTO, uri).putExtra("sms_body", body).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}

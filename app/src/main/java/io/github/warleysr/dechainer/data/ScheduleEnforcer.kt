@@ -182,13 +182,15 @@ object ScheduleEnforcer : AppBlockEngine() {
         }
 
         // The ride lock: for the few minutes of a ride, everything with an icon is suspended except
-        // calls, emergency apps, the alarm clock and the journal the ride happens in.
+        // calls, text messages (reaching a person is what a hard moment may need most), emergency
+        // apps, the alarm clock and the journal the ride happens in.
         val rideRemaining = RideLock.remainingMillis(ctx)
         if (rideRemaining > 0) {
+            val sms = try { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) } catch (_: Exception) { null }
             sources += BlockSource(
                 ctx.getString(io.github.warleysr.dechainer.R.string.ride_lock_source),
                 System.currentTimeMillis() + rideRemaining,
-                launcherApps(ctx) - alarmApps(ctx) - RideLock.ALWAYS_OPEN
+                launcherApps(ctx) - alarmApps(ctx) - RideLock.ALWAYS_OPEN - setOfNotNull(sms)
             )
         }
 
