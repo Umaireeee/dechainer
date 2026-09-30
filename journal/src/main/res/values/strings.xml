@@ -183,6 +183,7 @@
     <string name="day_yesterday">Yesterday</string>
     <string name="when_today">Today, %1$s</string>
     <string name="when_yesterday">Yesterday, %1$s</string>
+    <string name="deep_unreadable">The reply came back in a shape I could not read. Try again.</string>
     <string name="deep_reality">The honest read</string>
     <string name="deep_realization">What to see</string>
     <string name="deep_your_line">Your line for next time</string>

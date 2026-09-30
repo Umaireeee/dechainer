@@ -274,7 +274,7 @@ object AiClient {
         if (provider == Provider.OPENAI) {
             body.put("max_completion_tokens", 4096)
         } else {
-            body.put("max_tokens", 4096).put("temperature", 0.6)
+            body.put("max_tokens", 8192).put("temperature", 0.6)
         }
         if (stream) body.put("stream", true)
         return body
@@ -771,11 +771,17 @@ object ReportParser {
         val start = text.indexOf('{')
         if (start < 0) return null
         val closed = JsonRepair.close(text.substring(start)) ?: return null
-        return parse(closed)
+        return read(closed)
     }
 
-    /** Pulls the JSON object out of the reply, tolerating code fences and stray text around it. */
-    fun parse(text: String): Report? {
+    /**
+     * Pulls the JSON object out of the reply, tolerating code fences and stray text around it. A reply
+     * the service cut off (the token limit ran out mid-sentence) is closed and read as far as it got,
+     * so the person sees what arrived instead of raw JSON.
+     */
+    fun parse(text: String): Report? = read(text) ?: parsePartial(text)
+
+    private fun read(text: String): Report? {
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
         if (start < 0 || end <= start) return null
