@@ -204,7 +204,7 @@ class JournalLogicTest {
         assertTrue("Feeling: lonely" in text)
         assertTrue("no one around" in text)
         assertTrue("Roommate is away" in text)
-        assertTrue("History digest: Last 30 days: 5 entries." in text)
+        assertTrue("History digest (last 30 days, this entry included): Last 30 days: 5 entries." in text)
     }
 
     @Test
@@ -1090,6 +1090,20 @@ class JournalLogicTest {
         assertTrue("word for word, with nothing added" in sys)
         assertTrue("leave \"today\" empty" in sys)
         assertTrue("never the same insight again" in sys)
+    }
+
+    @Test
+    fun theMergedCoachingRulesAreThereAndNoVerdictWordToEcho() {
+        val sys = Prompt.systemFor(true)
+        assertTrue("earliest link in the chain" in sys)
+        assertTrue("makes a second round impossible" in sys)
+        assertTrue("Never suggest starting heavy study late at night" in sys)
+        assertTrue("Never merge two facts into a new claim" in sys)
+        assertTrue("they send no reminders" in sys)
+        assertTrue("Five strong sections beat eleven average ones" in sys)
+        assertTrue("one slip changes nothing about who they are" in sys)
+        // A label for a forbidden thing gets repeated back to the person, so none is used.
+        assertFalse("verdict" in sys)
     }
 }
 
