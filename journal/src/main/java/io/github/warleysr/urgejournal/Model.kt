@@ -169,6 +169,8 @@ data class DoorAction(val kind: String, val minutes: Int) {
     companion object {
         const val IMPULSE_BLOCK = "IMPULSE_BLOCK"
         const val FOCUS_BLOCK = "FOCUS_BLOCK"
+        /** Every app but calls, emergency apps, alarms, Déchaîner and this one, for a few minutes. */
+        const val RIDE_LOCK = "RIDE_LOCK"
     }
 }
 
@@ -296,6 +298,9 @@ object Coach {
         return Plan(reasons, rank(steps.toList(), history).take(4), primary, secondary, rules.take(2))
     }
 }
+
+/** The evening answer to "did today go the way you planned?". Text is `day_<name lowercase>`. */
+enum class DayResult { PLANNED, PARTLY, NOT }
 
 enum class Outcome { RESISTED, GAVE_IN }
 
@@ -490,6 +495,13 @@ object Insights {
             .mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .maxByOrNull { it.value }?.key
         return HotWindow(start, count, recent.size, feeling)
+    }
+
+    /** How the day went against the plan, answered in the evening. */
+    fun planDays(days: Map<LocalDate, DayResult>, today: LocalDate, window: Int = 7): Pair<Int, Int>? {
+        val recent = days.filterKeys { !it.isAfter(today) && ChronoUnit.DAYS.between(it, today) < window }
+        if (recent.isEmpty()) return null
+        return recent.count { it.value == DayResult.PLANNED } to recent.size
     }
 
     /**
