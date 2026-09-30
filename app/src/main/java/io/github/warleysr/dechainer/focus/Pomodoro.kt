@@ -197,12 +197,16 @@ object Pomodoro {
         ensureLoaded(context)
         val total = ((endsAt - now()) / 60_000L).toInt()
         val first = BlockPlanner.plan(total, _settings.value).firstOrNull() ?: return false
-        if (!_state.value.isIdle) return false
-        dismissAlarm(context)
-        change(context) {
-            PomodoroCore.startFor(PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt), now(), first.second)
+        var started = false
+        // The idle check is made inside the change, under the lock: a second request that arrives
+        // a moment later sees the block the first one started and leaves it alone.
+        change(context) { current ->
+            val next = PomodoroCore.beginBlockIfIdle(current, endsAt, now(), first.second)
+            started = next != current
+            next
         }
-        return true
+        if (started) dismissAlarm(context)
+        return started
     }
 
     fun pause(context: Context) = change(context) { PomodoroCore.pause(it, now()) }
