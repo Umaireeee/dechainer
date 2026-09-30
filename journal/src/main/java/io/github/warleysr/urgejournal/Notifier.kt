@@ -48,6 +48,9 @@ object Notifier {
     /** How long after a ride starts the check-in comes. */
     const val CHECKIN_DELAY_MS = 20L * 60 * 1000
 
+    /** A ride nobody has checked in on for this long is no longer asked about. */
+    const val PENDING_MAX_AGE_MS = 6L * 60 * 60 * 1000
+
     private const val CHANNEL = "reminders"
     private const val ID_CHECKIN = 11
     private const val ID_NUDGE = 12
@@ -200,6 +203,13 @@ class ReminderReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 Notifier.rearmNudge(ctx)
                 Notifier.rearmEvening(ctx)
+                // Alarms do not survive a reboot: put the check-in back if a ride is still waiting for it.
+                if (ReminderSettings(ctx).checkIn) {
+                    Times.checkInAt(
+                        JournalStore(ctx).pendingRide(), System.currentTimeMillis(),
+                        Notifier.CHECKIN_DELAY_MS, Notifier.PENDING_MAX_AGE_MS
+                    )?.let { Notifier.scheduleCheckIn(ctx, it) }
+                }
             }
         }
     }
