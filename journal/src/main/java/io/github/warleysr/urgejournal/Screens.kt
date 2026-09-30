@@ -1,5 +1,7 @@
 package io.github.warleysr.urgejournal
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -992,6 +994,8 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
     Page {
         Spacer(Modifier.height(8.dp))
         Text(whenText, style = MaterialTheme.typography.headlineSmall)
+        // Reopened later, a moment that sounded like a crisis still puts people first.
+        if (Safety.needsSupport(entry.note)) SupportCard()
         Panel {
             Q.entries.forEach { q ->
                 entry.answers[q]?.let {
@@ -1076,6 +1080,20 @@ fun SettingsScreen(
     var askPlainKey by remember { mutableStateOf(false) }
     var hideInRecents by remember { mutableStateOf(privacy.hideInRecents) }
     val supportContact = remember { SupportContact(context) }
+    fun restore(text: String) {
+        val added = store.importJson(text)
+        backupCount = added
+        backupMessage = if (added > 0) R.string.settings_import_ok else R.string.settings_import_none
+        if (added > 0) onImported()
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull().orEmpty()
+            restore(text)
+        }
+    }
     var contactName by remember { mutableStateOf(supportContact.name) }
     var contactNumber by remember { mutableStateOf(supportContact.number) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
@@ -1460,12 +1478,14 @@ fun SettingsScreen(
                 Share.file(context, "urge-journal-backup.txt", "text/plain", store.exportJson())
             }) { Text(stringResource(R.string.settings_export)) }
             OutlinedButton(onClick = {
-                val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                    .primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                val added = store.importJson(clip)
-                backupCount = added
-                backupMessage = if (added > 0) R.string.settings_import_ok else R.string.settings_import_none
-                if (added > 0) onImported()
+                // The backup file itself; a phone without a file picker falls back to copied text.
+                try {
+                    importLauncher.launch(arrayOf("text/plain", "application/json", "application/octet-stream", "*/*"))
+                } catch (_: Exception) {
+                    val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                    restore(clip)
+                }
             }) { Text(stringResource(R.string.settings_import)) }
         }
         backupMessage?.let {

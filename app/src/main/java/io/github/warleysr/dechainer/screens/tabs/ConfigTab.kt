@@ -303,6 +303,19 @@ fun ConfigTab(
                         Checkbox(checked = confirmForcedRemoval, onCheckedChange = { confirmForcedRemoval = it })
                         Text(stringResource(R.string.forced_removal_confirm_checkbox), modifier = Modifier.padding(start = 8.dp))
                     }
+                    // Throwing the finished wait away is its own, clearly named button: "Close" below
+                    // only closes this, so a stray tap can't cost four days.
+                    TextButton(
+                        onClick = {
+                            SecurityManager.cancelForcedRemoval(context)
+                            forcedRemovalRemaining = -1L
+                            showFinishForcedRemovalDialog = false
+                            confirmForcedRemoval = false
+                        },
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Text(stringResource(R.string.forced_removal_cancel_action), color = MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             confirmButton = {
@@ -320,12 +333,10 @@ fun ConfigTab(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    SecurityManager.cancelForcedRemoval(context)
-                    forcedRemovalRemaining = -1L
                     showFinishForcedRemovalDialog = false
                     confirmForcedRemoval = false
                 }) {
-                    Text(stringResource(R.string.cancel))
+                    Text(stringResource(R.string.close))
                 }
             }
         )

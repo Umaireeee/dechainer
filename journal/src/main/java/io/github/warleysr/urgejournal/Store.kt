@@ -137,19 +137,30 @@ class JournalStore(context: Context) {
     fun dismiss(card: String, time: Long = System.currentTimeMillis()) =
         prefs.edit(commit = true) { putLong("dismissed_$card", time) }
 
-    /** The whole journal as text, for a backup the person keeps. */
-    fun exportJson(): String = Entry.listToJson(all())
+    /** The whole journal as text, for a backup the person keeps: entries and their own rules. */
+    fun exportJson(): String = Backup.compose(all(), plans())
 
-    /** Adds entries from a backup; returns how many were new. Nothing existing is changed. */
+    /**
+     * Adds entries and rules from a backup; returns how many were new. Nothing existing is
+     * changed. Reads older backups that held entries only.
+     */
     @Synchronized
     fun importJson(text: String): Int {
-        val incoming = Entry.listFromJson(text)
-        if (incoming.isEmpty()) return 0
+        val incoming = Backup.parse(text)
         var added = 0
-        mutate { before ->
-            val merged = Entry.merge(before, incoming).takeLast(LIMIT)
-            added = (merged.size - before.size).coerceAtLeast(0)
-            merged
+        if (incoming.entries.isNotEmpty()) {
+            mutate { before ->
+                val merged = Entry.merge(before, incoming.entries).takeLast(LIMIT)
+                added = (merged.size - before.size).coerceAtLeast(0)
+                merged
+            }
+        }
+        if (incoming.plans.isNotEmpty()) {
+            mutatePlans { before ->
+                val fresh = Backup.newPlans(before, incoming.plans)
+                added += fresh.size
+                (before + fresh).takeLast(PLAN_LIMIT)
+            }
         }
         return added
     }

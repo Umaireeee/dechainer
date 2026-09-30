@@ -261,11 +261,11 @@
     <string name="settings_about_body">Tell the coach what matters and how to talk to you. It is added to every deep dive and weekly review, so the advice fits your real goals.</string>
     <string name="settings_about_label">My goals and how to coach me</string>
     <string name="settings_backup">Backup</string>
-    <string name="settings_backup_body">Your entries live only on this phone, and uninstalling erases them. Export copies them as text you can save. To restore, copy that text and tap Import.</string>
+    <string name="settings_backup_body">Your entries and your own rules live only on this phone, and uninstalling erases them. Export saves them as a file (keep it in Drive or send it to yourself). To restore, tap Import and pick that file.</string>
     <string name="settings_export">Export</string>
-    <string name="settings_import">Import from clipboard</string>
-    <string name="settings_import_ok">Imported %1$d entries.</string>
-    <string name="settings_import_none">Nothing new found in the clipboard.</string>
+    <string name="settings_import">Import</string>
+    <string name="settings_import_ok">Restored %1$d entries and rules.</string>
+    <string name="settings_import_none">Nothing new found in that backup.</string>
     <string name="settings_deep">Go deeper: longer, more detailed deep dives (uses a little more of your AI credit).</string>
     <string name="settings_expand">Show every section of a deep dive at once.</string>
 

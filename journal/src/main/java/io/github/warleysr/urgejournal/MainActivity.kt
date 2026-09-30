@@ -709,7 +709,7 @@ private fun App(activity: MainActivity) {
                     plans = emptyList()
                     goHome()
                 },
-                onImported = { refresh() },
+                onImported = { refresh(); plans = store.plans() },
                 onBack = {
                     screen = backTo
                     // Back from adding a key: try the AI again now.

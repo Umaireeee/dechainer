@@ -518,4 +518,5 @@
     <string name="focus_section_blocks">During blocks</string>
     <string name="focus_allowed_hint">These apps stay open during a block, with calls, your alarm clock and Quick Settings. Everything else is paused.</string>
     <string name="focus_block_allowed_line">Apps you allowed stay open: %1$d</string>
+    <string name="forced_removal_cancel_action">Cancel forced removal</string>
 </resources>

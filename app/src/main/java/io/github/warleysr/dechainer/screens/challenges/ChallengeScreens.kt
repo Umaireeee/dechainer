@@ -159,6 +159,8 @@ fun WordChallenge(onSuccess: () -> Unit) {
                 }
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            // Autocorrect would "fix" the word being typed and fight the challenge.
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
             visualTransformation = VisualTransformation { text ->
                 val annotated = buildAnnotatedString {
                     text.text.forEachIndexed { i, c ->
