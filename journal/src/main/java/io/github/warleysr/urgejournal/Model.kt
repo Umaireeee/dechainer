@@ -437,7 +437,8 @@ object Insights {
     }
 
     /** One bar of the seven-day chart: urges ridden out, and given in to (slips count here). */
-    data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int)
+    /** [open] counts real entries with no result yet, so a day with only those is not drawn as empty. */
+    data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int, val open: Int = 0)
 
     /** The last [days] calendar days ending today, oldest first, with a bar for each. */
     fun days(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault(), days: Int = 7): List<DayBar> {
@@ -446,7 +447,7 @@ object Insights {
         return (days - 1 downTo 0).map { back ->
             val d = today.minusDays(back.toLong())
             val list = byDay[d].orEmpty()
-            DayBar(d, list.count { it.ridden }, list.count { it.gaveIn })
+            DayBar(d, list.count { it.ridden }, list.count { it.gaveIn }, list.count { !it.isStub && !it.ridden && !it.gaveIn })
         }
     }
 
@@ -565,7 +566,7 @@ object Insights {
         return (weeks - 1 downTo 0).map { back ->
             val start = thisMonday.minusWeeks(back.toLong())
             val list = entriesIn(entries, start, start.plusDays(6), zone)
-            DayBar(start, list.count { it.ridden }, list.count { it.gaveIn })
+            DayBar(start, list.count { it.ridden }, list.count { it.gaveIn }, list.count { !it.isStub && !it.ridden && !it.gaveIn })
         }
     }
 

@@ -970,4 +970,14 @@ class JournalLogicTest {
         assertEquals(2, Times.dayKind(today.minusDays(2), today))
         assertEquals(2, Times.dayKind(today.plusDays(1), today))
     }
+
+    @Test
+    fun aDayWithOnlyAnUnansweredEntryIsNotDrawnAsEmpty() {
+        val now = ms(20, 12)
+        val open = Entry(ms(20, 9), false, mapOf(Q.FEELING to Opt.BORED), null)
+        val bar = Insights.days(listOf(open), now, java.time.ZoneId.systemDefault(), 3).last()
+        assertEquals(0, bar.resisted)
+        assertEquals(0, bar.gaveIn)
+        assertEquals(1, bar.open)
+    }
 }

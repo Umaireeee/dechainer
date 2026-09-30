@@ -137,8 +137,14 @@ fun LogScreen(
             )
         }
         visible.take(shown).groupBy { Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate() }.forEach { (day, list) ->
+            val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val dayName = when (Times.dayKind(day, today)) {
+                0 -> stringResource(R.string.day_today)
+                1 -> stringResource(R.string.day_yesterday)
+                else -> dateFormat.format(day)
+            }
             Text(
-                dateFormat.format(day),
+                dayName,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)

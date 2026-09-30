@@ -137,6 +137,19 @@ fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
     }
 }
 
+/** A label with a switch on the right; the whole row is the tap target. */
+@Composable
+fun SwitchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
 /** A quiet capitalised heading for a block of content. */
 @Composable
 fun Eyebrow(text: String) {
@@ -229,11 +242,12 @@ fun WeekBars(
     selected: Int? = null,
     onPick: ((Int) -> Unit)? = null
 ) {
-    val max = (bars.maxOfOrNull { it.resisted + it.gaveIn } ?: 0).coerceAtLeast(1)
+    val max = (bars.maxOfOrNull { it.resisted + it.gaveIn + it.open } ?: 0).coerceAtLeast(1)
     val ok = MaterialTheme.colorScheme.primary
     val bad = MaterialTheme.colorScheme.error
     val track = MaterialTheme.colorScheme.surfaceVariant
     val picked = MaterialTheme.colorScheme.outlineVariant
+    val pending = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
     val tap = if (onPick != null) {
         Modifier.pointerInput(bars.size) {
             detectTapGestures { offset ->
@@ -252,6 +266,10 @@ fun WeekBars(
                 val x = i * (w + gap)
                 drawRoundRect(if (i == selected) picked else track, Offset(x, 0f), Size(w, size.height), radius)
                 val total = b.resisted + b.gaveIn
+                if (b.open > 0) {
+                    val ho = size.height * (total + b.open) / max
+                    drawRoundRect(pending, Offset(x, size.height - ho), Size(w, ho), radius)
+                }
                 if (total > 0) {
                     val h = size.height * total / max
                     drawRoundRect(bad, Offset(x, size.height - h), Size(w, h), radius)

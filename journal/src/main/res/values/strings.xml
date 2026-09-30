@@ -179,6 +179,8 @@
     <string name="deep_needs_key">Add your OpenRouter key for a personal deep dive: why it\'s happening, what to do now, and what to change.</string>
     <string name="deep_add_key">Add key</string>
     <string name="support_body">What you wrote sounds really heavy, and you deserve real support more than a list of tips. If you might hurt yourself or you are in danger, please contact your local emergency number or a crisis line now, or reach someone you trust and stay with them. You don\'t have to carry this alone.</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
     <string name="when_today">Today, %1$s</string>
     <string name="when_yesterday">Yesterday, %1$s</string>
     <string name="deep_reality">The honest read</string>
