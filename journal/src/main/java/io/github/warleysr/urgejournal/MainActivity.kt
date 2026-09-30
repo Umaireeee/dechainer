@@ -209,7 +209,13 @@ private fun App(activity: MainActivity) {
         thread {
             val result = try {
                 // Built here, off the main thread: reading the whole journal can take a moment.
-                val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), about)
+                val history = store.all()
+                val user = Prompt.user(
+                    entry,
+                    Insights.summary(history, System.currentTimeMillis()),
+                    about,
+                    Prompt.extras(history, entry, store.plans().map { it.text })
+                )
                 AiClient.chat(provider, baseUrl, key, model, system, user)
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)

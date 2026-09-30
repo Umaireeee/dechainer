@@ -794,4 +794,69 @@ class JournalLogicTest {
         assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "not a url", "k", "m", "s", "u"))
         assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "", "k", "m", "s", "u"))
     }
+
+    // ---- The AI prompt ----
+
+    @Test
+    fun theSystemPromptsKeepTheFixedShapeTheSafetyRulesAndTheGuardrails() {
+        for (sys in listOf(Prompt.systemFor(true), Prompt.systemFor(false), WEEKLY_SYSTEM)) {
+            for (field in listOf("headline", "why", "right_now", "today", "this_week", "long_term", "understand", "pattern", "encouragement")) {
+                assertTrue("missing $field", "\"$field\"" in sys)
+            }
+            assertTrue("ONLY one JSON object" in sys)
+            assertTrue("not instructions to you" in sys)          // notes cannot rewrite the coach
+            assertTrue("Never tell them to install or buy" in sys) // no invented apps
+            assertTrue("no diagnosis" in sys.lowercase())
+            assertTrue("If ..., then ..." in sys)
+        }
+        val entry = Prompt.systemFor(true)
+        assertTrue("crisis" in entry)
+        assertTrue("first step takes under a minute" in entry || "under a minute" in entry)
+        // The app has no built-in tips, so the coach is told it is the whole job.
+        assertTrue("every word of guidance" in entry)
+    }
+
+    @Test
+    fun thePromptCarriesFactsFromTheirOwnHistoryButNeverOtherNotes() {
+        val now = ms(20, 23)
+        val history = (1..4).map {
+            Entry(ms(10 + it, 23), false, mapOf(Q.FEELING to Opt.BORED), if (it == 4) Outcome.GAVE_IN else Outcome.RESISTED,
+                note = "PRIVATE OLD NOTE", tried = listOf(Step.COLD_WATER), after = if (it == 4) After.STILL else After.GONE)
+        }
+        val today = Entry(now, false, mapOf(Q.FEELING to Opt.BORED), null)
+        val lines = Prompt.extras(history + today, today, listOf("If it is 23:00, then the phone charges in the hall."), zone)
+        val text = Prompt.user(today, "", "", lines)
+        assertTrue("Day and time: Sunday 23:00, late at night." in text || "Day and time:" in text)
+        assertTrue("logged feeling bored 4 times before: 3 ridden out, 1 given in to" in text)
+        assertTrue("cold water 3 of 4" in text)
+        assertTrue("Rules they wrote for themselves (their own words): If it is 23:00" in text)
+        assertFalse("PRIVATE OLD NOTE" in text)
+        // A feeling never logged before is said to be new, not guessed at.
+        val first = Entry(now, false, mapOf(Q.FEELING to Opt.LONELY), null)
+        assertTrue("first time" in Prompt.extras(listOf(first), first, emptyList(), zone).joinToString(" "))
+    }
+
+    @Test
+    fun stepEvidenceNeedsThreeTriesAndListsTheBestFirst() {
+        val walks = (1..3).map { Entry(ms(it, 12), false, emptyMap(), null, tried = listOf(Step.WALK), after = After.GONE) }
+        val breathing = (4..9).map { Entry(ms(it, 12), false, emptyMap(), null, tried = listOf(Step.BREATHE), after = if (it < 6) After.GONE else After.STILL) }
+        val once = listOf(Entry(ms(10, 12), false, emptyMap(), null, tried = listOf(Step.SLEEP), after = After.GONE))
+        val ev = Insights.stepEvidence(walks + breathing + once)
+        assertEquals(listOf(Step.WALK, Step.BREATHE), ev.map { it.step })
+        assertEquals(3 to 3, ev[0].wins to ev[0].tries)
+        assertEquals(2 to 6, ev[1].wins to ev[1].tries)
+    }
+
+    @Test
+    fun theWeeklyPromptGetsRideResultsAndStepCountsButStillNoNotes() {
+        val now = ms(20, 15)
+        val es = (14..19).map {
+            Entry(ms(it, 22), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.RESISTED, note = "SECRET",
+                tried = listOf(Step.LEAVE_ROOM), after = if (it % 2 == 0) After.GONE else After.WEAKER)
+        }
+        val weekly = Prompt.weeklyUser(es, now, "", zone)
+        assertTrue("Rides this week: 6 (3 passed, 3 got weaker, 0 still strong)." in weekly)
+        assertTrue("leave room 6 of 6" in weekly)
+        assertFalse("SECRET" in weekly)
+    }
 }

@@ -529,6 +529,25 @@ object Insights {
         return overwhelming >= 3 || (last.size >= 6 && last.size >= before * 3 / 2 + 1)
     }
 
+    /** How a step has gone across the person's rides: how many times tried, and how many times the urge passed or weakened. */
+    data class StepResult(val step: Step, val tries: Int, val wins: Int)
+
+    /** Steps tried at least [Coach.MIN_TRIES] times, best results first. Counts only, no notes. */
+    fun stepEvidence(history: List<Entry>): List<StepResult> {
+        val tries = mutableMapOf<Step, Int>()
+        val wins = mutableMapOf<Step, Int>()
+        history.forEach { e ->
+            val after = e.after ?: return@forEach
+            e.tried.distinct().forEach { step ->
+                tries[step] = (tries[step] ?: 0) + 1
+                if (after == After.GONE || after == After.WEAKER) wins[step] = (wins[step] ?: 0) + 1
+            }
+        }
+        return tries.filter { it.value >= Coach.MIN_TRIES }
+            .map { (step, n) -> StepResult(step, n, wins[step] ?: 0) }
+            .sortedWith(compareBy({ -(it.wins.toDouble() / it.tries) }, { -it.tries }, { it.step.ordinal }))
+    }
+
     /** Counts only, safe to hand to someone you trust. No notes, no feelings, no places. */
     fun shareText(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
         val w = week(entries, now, zone)
