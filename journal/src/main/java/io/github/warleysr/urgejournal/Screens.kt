@@ -57,7 +57,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-private fun Page(content: @Composable () -> Unit) {
+internal fun Page(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -111,11 +111,7 @@ data class HomeCards(
     /** The last two weeks look heavier than the two before. */
     val heavier: Boolean,
     /** Minutes from midnight of the daily heads-up, or -1. */
-    val nudgeMinute: Int,
-    /** It is evening and today has not been answered yet. */
-    val askDay: Boolean,
-    /** Days that went to plan out of the days checked in over the last week, or null. */
-    val planDays: Pair<Int, Int>?
+    val nudgeMinute: Int
 )
 
 @Composable
@@ -136,12 +132,11 @@ fun HomeScreen(
     onDismissHot: () -> Unit,
     onDismissHeavy: () -> Unit,
     onShare: () -> Unit,
-    onDay: (DayResult) -> Unit
+    onLog: () -> Unit
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
     val clean = Insights.cleanDays(entries, now)
-    var shown by remember { mutableIntStateOf(5) }
     val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -174,17 +169,6 @@ fun HomeScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onUrge) { Text(stringResource(R.string.home_log_only)) }
                 TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
-            }
-        }
-
-        if (cards.askDay) {
-            Panel {
-                Text(stringResource(R.string.day_title), style = MaterialTheme.typography.titleLarge)
-                DayResult.entries.forEach { r ->
-                    OutlinedButton(onClick = { onDay(r) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(label("day_", r))
-                    }
-                }
             }
         }
 
@@ -253,9 +237,6 @@ fun HomeScreen(
             week.peakHour?.let {
                 Text(stringResource(R.string.week_peak, "%02d:00".format(it)), style = MaterialTheme.typography.bodyMedium)
             }
-            cards.planDays?.let {
-                Text(stringResource(R.string.week_plan_days, it.first, it.second), style = MaterialTheme.typography.bodyMedium)
-            }
             if (week.total > 0) {
                 TextButton(onClick = onShare) { Text(stringResource(R.string.share_week)) }
             }
@@ -268,7 +249,7 @@ fun HomeScreen(
 
         if (entries.isNotEmpty()) {
             Eyebrow(stringResource(R.string.recent_title))
-            entries.takeLast(shown).reversed().forEach { e ->
+            entries.takeLast(5).reversed().forEach { e ->
                 val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
                     .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
                 val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
@@ -291,8 +272,8 @@ fun HomeScreen(
                     )
                 }
             }
-            if (entries.size > shown) {
-                TextButton(onClick = { shown += 20 }) { Text(stringResource(R.string.recent_more)) }
+            OutlinedButton(onClick = onLog, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.log_open, entries.size))
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -872,7 +853,6 @@ fun SettingsScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
-    var evening by remember { mutableIntStateOf(reminders.eveningMinute) }
     var editingPlan by remember { mutableStateOf<MyPlan?>(null) }
     var planText by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -967,31 +947,6 @@ fun SettingsScreen(
                             nudge = minute
                             reminders.nudgeMinute = minute
                             Notifier.rearmNudge(context)
-                        }
-                    },
-                    label = { Text(Times.clock(minute)) }
-                )
-            }
-        }
-        Text(stringResource(R.string.reminders_evening), style = MaterialTheme.typography.bodyMedium)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = evening < 0,
-                onClick = {
-                    evening = -1
-                    reminders.eveningMinute = -1
-                    Notifier.rearmEvening(context)
-                },
-                label = { Text(stringResource(R.string.reminders_off)) }
-            )
-            listOf(19 * 60, 20 * 60, 21 * 60, 22 * 60).forEach { minute ->
-                FilterChip(
-                    selected = evening == minute,
-                    onClick = {
-                        onNeedNotifications {
-                            evening = minute
-                            reminders.eveningMinute = minute
-                            Notifier.rearmEvening(context)
                         }
                     },
                     label = { Text(Times.clock(minute)) }

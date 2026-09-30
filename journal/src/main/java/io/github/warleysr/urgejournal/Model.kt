@@ -297,9 +297,6 @@ object Coach {
     }
 }
 
-/** The evening answer to "did today go the way you planned?". Text is `day_<name lowercase>`. */
-enum class DayResult { PLANNED, PARTLY, NOT }
-
 enum class Outcome { RESISTED, GAVE_IN }
 
 /** How the urge stood after riding it out. Text is `after_<name lowercase>`. */
@@ -492,13 +489,6 @@ object Insights {
         return HotWindow(start, count, recent.size, feeling)
     }
 
-    /** How the day went against the plan, answered in the evening. */
-    fun planDays(days: Map<LocalDate, DayResult>, today: LocalDate, window: Int = 7): Pair<Int, Int>? {
-        val recent = days.filterKeys { !it.isAfter(today) && ChronoUnit.DAYS.between(it, today) < window }
-        if (recent.isEmpty()) return null
-        return recent.count { it.value == DayResult.PLANNED } to recent.size
-    }
-
     /**
      * Whether the last two weeks look heavier than the two before: many more entries, or several
      * overwhelming ones. Used only to offer a gentle nudge toward real support, never a warning.
@@ -520,6 +510,29 @@ object Insights {
             if (clean != null) append(" ${clean.first} of the last ${clean.second} days without a slip.")
         }
     }
+
+    /** The last [weeks] weeks ending with this one, oldest first; a bar's date is that week's Monday. */
+    fun weeks(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault(), weeks: Int = 12): List<DayBar> {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val thisMonday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+        return (weeks - 1 downTo 0).map { back ->
+            val start = thisMonday.minusWeeks(back.toLong())
+            val list = entriesIn(entries, start, start.plusDays(6), zone)
+            DayBar(start, list.count { !it.gaveIn }, list.count { it.gaveIn })
+        }
+    }
+
+    /** Entries made on any day from [from] to [to], both included. */
+    fun entriesIn(entries: List<Entry>, from: LocalDate, to: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<Entry> =
+        entries.filter {
+            val d = Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate()
+            !d.isBefore(from) && !d.isAfter(to)
+        }
+
+    /** Feelings named in [entries], most common first. */
+    fun feelingCounts(entries: List<Entry>): List<Pair<Opt, Int>> =
+        entries.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
+            .entries.sortedWith(compareBy({ -it.value }, { it.key.ordinal })).map { it.key to it.value }
 
     /** A short, anonymous digest of recent history for the AI: counts and patterns, no notes. */
     fun summary(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
@@ -613,4 +626,53 @@ object Times {
     }
 
     fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
+}
+
+/** Which entries the log shows. */
+enum class LogFilter {
+    ALL, THROUGH, GAVE_IN;
+
+    fun matches(e: Entry): Boolean = when (this) {
+        ALL -> true
+        THROUGH -> !e.gaveIn && e.outcome == Outcome.RESISTED
+        GAVE_IN -> e.gaveIn
+    }
+}
+
+/** The whole journal as a spreadsheet: one row per entry, opens in Excel or Sheets. */
+object CsvExport {
+    private const val HEADER = "time,kind,feeling,strength,pulled_toward,place,thought,outcome,after_ride,tried,note"
+
+    private fun cell(text: String): String =
+        if (text.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + text.replace("\"", "\"\"") + "\"" else text
+
+    private fun name(o: Opt?): String = o?.name?.lowercase() ?: ""
+
+    fun csv(entries: List<Entry>, zone: ZoneId = ZoneId.systemDefault()): String = buildString {
+        appendLine(HEADER)
+        entries.sortedBy { it.time }.forEach { e ->
+            val time = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(Instant.ofEpochMilli(e.time).atZone(zone))
+            val outcome = when {
+                e.slipped -> "slipped"
+                e.outcome == Outcome.RESISTED -> "got through"
+                e.outcome == Outcome.GAVE_IN -> "gave in"
+                else -> "open"
+            }
+            appendLine(
+                listOf(
+                    time,
+                    if (e.slipped) "slip" else "urge",
+                    name(e.answers[Q.FEELING]),
+                    name(e.answers[Q.INTENSITY]),
+                    name(e.answers[Q.PULL]),
+                    name(e.answers[Q.PLACE]),
+                    name(e.answers[Q.THOUGHT]),
+                    outcome,
+                    e.after?.name?.lowercase() ?: "",
+                    e.tried.joinToString(" ") { it.name.lowercase() },
+                    e.note
+                ).joinToString(",") { cell(it) }
+            )
+        }
+    }
 }

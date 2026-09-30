@@ -177,7 +177,6 @@ class MainActivity : ComponentActivity() {
                                             "restrictions" -> R.string.protections
                                             "schedules", "schedule_editor" -> R.string.schedules
                                             "impulse_lock" -> R.string.impulse_lock
-                                            "urge_log" -> R.string.urge_log
                                             else -> R.string.app_name
                                         }
                                     )
@@ -293,7 +292,6 @@ class MainActivity : ComponentActivity() {
                                     "config" -> ConfigTab()
                                     "restrictions" -> RestrictionsTab()
                                     "impulse_lock" -> ImpulseLockScreen()
-                                    "urge_log" -> UrgeScreen()
                                     "setup_device_owner" -> SetupDeviceOwnerPrivileges()
                                 }
                                 }

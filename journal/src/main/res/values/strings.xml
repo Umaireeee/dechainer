@@ -323,17 +323,24 @@
     <string name="reminders_nudge">Daily heads-up before your tough time of day</string>
     <string name="reminders_off">Off</string>
     <string name="reminders_blocked">Notifications are off for this app. Turn them on in your phone\'s settings for reminders to appear.</string>
-
-    <!-- One-tap focus, evening check-in, tile -->
-    <string name="day_title">Did today go the way you planned?</string>
-    <string name="day_planned">Yes, it went to plan</string>
-    <string name="day_partly">Partly</string>
-    <string name="day_not">Not really</string>
-    <string name="week_plan_days">Went to plan: %1$d of the last %2$d days you checked in.</string>
-    <string name="reminders_evening">Evening check-in: did today go to plan?</string>
-    <string name="notif_evening_title">Evening check-in</string>
-    <string name="notif_evening_text">Did today go the way you planned? Two taps.</string>
+    <!-- Tile and shortcut -->
     <string name="tile_label">I feel an urge</string>
     <string name="shortcut_ride_short">I feel an urge</string>
     <string name="shortcut_ride_long">I feel an urge: start a ride</string>
+
+    <!-- The full log -->
+    <string name="log_open">See every entry (%1$d)</string>
+    <string name="log_title">Your log</string>
+    <string name="log_total">%1$d entries in all, every one you have logged.</string>
+    <string name="log_14_days">14 days</string>
+    <string name="log_12_weeks">12 weeks</string>
+    <string name="log_tap_day">Tap a bar to see that day.</string>
+    <string name="log_tap_week">Tap a bar to see that week. Each label is the day the week starts.</string>
+    <string name="log_by_feeling">By feeling</string>
+    <string name="log_filter_all">All</string>
+    <string name="log_filter_gave_in">Gave in or slipped</string>
+    <string name="log_showing">%1$s: %2$d entries</string>
+    <string name="log_all">All entries: %1$d</string>
+    <string name="log_empty">Nothing here yet.</string>
+    <string name="log_export">Export as a spreadsheet (CSV)</string>
 </resources>

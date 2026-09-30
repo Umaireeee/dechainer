@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -191,22 +193,40 @@ fun Stat(value: String, caption: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Seven days at a glance: amber for urges ridden out, terracotta for the ones given in to. */
+/**
+ * Bars at a glance: amber for urges ridden out, terracotta for the ones given in to. With [onPick]
+ * a bar can be tapped, and the [selected] one is drawn brighter. [labels] replaces the weekday
+ * letters, which is how the twelve-week view shows the day each week starts.
+ */
 @Composable
-fun WeekBars(bars: List<Insights.DayBar>) {
+fun WeekBars(
+    bars: List<Insights.DayBar>,
+    labels: List<String>? = null,
+    selected: Int? = null,
+    onPick: ((Int) -> Unit)? = null
+) {
     val max = (bars.maxOfOrNull { it.resisted + it.gaveIn } ?: 0).coerceAtLeast(1)
     val ok = MaterialTheme.colorScheme.primary
     val bad = MaterialTheme.colorScheme.error
     val track = MaterialTheme.colorScheme.surfaceVariant
+    val picked = MaterialTheme.colorScheme.outlineVariant
+    val tap = if (onPick != null) {
+        Modifier.pointerInput(bars.size) {
+            detectTapGestures { offset ->
+                val slot = size.width.toFloat() / bars.size.coerceAtLeast(1)
+                onPick((offset.x / slot).toInt().coerceIn(0, (bars.size - 1).coerceAtLeast(0)))
+            }
+        }
+    } else Modifier
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(88.dp)) {
-            val gap = 10.dp.toPx()
+        Canvas(Modifier.fillMaxWidth().height(88.dp).then(tap)) {
+            val gap = (if (bars.size > 10) 5.dp else 10.dp).toPx()
             val n = bars.size.coerceAtLeast(1)
             val w = (size.width - gap * (n - 1)) / n
-            val radius = CornerRadius(8.dp.toPx())
+            val radius = CornerRadius(8.dp.toPx().coerceAtMost(w / 2))
             bars.forEachIndexed { i, b ->
                 val x = i * (w + gap)
-                drawRoundRect(track, Offset(x, 0f), Size(w, size.height), radius)
+                drawRoundRect(if (i == selected) picked else track, Offset(x, 0f), Size(w, size.height), radius)
                 val total = b.resisted + b.gaveIn
                 if (total > 0) {
                     val h = size.height * total / max
@@ -219,11 +239,11 @@ fun WeekBars(bars: List<Insights.DayBar>) {
             }
         }
         Row(Modifier.fillMaxWidth()) {
-            bars.forEach { b ->
+            bars.forEachIndexed { i, b ->
                 Text(
-                    b.date.dayOfWeek.getDisplayName(DayStyle.NARROW, Locale.getDefault()),
+                    labels?.getOrNull(i) ?: b.date.dayOfWeek.getDisplayName(DayStyle.NARROW, Locale.getDefault()),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (i == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
                 )

@@ -142,7 +142,6 @@ class JournalLogicTest {
             Reason.entries.forEach { if ("reason_${it.name.lowercase()}" !in names) add("reason_${it.name.lowercase()}") }
             Step.entries.forEach { if ("try_${it.name.lowercase()}" !in names) add("try_${it.name.lowercase()}") }
             After.entries.forEach { if ("after_${it.name.lowercase()}" !in names) add("after_${it.name.lowercase()}") }
-            DayResult.entries.forEach { if ("day_${it.name.lowercase()}" !in names) add("day_${it.name.lowercase()}") }
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
     }
@@ -467,16 +466,55 @@ class JournalLogicTest {
     }
 
     @Test
-    fun planDaysCountDaysThatWentToPlan() {
-        val today = java.time.LocalDate.of(2026, 9, 28)
-        assertNull(Insights.planDays(emptyMap(), today))
-        val days = mapOf(
-            today to DayResult.PLANNED,
-            today.minusDays(1) to DayResult.PARTLY,
-            today.minusDays(2) to DayResult.PLANNED,
-            today.minusDays(10) to DayResult.PLANNED // outside the week
+    fun theTwelveWeekViewGroupsByWeekStartingMonday() {
+        val now = ms(30, 12) // Wednesday 30 Sep 2026
+        fun at(day: Int, outcome: Outcome?, slipped: Boolean = false) = Entry(ms(day, 12), slipped, emptyMap(), outcome)
+        val entries = listOf(
+            at(28, Outcome.RESISTED), // this week's Monday
+            at(30, null, slipped = true),
+            at(27, Outcome.RESISTED), // Sunday: last week
+            at(21, Outcome.GAVE_IN)   // Monday of last week
         )
-        assertEquals(2 to 3, Insights.planDays(days, today))
+        val weeks = Insights.weeks(entries, now, zone, 12)
+        assertEquals(12, weeks.size)
+        assertEquals(java.time.LocalDate.of(2026, 9, 28), weeks.last().date)
+        assertEquals(1, weeks.last().resisted)
+        assertEquals(1, weeks.last().gaveIn)
+        assertEquals(1, weeks[10].resisted)
+        assertEquals(1, weeks[10].gaveIn)
+    }
+
+    @Test
+    fun aDayOrWeekCanBePickedFromTheChart() {
+        val a = Entry(ms(10, 8), false, emptyMap(), null)
+        val b = Entry(ms(10, 22), false, emptyMap(), null)
+        val c = Entry(ms(12, 9), false, emptyMap(), null)
+        val d10 = java.time.LocalDate.of(2026, 9, 10)
+        assertEquals(listOf(a, b), Insights.entriesIn(listOf(a, b, c), d10, d10, zone))
+        assertEquals(listOf(a, b, c), Insights.entriesIn(listOf(a, b, c), d10, d10.plusDays(6), zone))
+        assertEquals(emptyList<Entry>(), Insights.entriesIn(listOf(a, b, c), d10.plusDays(20), d10.plusDays(26), zone))
+    }
+
+    @Test
+    fun theLogCountsFeelingsAndFiltersByHowItWentPlusCsvExport() {
+        val es = listOf(
+            Entry(1, false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED),
+            Entry(2, false, mapOf(Q.FEELING to Opt.BORED), Outcome.GAVE_IN),
+            Entry(3, true, mapOf(Q.FEELING to Opt.LONELY), null),
+            Entry(4, false, emptyMap(), null)
+        )
+        assertEquals(listOf(Opt.BORED to 2, Opt.LONELY to 1), Insights.feelingCounts(es))
+        assertEquals(4, es.count { LogFilter.ALL.matches(it) })
+        assertEquals(1, es.count { LogFilter.THROUGH.matches(it) })
+        assertEquals(2, es.count { LogFilter.GAVE_IN.matches(it) })
+
+        val csv = CsvExport.csv(
+            listOf(Entry(ms(5, 23), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED, note = "said \"no\", twice", tried = listOf(Step.WALK, Step.COLD_WATER), after = After.WEAKER)),
+            zone
+        )
+        val lines = csv.lines()
+        assertEquals("time,kind,feeling,strength,pulled_toward,place,thought,outcome,after_ride,tried,note", lines[0])
+        assertEquals("2026-09-05 23:00,urge,bored,,,,,got through,weaker,walk cold_water,\"said \"\"no\"\", twice\"", lines[1])
     }
 
     @Test

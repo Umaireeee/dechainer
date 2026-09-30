@@ -25,7 +25,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlin.concurrent.thread
@@ -69,7 +68,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, SETTINGS, REVIEW }
+private enum class Screen { HOME, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW }
 
 /** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
@@ -125,6 +124,8 @@ private fun App(activity: MainActivity) {
     var plans by remember { mutableStateOf(store.plans()) }
     var nudgeMinute by remember { mutableIntStateOf(reminders.nudgeMinute) }
     var cardsTick by remember { mutableIntStateOf(0) }
+    // Where an opened entry goes back to: Home's short list, or the full log.
+    var detailBack by remember { mutableStateOf(Screen.HOME) }
 
     // Asking for the notification permission is done from a tap that needs it, never at the peak of an urge.
     var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -333,7 +334,17 @@ private fun App(activity: MainActivity) {
         }
     }
 
-    // What a notification tap or Déchaîner's shortcut asked for.
+    fun leaveDetail() {
+        if (detailBack == Screen.LOG) {
+            refresh()
+            detail = null
+            screen = Screen.LOG
+        } else {
+            goHome()
+        }
+    }
+
+    // What a notification tap or the tile / icon shortcut asked for.
     val action = activity.pendingAction
     LaunchedEffect(action) {
         when (action) {
@@ -351,9 +362,7 @@ private fun App(activity: MainActivity) {
                     pendingRideAt = store.pendingRide().takeIf { it != 0L && now - it < SIX_HOURS_MS } ?: 0L,
                     hot = if (nudgeMinute < 0 && now - store.dismissedAt("hot") > FORTNIGHT_MS) Insights.hotWindow(entries, now) else null,
                     heavier = now - store.dismissedAt("heavier") > FORTNIGHT_MS && Insights.heavier(entries, now),
-                    nudgeMinute = nudgeMinute,
-                    askDay = LocalTime.now().hour >= 17 && LocalDate.now() !in store.days(),
-                    planDays = Insights.planDays(store.days(), LocalDate.now())
+                    nudgeMinute = nudgeMinute
                 )
             }
             HomeScreen(
@@ -368,7 +377,8 @@ private fun App(activity: MainActivity) {
                 onRide = { startRide() },
                 onUrge = { startInterview(false) },
                 onSlip = { startInterview(true) },
-                onOpen = { detail = it; screen = Screen.DETAIL },
+                onOpen = { detail = it; detailBack = Screen.HOME; screen = Screen.DETAIL },
+                onLog = { screen = Screen.LOG },
                 onReview = {
                     screen = Screen.REVIEW
                     runReview(force = false)
@@ -392,10 +402,6 @@ private fun App(activity: MainActivity) {
                 },
                 onDismissHeavy = {
                     store.dismiss("heavier")
-                    cardsTick++
-                },
-                onDay = { result ->
-                    store.setDay(LocalDate.now(), result)
                     cardsTick++
                 },
                 onShare = {
@@ -518,7 +524,7 @@ private fun App(activity: MainActivity) {
         }
 
         Screen.DETAIL -> {
-            BackHandler { goHome() }
+            BackHandler { leaveDetail() }
             detail?.let { picked ->
                 // Re-read it so a report or outcome saved since is shown.
                 val entry = entries.firstOrNull { it.time == picked.time } ?: picked
@@ -526,11 +532,27 @@ private fun App(activity: MainActivity) {
                     entry = entry,
                     onOutcome = { outcome ->
                         store.setOutcome(entry.time, outcome)
-                        goHome()
+                        leaveDetail()
                     },
-                    onBack = { goHome() }
+                    onBack = { leaveDetail() }
                 )
             }
+        }
+
+        Screen.LOG -> {
+            BackHandler { goHome() }
+            LogScreen(
+                entries = entries,
+                onOpen = { detail = it; detailBack = Screen.LOG; screen = Screen.DETAIL },
+                onExport = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, CsvExport.csv(entries))
+                    }
+                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                },
+                onBack = { goHome() }
+            )
         }
 
         Screen.REVIEW -> {

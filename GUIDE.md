@@ -50,13 +50,8 @@ Want it stricter? Turn on **lock apps** so apps are paused during each session, 
 ## Step 6: Read your log weekly
 On **Focus**, open the log. You'll see a 14-day and 12-week chart, tap a point for that day's sessions, and hours by subject so a neglected subject shows. Use **Export** to save a CSV backup (do this weekly). **Import** restores it on a new phone.
 
-## Step 7: Use the urge log when it hits
-Go to **Settings → Urge log**.
-1. Tap what set the urge off (bored, stressed, lonely, tired, anxious, habit, other).
-2. Tap **I feel an urge** and wait the ten minutes. Stand up, drink water, walk to another room.
-3. Tap **I got through it** or **I gave in**. Be honest. Nobody sees this.
-4. Once a week, read **This week**: your most common trigger, the hour they cluster around, and days since you last gave in. Use it: if it's always 23:00 and bored, that's your Night detox window.
-5. Optionally tap **Share with someone I trust**. It opens your phone's share sheet and only goes to whoever you pick. Nothing is sent otherwise.
+## Step 7: Use the Urge Journal when it hits
+Urges are handled in the second app, the **Urge Journal** (see Step 11). Déchaîner no longer has its own urge log, so there is one place for every entry.
 
 ## Step 8: The panic button
 **Settings → Impulse lock** sets what happens when you press the panic button on the unlock screen: it locks the app, and any apps you choose, for a set time (15 minutes to 6 hours). Set it up on a calm day.
@@ -81,8 +76,6 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes or pause your apps for an hour.
 3. Then choose **Save it and finish** (two taps) or **Add a few details** (three short questions and a plan). If you leave the app, a plain "Quick check-in" notification about 20 minutes later brings you back (you can turn it off in Settings), and a card on Home waits for you.
 4. The coach learns from your check-ins: once a step has worked for you a few times, it moves to the top of your plans.
-
-**Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "Did today go the way you planned?" with three answers, and the week panel shows how many days went to plan.
 
 **Add the tile:** pull the notification shade down fully, tap the pencil or "Edit", find **I feel an urge**, and drag it to the top row.
 
