@@ -34,6 +34,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,13 +50,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-private fun Page(content: @Composable () -> Unit) {
+internal fun Page(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -99,20 +102,41 @@ private fun SetupRow(done: Boolean, text: String) {
     }
 }
 
+/** The optional cards on Home, worked out by the caller so this screen only has to draw them. */
+data class HomeCards(
+    /** When a ride started that has not been checked in on, or 0. */
+    val pendingRideAt: Long,
+    /** A time of day where urges keep landing, when there is enough to say so and no heads-up is set. */
+    val hot: Insights.HotWindow?,
+    /** The last two weeks look heavier than the two before. */
+    val heavier: Boolean,
+    /** Minutes from midnight of the daily heads-up, or -1. */
+    val nudgeMinute: Int
+)
+
 @Composable
 fun HomeScreen(
     entries: List<Entry>,
     hour: Int,
     setup: SetupState,
+    cards: HomeCards,
+    onRide: () -> Unit,
     onUrge: () -> Unit,
     onSlip: () -> Unit,
     onOpen: (Entry) -> Unit,
     onReview: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onCheckIn: () -> Unit,
+    onDropRide: () -> Unit,
+    onNudge: (Int) -> Unit,
+    onDismissHot: () -> Unit,
+    onDismissHeavy: () -> Unit,
+    onShare: () -> Unit,
+    onLog: () -> Unit
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
-    var shown by remember { mutableIntStateOf(8) }
+    val clean = Insights.cleanDays(entries, now)
     val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -124,16 +148,68 @@ fun HomeScreen(
             TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
         }
         Text(
-            week.daysSinceGaveIn?.let { stringResource(R.string.home_days_since, it) }
-                ?: stringResource(R.string.home_no_slips),
+            when {
+                clean != null && clean.second >= 3 -> stringResource(R.string.home_clean_days, clean.first, clean.second)
+                week.daysSinceGaveIn != null -> stringResource(R.string.home_days_since, week.daysSinceGaveIn)
+                else -> stringResource(R.string.home_no_slips)
+            },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Ember(stringResource(R.string.home_urge), onUrge)
-            Spacer(Modifier.height(16.dp))
-            TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
+            Ember(stringResource(R.string.home_urge), onRide)
+            Text(
+                stringResource(R.string.home_urge_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onUrge) { Text(stringResource(R.string.home_log_only)) }
+                TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
+            }
+        }
+
+        if (cards.pendingRideAt != 0L) {
+            val minutes = ((now - cards.pendingRideAt) / 60_000L).coerceAtLeast(0)
+            Panel(highlight = true) {
+                Text(stringResource(R.string.checkin_card_title), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.checkin_card_body, minutes), style = MaterialTheme.typography.bodyLarge)
+                Button(onClick = onCheckIn, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.checkin_card_button))
+                }
+                TextButton(onClick = onDropRide) { Text(stringResource(R.string.checkin_card_drop)) }
+            }
+        }
+
+        if (cards.heavier) {
+            Panel {
+                Text(stringResource(R.string.heavier_title), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.heavier_body), style = MaterialTheme.typography.bodyLarge)
+                TextButton(onClick = onDismissHeavy) { Text(stringResource(R.string.card_dismiss)) }
+            }
+        }
+
+        cards.hot?.let { hot ->
+            Panel {
+                Text(stringResource(R.string.hot_title), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    stringResource(
+                        R.string.hot_body,
+                        Times.clock(hot.startHour * 60),
+                        Times.clock(hot.endHour * 60),
+                        hot.count,
+                        hot.total
+                    ),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Button(onClick = { onNudge(hot.nudgeMinute) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.hot_button, Times.clock(hot.nudgeMinute)))
+                }
+                TextButton(onClick = onDismissHot) { Text(stringResource(R.string.card_dismiss)) }
+            }
         }
 
         if (!setup.complete) {
@@ -161,6 +237,9 @@ fun HomeScreen(
             week.peakHour?.let {
                 Text(stringResource(R.string.week_peak, "%02d:00".format(it)), style = MaterialTheme.typography.bodyMedium)
             }
+            if (week.total > 0) {
+                TextButton(onClick = onShare) { Text(stringResource(R.string.share_week)) }
+            }
         }
         if (recentCount >= 3) {
             OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
@@ -170,10 +249,11 @@ fun HomeScreen(
 
         if (entries.isNotEmpty()) {
             Eyebrow(stringResource(R.string.recent_title))
-            entries.takeLast(shown).reversed().forEach { e ->
+            entries.takeLast(5).reversed().forEach { e ->
                 val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
                     .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
-                val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) } ?: ""
+                val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
+                    ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
                 val result = when {
                     e.slipped -> stringResource(R.string.result_slipped)
                     e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
@@ -192,11 +272,124 @@ fun HomeScreen(
                     )
                 }
             }
-            if (entries.size > shown) {
-                TextButton(onClick = { shown += 20 }) { Text(stringResource(R.string.recent_more)) }
+            OutlinedButton(onClick = onLog, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.log_open, entries.size))
             }
         }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** A ten-minute ride: the one screen for the peak of an urge. Nothing to answer, nothing to read but one line. */
+@Composable
+fun RideScreen(
+    startedAt: Long,
+    blockMinutes: Int,
+    door: Door.Result?,
+    step: Step,
+    myPlan: MyPlan?,
+    onDone: () -> Unit,
+    onLonger: () -> Unit,
+    onLeave: () -> Unit
+) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(500)
+        }
+    }
+    val elapsed = ((now - startedAt) / 1000L).coerceAtLeast(0)
+    val remaining = (RIDE_SECONDS - elapsed).coerceAtLeast(0)
+    val finished = remaining == 0L
+    val inhale = elapsed % 10 < 4
+    Page {
+        Spacer(Modifier.height(4.dp))
+        Text(stringResource(R.string.ride_title), style = MaterialTheme.typography.headlineMedium)
+        Text(
+            stringResource(R.string.ride_body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        BreathCircle(
+            inhale = inhale,
+            centerText = if (finished) stringResource(R.string.ride_done_mark) else "%d:%02d".format(remaining / 60, remaining % 60),
+            caption = stringResource(if (finished) R.string.ride_finished else if (inhale) R.string.ride_in else R.string.ride_out)
+        )
+        Text(
+            when (door) {
+                Door.Result.SENT -> stringResource(R.string.ride_paused, blockMinutes)
+                Door.Result.NOT_INSTALLED -> stringResource(R.string.door_not_installed)
+                Door.Result.NO_PERMISSION -> stringResource(R.string.door_no_permission)
+                null -> ""
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Eyebrow(stringResource(R.string.ride_one_thing))
+        Panel(highlight = true) { Text(stringResource(stepRes(step)), style = MaterialTheme.typography.bodyLarge) }
+        myPlan?.let {
+            Eyebrow(stringResource(R.string.ride_your_rule))
+            Panel { Text(it.text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
+        }
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (finished) R.string.ride_continue else R.string.ride_early))
+        }
+        OutlinedButton(onClick = onLonger, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.ride_longer))
+        }
+        TextButton(onClick = onLeave) { Text(stringResource(R.string.ride_leave)) }
+    }
+}
+
+/** After the ride: how it stands, and what you tried. Two taps, then done. */
+@Composable
+fun AfterScreen(
+    after: After?,
+    tried: List<Step>,
+    onAfter: (After) -> Unit,
+    onToggle: (Step) -> Unit,
+    onSave: () -> Unit,
+    onDetails: () -> Unit,
+    onAgain: () -> Unit,
+    onGaveIn: () -> Unit,
+    onBack: () -> Unit
+) {
+    Page {
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.after_title), style = MaterialTheme.typography.headlineMedium)
+        After.entries.forEach { a ->
+            OptionCard(label("after_", a), selected = after == a) { onAfter(a) }
+        }
+        if (after != null) {
+            Eyebrow(stringResource(R.string.after_tried))
+            Step.entries.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { step ->
+                        FilterChip(
+                            selected = step in tried,
+                            onClick = { onToggle(step) },
+                            label = { Text(label("try_", step)) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            if (after == After.STILL) {
+                Button(onClick = onAgain, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.after_again)) }
+                OutlinedButton(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.after_save_open)) }
+            } else {
+                Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.after_save)) }
+                OutlinedButton(onClick = onDetails, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.after_details)) }
+            }
+        }
+        TextButton(onClick = onGaveIn) { Text(stringResource(R.string.after_gave_in)) }
+        TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
     }
 }
 
@@ -271,8 +464,11 @@ fun NoteScreen(slipped: Boolean, onDone: (String) -> Unit, onBack: () -> Unit) {
 @Composable
 fun PlanScreen(
     entry: Entry,
+    history: List<Entry>,
+    plans: List<MyPlan>,
     ai: AiState,
     providerLabel: String,
+    onSavePlan: (String) -> Unit,
     onConsent: (Boolean) -> Unit,
     onRetry: () -> Unit,
     onSettings: () -> Unit,
@@ -281,7 +477,8 @@ fun PlanScreen(
 ) {
     val context = LocalContext.current
     val hour = Instant.ofEpochMilli(entry.time).atZone(ZoneId.systemDefault()).hour
-    val plan = remember(entry.time) { Coach.plan(entry.answers, hour, entry.slipped) }
+    val plan = remember(entry.time) { Coach.plan(entry.answers, hour, entry.slipped, history.filter { it.time != entry.time }) }
+    val myPlan = remember(entry.time, plans) { MyPlan.best(plans, entry.answers[Q.FEELING], hour) }
     var results by remember { mutableStateOf(emptyMap<DoorAction, Door.Result>()) }
 
     if (ai is AiState.NeedsConsent) {
@@ -328,6 +525,11 @@ fun PlanScreen(
             Text(stringResource(R.string.door_note), style = MaterialTheme.typography.bodySmall)
         }
 
+        myPlan?.let {
+            Eyebrow(stringResource(R.string.ride_your_rule))
+            Panel { Text(it.text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
+        }
+
         // The app's own quick steps are a fallback. Once the AI has written personal ones they
         // would only repeat it, so they step aside.
         val aiHasSteps = ai is AiState.Ready && ReportParser.parse(ai.text)?.rightNow?.isNotEmpty() == true
@@ -372,12 +574,61 @@ fun PlanScreen(
             Bullets(plan.rules.map { stringResource(ruleRes(it)) })
         }
 
+        // A plan works best when it is yours: the coach suggests, you write it, and it comes back
+        // next time this kind of moment does.
+        val feelingNow = entry.answers[Q.FEELING]
+        val late = isLate(hour)
+        val ruleTexts = plan.rules.map { stringResource(ruleRes(it)) }
+        val prefill = stringResource(
+            R.string.plan_if_prefix,
+            feelingNow?.let { label("opt_", it).lowercase() } ?: stringResource(R.string.plan_if_urge),
+            if (late) stringResource(R.string.plan_if_late) else ""
+        )
+        var editing by remember(entry.time) { mutableStateOf(false) }
+        var saved by remember(entry.time) { mutableStateOf(false) }
+        var draft by remember(entry.time) { mutableStateOf(prefill) }
+        Eyebrow(stringResource(R.string.plan_yours))
+        Panel {
+            if (saved) {
+                Text(stringResource(R.string.plan_saved), style = MaterialTheme.typography.bodyLarge)
+            } else if (!editing) {
+                Text(stringResource(R.string.plan_yours_body), style = MaterialTheme.typography.bodyLarge)
+                OutlinedButton(onClick = { editing = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.plan_write))
+                }
+            } else {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(300) },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                ruleTexts.forEach { rule ->
+                    AssistChip(
+                        onClick = { draft = draft.trimEnd() + " " + rule.replaceFirstChar { c -> c.lowercase() } },
+                        label = { Text(rule, maxLines = 2) }
+                    )
+                }
+                Button(
+                    onClick = {
+                        onSavePlan(draft)
+                        saved = true
+                    },
+                    enabled = draft.trim().length > prefill.trim().length,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.plan_save)) }
+            }
+        }
+
         if (entry.slipped) {
             Text(
                 stringResource(R.string.slip_outro),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_done)) }
+        } else if (entry.outcome != null) {
             Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.plan_done)) }
         } else {
             Eyebrow(stringResource(R.string.plan_outcome_q))
@@ -530,6 +781,17 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
                     )
                 }
             }
+            entry.after?.let {
+                Text(stringResource(R.string.detail_after, label("after_", it)), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (entry.tried.isNotEmpty()) {
+                // joinToString is not inline, so the composable labels are looked up first.
+                val triedNames = entry.tried.map { s -> label("try_", s).lowercase() }
+                Text(
+                    stringResource(R.string.detail_tried, triedNames.joinToString(", ")),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             if (entry.note.isNotBlank()) {
                 Text(
                     entry.note,
@@ -569,6 +831,10 @@ private sealed interface TestState {
 fun SettingsScreen(
     settings: AiSettings,
     store: JournalStore,
+    reminders: ReminderSettings,
+    plans: List<MyPlan>,
+    onPlansChanged: () -> Unit,
+    onNeedNotifications: (() -> Unit) -> Unit,
     onDeleteAll: () -> Unit,
     onImported: () -> Unit,
     onBack: () -> Unit
@@ -585,6 +851,10 @@ fun SettingsScreen(
     var backupMessage by remember { mutableStateOf<Int?>(null) }
     var backupCount by remember { mutableIntStateOf(0) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var checkIn by remember { mutableStateOf(reminders.checkIn) }
+    var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
+    var editingPlan by remember { mutableStateOf<MyPlan?>(null) }
+    var planText by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
     var test by remember { mutableStateOf<TestState>(TestState.Idle) }
     var available by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -613,9 +883,105 @@ fun SettingsScreen(
         )
     }
 
+    editingPlan?.let { plan ->
+        AlertDialog(
+            onDismissRequest = { editingPlan = null },
+            title = { Text(stringResource(R.string.plans_edit)) },
+            text = {
+                OutlinedTextField(
+                    value = planText,
+                    onValueChange = { planText = it.take(300) },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    store.editPlan(plan.id, planText)
+                    editingPlan = null
+                    onPlansChanged()
+                }) { Text(stringResource(R.string.settings_save)) }
+            },
+            dismissButton = { TextButton(onClick = { editingPlan = null }) { Text(stringResource(R.string.delete_no)) } }
+        )
+    }
+
     Page {
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium)
+
+        Eyebrow(stringResource(R.string.reminders_title))
+        Text(
+            stringResource(R.string.reminders_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            Modifier.fillMaxWidth().clickable {
+                val next = !checkIn
+                if (next) onNeedNotifications { checkIn = true; reminders.checkIn = true }
+                else { checkIn = false; reminders.checkIn = false }
+            },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(checked = checkIn, onCheckedChange = null)
+            Text(stringResource(R.string.reminders_checkin), style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(stringResource(R.string.reminders_nudge), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = nudge < 0,
+                onClick = {
+                    nudge = -1
+                    reminders.nudgeMinute = -1
+                    Notifier.rearmNudge(context)
+                },
+                label = { Text(stringResource(R.string.reminders_off)) }
+            )
+            listOf(20 * 60, 21 * 60, 21 * 60 + 30, 22 * 60, 23 * 60).forEach { minute ->
+                FilterChip(
+                    selected = nudge == minute,
+                    onClick = {
+                        onNeedNotifications {
+                            nudge = minute
+                            reminders.nudgeMinute = minute
+                            Notifier.rearmNudge(context)
+                        }
+                    },
+                    label = { Text(Times.clock(minute)) }
+                )
+            }
+        }
+        if (!Notifier.canPost(context)) {
+            Text(
+                stringResource(R.string.reminders_blocked),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
+        Eyebrow(stringResource(R.string.plans_title))
+        if (plans.isEmpty()) {
+            Text(
+                stringResource(R.string.plans_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        plans.forEach { plan ->
+            Panel {
+                Text(plan.text, style = MaterialTheme.typography.bodyLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { planText = plan.text; editingPlan = plan }) {
+                        Text(stringResource(R.string.plans_edit))
+                    }
+                    TextButton(onClick = { store.removePlan(plan.id); onPlansChanged() }) {
+                        Text(stringResource(R.string.plans_remove))
+                    }
+                }
+            }
+        }
 
         Eyebrow(stringResource(R.string.settings_ai))
         Text(
@@ -812,11 +1178,7 @@ fun SettingsScreen(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, store.exportJson())
-                }
-                context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                Share.file(context, "urge-journal-backup.txt", "text/plain", store.exportJson())
             }) { Text(stringResource(R.string.settings_export)) }
             OutlinedButton(onClick = {
                 val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
@@ -849,6 +1211,9 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
     }
 }
+
+/** How long the guided ride lasts. Urges usually crest and fade inside it. */
+const val RIDE_SECONDS = 10L * 60
 
 private fun stepRes(s: Step): Int = when (s) {
     Step.BREATHE -> R.string.step_breathe

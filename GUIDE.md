@@ -50,13 +50,8 @@ Want it stricter? Turn on **lock apps** so apps are paused during each session, 
 ## Step 6: Read your log weekly
 On **Focus**, open the log. You'll see a 14-day and 12-week chart, tap a point for that day's sessions, and hours by subject so a neglected subject shows. Use **Export** to save a CSV backup (do this weekly). **Import** restores it on a new phone.
 
-## Step 7: Use the urge log when it hits
-Go to **Settings → Urge log**.
-1. Tap what set the urge off (bored, stressed, lonely, tired, anxious, habit, other).
-2. Tap **I feel an urge** and wait the ten minutes. Stand up, drink water, walk to another room.
-3. Tap **I got through it** or **I gave in**. Be honest. Nobody sees this.
-4. Once a week, read **This week**: your most common trigger, the hour they cluster around, and days since you last gave in. Use it: if it's always 23:00 and bored, that's your Night detox window.
-5. Optionally tap **Share with someone I trust**. It opens your phone's share sheet and only goes to whoever you pick. Nothing is sent otherwise.
+## Step 7: Use the Urge Journal when it hits
+Urges are handled in the second app, the **Urge Journal** (see Step 11). Déchaîner no longer has its own urge log, so there is one place for every entry.
 
 ## Step 8: The panic button
 **Settings → Impulse lock** sets what happens when you press the panic button on the unlock screen: it locks the app, and any apps you choose, for a set time (15 minutes to 6 hours). Set it up on a calm day.
@@ -77,12 +72,20 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 **One-time setup in Déchaîner:** *Settings → Impulse lock*, set the panic button to "timer and suspend" and pick the apps to pause. The journal's "Block my phone" button uses that.
 
 **When an urge hits:**
-1. Open the journal and tap **I feel an urge**.
-2. Answer the short questions. They change depending on what you're feeling, and they take under a minute.
-3. You get a plan: what's probably behind it, what to do right now, and a **Lock it in** button that asks Déchaîner to block your phone for a length that matches how strong and how late it is.
-4. Afterwards, say how it went.
+1. Tap the glowing button in the journal, or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately pauses your distraction apps for 30 minutes (the ones chosen in Déchaîner's Impulse lock) and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), and your own rule if you've written one. Nothing to answer.
+2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes or pause your apps for an hour.
+3. Then choose **Save it and finish** (two taps) or **Add a few details** (three short questions and a plan). If you leave the app, a plain "Quick check-in" notification about 20 minutes later brings you back (you can turn it off in Settings), and a card on Home waits for you.
+4. The coach learns from your check-ins: once a step has worked for you a few times, it moves to the top of your plans.
 
-**If you already slipped:** tap **I already slipped**. No judgement. It asks what was in place and what would have stopped it, blocks your phone for the next stretch to stop the spiral, and suggests one change so it's less likely next time.
+**Add the tile:** pull the notification shade down fully, tap the pencil or "Edit", find **I feel an urge**, and drag it to the top row.
+
+**Make it your own:** after an urge, the plan screen has **Make it your own**. Write an "If ..., then ..." rule in your own words (the coach suggests wording you can tap in). Your rules are shown on later rides and plans, and you can edit or remove them in Settings. Rules you write yourself work better than ones handed to you.
+
+**Patterns:** once you have at least six entries in a month, and most of them land in the same part of the day, Home offers a daily heads-up before that time, with a one-tap "pause my apps for an hour". It stays quiet until there is enough data to say something honest.
+
+**If you already slipped:** tap **I already slipped**. No judgement. It asks what was in place and what would have stopped it, blocks your phone for the next stretch to stop the spiral, and suggests one change so it's less likely next time. Home counts **days without a slip out of the last 30** instead of a streak, so one slip costs one day, not everything.
+
+**What if I slip during a focus block?** A block can't watch you or undo a slip; it removes the easy route while it runs, so the peak of an urge (usually ten minutes or so) passes without a door to walk through. It can be beaten: by an app you allowed (a browser is the usual leak, so keep browsers off the allowed list), by another device, or once the block ends. When it happens, tap **I already slipped** in the journal. It asks which of those it was, and turns the answer into one specific change. Also turn on **Private DNS** (Step 3), which filters every browser and app all day, not only during a block.
 
 **The AI deep dive:** in the journal's **Settings**, pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key, and press **Test connection**. Use **Load models from my account** if a model name is rejected. Fill in **About you** with your goals and how blunt you want the coach to be; it is added to every deep dive.
 
@@ -98,7 +101,7 @@ Everything you write stays on your phone, except what you send for a deep dive o
 ## A simple daily routine
 1. Morning: check today's schedule and pick your subject.
 2. Study: 60-minute focus sessions, answer honestly.
-3. When an urge hits: use the urge log instead of arguing with yourself.
+3. When an urge hits: use the Urge Journal instead of arguing with yourself.
 4. Sunday: read your focus log and urge summary, export a backup, and adjust one schedule.
 
 ## Be realistic

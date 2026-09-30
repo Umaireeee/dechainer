@@ -19,17 +19,68 @@ class JournalStore(context: Context) {
         prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next)) }
     }
 
+    /** Adds the entry, or replaces the one made at the same moment (a ride's first note becomes its full entry). */
+    @Synchronized
+    fun put(entry: Entry) {
+        val list = all()
+        val next = if (list.any { it.time == entry.time }) list.map { if (it.time == entry.time) entry else it } else list + entry
+        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next.takeLast(LIMIT))) }
+    }
+
     @Synchronized
     fun setOutcome(time: Long, outcome: Outcome) = update(time) { it.copy(outcome = outcome) }
 
     @Synchronized
     fun setReport(time: Long, report: String) = update(time) { it.copy(report = report) }
 
-    /** Deletes every entry and the saved weekly review. Used by "delete all my data". */
+    /** Deletes every entry, plan and the saved weekly review. Used by "delete all my data". */
     @Synchronized
     fun clear() {
-        prefs.edit(commit = true) { remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME) }
+        prefs.edit(commit = true) {
+            remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE)
+            remove("dismissed_hot"); remove("dismissed_heavier")
+        }
     }
+
+    // ---- The if-then plans the person saved ----
+
+    @Synchronized
+    fun plans(): List<MyPlan> = MyPlan.listFromJson(prefs.getString(PLANS, null))
+
+    @Synchronized
+    fun addPlan(plan: MyPlan) {
+        prefs.edit(commit = true) { putString(PLANS, MyPlan.listToJson((plans() + plan).takeLast(PLAN_LIMIT))) }
+    }
+
+    @Synchronized
+    fun editPlan(id: Long, text: String) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        prefs.edit(commit = true) {
+            putString(PLANS, MyPlan.listToJson(plans().map { if (it.id == id) it.copy(text = clean.take(300)) else it }))
+        }
+    }
+
+    @Synchronized
+    fun removePlan(id: Long) {
+        prefs.edit(commit = true) { putString(PLANS, MyPlan.listToJson(plans().filter { it.id != id })) }
+    }
+
+    // ---- A ride that has started and not yet been checked in on ----
+
+    /** When the last ride started, or 0 if none is waiting for a check-in. */
+    fun pendingRide(): Long = prefs.getLong(PENDING_RIDE, 0L)
+
+    fun setPendingRide(time: Long) = prefs.edit(commit = true) { putLong(PENDING_RIDE, time) }
+
+    fun clearPendingRide() = prefs.edit(commit = true) { remove(PENDING_RIDE) }
+
+    // ---- Cards the person waved away, so they stay away for a while ----
+
+    fun dismissedAt(card: String): Long = prefs.getLong("dismissed_$card", 0L)
+
+    fun dismiss(card: String, time: Long = System.currentTimeMillis()) =
+        prefs.edit(commit = true) { putLong("dismissed_$card", time) }
 
     /** The whole journal as text, for a backup the person keeps. */
     fun exportJson(): String = Entry.listToJson(all())
@@ -64,7 +115,10 @@ class JournalStore(context: Context) {
         const val KEY = "entries"
         const val REVIEW_TEXT = "review_text"
         const val REVIEW_TIME = "review_time"
+        const val PLANS = "plans"
+        const val PENDING_RIDE = "pending_ride"
         const val LIMIT = 2000
+        const val PLAN_LIMIT = 30
     }
 }
 

@@ -41,7 +41,6 @@ object ScreenInfos {
         "config" -> ScreenInfo(R.string.settings, R.string.info_config_what, R.string.info_config_does, R.string.info_config_how)
         "restrictions" -> ScreenInfo(R.string.protections, R.string.info_restrictions_what, R.string.info_restrictions_does, R.string.info_restrictions_how)
         "impulse_lock" -> ScreenInfo(R.string.impulse_lock, R.string.info_impulse_what, R.string.info_impulse_does, R.string.info_impulse_how)
-        "urge_log" -> ScreenInfo(R.string.urge_log, R.string.info_urge_what, R.string.info_urge_does, R.string.info_urge_how)
         "setup_device_owner" -> ScreenInfo(R.string.info_owner_title, R.string.info_owner_what, R.string.info_owner_does, R.string.info_owner_how)
         else -> null
     }

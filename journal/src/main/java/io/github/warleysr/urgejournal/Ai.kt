@@ -70,9 +70,37 @@ enum class Provider(
 class AiSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("ai", Context.MODE_PRIVATE)
 
+    /**
+     * The API key, kept encrypted with a key that lives in the phone's Keystore and never leaves
+     * it. A key saved in plain text by an earlier version is read once and moved over.
+     */
+    // Decrypting takes a round trip to the Keystore, and the key is read on every redraw.
+    private var cachedKey: String? = null
+
     var key: String
-        get() = prefs.getString("key", "") ?: ""
-        set(v) = prefs.edit { putString("key", v.trim()) }
+        get() {
+            cachedKey?.let { return it }
+            val value = prefs.getString("key_enc", null)?.let { SecretBox.open(it) ?: "" } ?: run {
+                val old = prefs.getString("key", "") ?: ""
+                if (old.isNotBlank()) key = old
+                old
+            }
+            cachedKey = value
+            return value
+        }
+        set(v) {
+            val clean = v.trim()
+            cachedKey = clean
+            val sealed = if (clean.isEmpty()) null else SecretBox.seal(clean)
+            prefs.edit {
+                when {
+                    clean.isEmpty() -> { remove("key_enc"); remove("key") }
+                    sealed != null -> { putString("key_enc", sealed); remove("key") }
+                    // No Keystore on this phone: better a working key than none.
+                    else -> { remove("key_enc"); putString("key", clean) }
+                }
+            }
+        }
 
     /** The chosen provider, or the one the key looks like, or OpenRouter as a last resort. */
     var provider: Provider
@@ -111,11 +139,59 @@ class AiSettings(context: Context) {
 
     /** Has the person agreed to send their answers to this provider? Changing provider asks again. */
     var consent: Boolean
-        get() = prefs.getString("consent_for", null) == provider.name
-        set(v) = prefs.edit { if (v) putString("consent_for", provider.name) else remove("consent_for") }
+        get() = prefs.getString("consent_for", null) == consentKey
+        set(v) = prefs.edit { if (v) putString("consent_for", consentKey) else remove("consent_for") }
+
+    /** Consent is for one destination: for your own service address, a different address asks again. */
+    private val consentKey: String
+        get() = if (provider == Provider.CUSTOM) provider.name + "|" + customBase.trim().lowercase() else provider.name
 }
 
 const val ABOUT_LIMIT = 600
+
+/** AES-GCM with a key held in the Android Keystore, so the AI key is not readable from a backup or a copy of the files. */
+object SecretBox {
+    private const val ALIAS = "urge_journal_ai_key"
+    private const val PROVIDER = "AndroidKeyStore"
+    private const val TRANSFORM = "AES/GCM/NoPadding"
+    private const val IV_BYTES = 12
+
+    private fun key(): javax.crypto.SecretKey {
+        val store = java.security.KeyStore.getInstance(PROVIDER).apply { load(null) }
+        (store.getKey(ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
+        val gen = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
+        gen.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                ALIAS,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+        )
+        return gen.generateKey()
+    }
+
+    /** Encrypted text safe to store, or null if this phone can't do it. */
+    fun seal(plain: String): String? = runCatching {
+        val cipher = javax.crypto.Cipher.getInstance(TRANSFORM)
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key())
+        val out = cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        android.util.Base64.encodeToString(out, android.util.Base64.NO_WRAP)
+    }.getOrNull()
+
+    /** The text [seal] made, or null if it can't be read (a wiped Keystore, for example). */
+    fun open(sealed: String): String? = runCatching {
+        val bytes = android.util.Base64.decode(sealed, android.util.Base64.NO_WRAP)
+        val cipher = javax.crypto.Cipher.getInstance(TRANSFORM)
+        cipher.init(
+            javax.crypto.Cipher.DECRYPT_MODE, key(),
+            javax.crypto.spec.GCMParameterSpec(128, bytes, 0, IV_BYTES)
+        )
+        String(cipher.doFinal(bytes, IV_BYTES, bytes.size - IV_BYTES), Charsets.UTF_8)
+    }.getOrNull()
+}
 
 /** What went wrong, in terms the person can act on. */
 enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL }
@@ -284,6 +360,8 @@ Reply with ONLY one JSON object, no other text, in exactly this shape:
         Q.entries.forEach { q ->
             entry.answers[q]?.let { appendLine("${Plain.question(q)}: ${Plain.answer(it)}") }
         }
+        entry.after?.let { appendLine("After riding it out for ten minutes: ${Plain.after(it)}") }
+        if (entry.tried.isNotEmpty()) appendLine("What they tried: ${entry.tried.joinToString(", ") { Plain.step(it) }}")
         if (entry.note.isNotBlank()) {
             appendLine()
             appendLine("In their own words: ${entry.note.trim().take(1200)}")
@@ -389,12 +467,15 @@ object ReportParser {
 /** A blunt check on the free-text note, so a person in crisis gets care instead of a report. */
 object Safety {
     private val markers = listOf(
-        "kill myself", "end my life", "want to die", "suicide", "suicidal", "hurt myself",
-        "harm myself", "self harm", "self-harm", "don't want to live", "dont want to live", "no reason to live"
+        "kill myself", "kill me", "end my life", "end it all", "take my own life", "want to die",
+        "wish i was dead", "wish i were dead", "better off dead", "suicide", "suicidal", "hurt myself",
+        "harm myself", "self harm", "self-harm", "don't want to live", "dont want to live",
+        "don't want to be here", "no reason to live", "can't go on", "cant go on"
     )
 
     fun needsSupport(note: String): Boolean {
-        val t = note.lowercase()
+        // Phone keyboards type a curly apostrophe; the phrases above use the plain one.
+        val t = note.lowercase().replace('\u2019', '\'').replace('\u2018', '\'').replace('`', '\'')
         return markers.any { it in t }
     }
 }

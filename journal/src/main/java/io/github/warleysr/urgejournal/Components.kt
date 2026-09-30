@@ -4,12 +4,14 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,7 @@ fun label(prefix: String, key: Enum<*>): String {
 /** The one big call to action: a slowly breathing ember. Calm on purpose; nothing flashes. */
 @Composable
 fun Ember(text: String, onClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val transition = rememberInfiniteTransition(label = "ember")
     val scale by transition.animateFloat(
         initialValue = 1f,
@@ -72,7 +76,10 @@ fun Ember(text: String, onClick: () -> Unit) {
                 .scale(scale)
                 .clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34))))
-                .clickable(onClick = onClick),
+                .clickable {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onClick()
+                },
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -88,12 +95,15 @@ fun Ember(text: String, onClick: () -> Unit) {
 
 /** An answer to tap. Bordered rather than filled, so a screen of them stays quiet. */
 @Composable
-fun OptionCard(text: String, onClick: () -> Unit) {
+fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
@@ -183,22 +193,40 @@ fun Stat(value: String, caption: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Seven days at a glance: amber for urges ridden out, terracotta for the ones given in to. */
+/**
+ * Bars at a glance: amber for urges ridden out, terracotta for the ones given in to. With [onPick]
+ * a bar can be tapped, and the [selected] one is drawn brighter. [labels] replaces the weekday
+ * letters, which is how the twelve-week view shows the day each week starts.
+ */
 @Composable
-fun WeekBars(bars: List<Insights.DayBar>) {
+fun WeekBars(
+    bars: List<Insights.DayBar>,
+    labels: List<String>? = null,
+    selected: Int? = null,
+    onPick: ((Int) -> Unit)? = null
+) {
     val max = (bars.maxOfOrNull { it.resisted + it.gaveIn } ?: 0).coerceAtLeast(1)
     val ok = MaterialTheme.colorScheme.primary
     val bad = MaterialTheme.colorScheme.error
     val track = MaterialTheme.colorScheme.surfaceVariant
+    val picked = MaterialTheme.colorScheme.outlineVariant
+    val tap = if (onPick != null) {
+        Modifier.pointerInput(bars.size) {
+            detectTapGestures { offset ->
+                val slot = size.width.toFloat() / bars.size.coerceAtLeast(1)
+                onPick((offset.x / slot).toInt().coerceIn(0, (bars.size - 1).coerceAtLeast(0)))
+            }
+        }
+    } else Modifier
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(88.dp)) {
-            val gap = 10.dp.toPx()
+        Canvas(Modifier.fillMaxWidth().height(88.dp).then(tap)) {
+            val gap = (if (bars.size > 10) 5.dp else 10.dp).toPx()
             val n = bars.size.coerceAtLeast(1)
             val w = (size.width - gap * (n - 1)) / n
-            val radius = CornerRadius(8.dp.toPx())
+            val radius = CornerRadius(8.dp.toPx().coerceAtMost(w / 2))
             bars.forEachIndexed { i, b ->
                 val x = i * (w + gap)
-                drawRoundRect(track, Offset(x, 0f), Size(w, size.height), radius)
+                drawRoundRect(if (i == selected) picked else track, Offset(x, 0f), Size(w, size.height), radius)
                 val total = b.resisted + b.gaveIn
                 if (total > 0) {
                     val h = size.height * total / max
@@ -211,11 +239,11 @@ fun WeekBars(bars: List<Insights.DayBar>) {
             }
         }
         Row(Modifier.fillMaxWidth()) {
-            bars.forEach { b ->
+            bars.forEachIndexed { i, b ->
                 Text(
-                    b.date.dayOfWeek.getDisplayName(DayStyle.NARROW, Locale.getDefault()),
+                    labels?.getOrNull(i) ?: b.date.dayOfWeek.getDisplayName(DayStyle.NARROW, Locale.getDefault()),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (i == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
                 )
@@ -260,5 +288,59 @@ fun Breathing(text: String) {
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
         )
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * A slow circle to breathe with: it grows for 4 seconds and shrinks for 6, and holds the time left
+ * in its middle. It only moves; nothing flashes.
+ */
+@Composable
+fun BreathCircle(inhale: Boolean, centerText: String, caption: String) {
+    val transition = rememberInfiniteTransition(label = "breathCircle")
+    val scale by transition.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 0.72f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 10_000
+                0.72f at 0
+                1f at 4_000
+                0.72f at 10_000
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "breathScale"
+    )
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(260.dp)) {
+            Box(
+                Modifier
+                    .size(260.dp)
+                    .scale(scale)
+                    .clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(Color(0x55D9A55B), Color(0x11D9A55B))))
+            )
+            Box(
+                Modifier
+                    .size(170.dp)
+                    .scale(0.85f + scale * 0.15f)
+                    .clip(CircleShape)
+                    .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34)))),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    centerText,
+                    color = Color(0xFF2A1F10),
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        Text(
+            caption,
+            style = MaterialTheme.typography.titleLarge,
+            color = if (inhale) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

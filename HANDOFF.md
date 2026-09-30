@@ -1,12 +1,12 @@
 # Project handoff (read this first in a new session)
 
 Last updated: 2026-09-29. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
-Working branch: `ccr-15667a04-h0f1td` (holds work newer than `main-clean`; **not yet merged**, see "State").
+The journal, the door and the guided-ride upgrade are all on `main-clean` (PR #3 merged; the ride upgrade follows it, see "State").
 
 ## What this project is
 Two Android apps in one repo, built to cut compulsive phone use (and porn urges) and to protect study time.
 
-1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, impulse lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, a simple local urge log (Settings), and the "urge action door" below.
+1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, impulse lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, and the "urge action door" below.
 2. **`:journal` = Urge Journal** (new). An adaptive interview for the moment of an urge or a slip, a rule-based coach, an optional AI "deep dive", a weekly review, history, backup, and a **Lock it in** button that asks Déchaîner to block.
 
 Both are signed with the same key (release workflow), because the link between them is a signature-level permission.
@@ -32,9 +32,20 @@ Both are signed with the same key (release workflow), because the link between t
 - The journal release build has R8 minify on (`isShrinkResources=false` on purpose: labels are looked up by name).
 
 ## State
-- Merged to `main-clean` via PR #1 (repo cleanup, source committed directly, old patches removed) and PR #2 (presets, urge log, 4-day forced removal, GUIDE).
-- On branch `ccr-15667a04-h0f1td` and **not merged yet**: the urge action door, the whole `:journal` module, providers, weekly review, backup, About-you, depth settings. CI was green through commit `3a64b4f`; commit `4ce6659` (deeper deep dives, no duplicate built-in steps) was pushed and its CI was still being checked.
-- The user has run the journal on a phone: the DeepSeek deep dive works and reads well; the block button showed and the setup checklist exists. **Not yet confirmed by the user:** that "Pause my distraction apps" really suspends the chosen apps end to end, the new logo, and the release APK size (was 43 MB before removing extended icons and enabling R8).
+- `main-clean` holds everything through PR #3 (the `:journal` module, the door, providers, weekly review, backup, HANDOFF).
+- **Guided-ride upgrade** (built after PR #3; see the branch/PR it landed on): the journal's first tap is now
+  **one tap = `IMPULSE_BLOCK` 30 min + a ten-minute guided ride** (`RideScreen`: breathing circle, one step, the person's own rule), *then* a check-in (`AfterScreen`: passed / weaker / still strong, what was tried), then an optional **3-question** interview (`QuestionTree.sequence(..., quick = true)`) and the plan.
+  - Feedback loop: `Entry.tried` + `Entry.after`; `Coach.rank` reorders steps by the person's own success rate once a step has `Coach.MIN_TRIES` (3) tries; `Coach.rideStep` picks the ride's one step.
+  - `Notifier.kt`: optional plain check-in notification ~20 min after a ride, optional daily heads-up (with a "pause my apps for an hour" action) from `Insights.hotWindow` (needs >= 6 entries in 30 days, >= 4 and >= 40% in one window), `ReminderReceiver` (re-arms after boot). Inexact alarms only; permission is asked from a tap in Settings/Home, never at the peak of an urge.
+  - `MyPlan`: the person's own If-then rules (written/edited by them; the coach only suggests wording). Stored in `JournalStore`, shown on rides and plans, managed in Settings.
+  - Softer slip framing: `Insights.cleanDays` ("X of the last N days without a slip") replaces the streak; `Insights.heavier` shows one dismissible care card; `Insights.shareText` is a counts-only share.
+  - The AI key is encrypted with the Android Keystore (`SecretBox`); old plain keys migrate on first read. Backups are already off.
+- **Ride lock: tried and removed on request.** An all-apps lock (`RIDE_LOCK` door command, `RideLock`, an enforcer source) was built and then deliberately reverted; Déchaîner is back to its state at PR #3 plus nothing. A ride pauses only the apps chosen in Déchaîner > Settings > Impulse lock (`IMPULSE_BLOCK`). It could be rebuilt from git history (commit b34821f) if wanted.
+- **Ease-of-use pass:** the ember starts on a tap again (a 0.7 s hold-to-start, a one-tap FOCUS_BLOCK button and an evening "did today go to plan?" check-in were built and then removed on request; see commit e76004a); a stub entry is saved the moment a ride starts (`JournalStore.put` upserts by time), so leaving loses nothing; `RideTileService` (quick-settings tile) and a static launcher shortcut start a ride via `action=ride`; the risky window is now a sliding four-hour window (`Insights.hotWindow`).
+- **Full log** (`LogScreen`): Home > "See every entry". 14-day / 12-week chart (tap a bar to scope to that day or week, `Insights.weeks`/`entriesIn`), feelings tally, filter (`LogFilter`), every entry grouped by day (tap to open the detail and come back to the log), and a CSV export (`CsvExport`).
+- **Déchaîner's own Urge log was removed on request** (screen, storage, Settings row, strings, tests). The door (`UrgeActionReceiver`) stays: it is what lets the journal pause apps. Entries saved in the old Déchaîner urge log are no longer reachable.
+- The pure logic has JVM tests (`JournalLogicTest`, 43+). A scratch JVM project (Model.kt + Ai.kt without the Android classes + the test) compiled and passed locally; Compose/Android code is only compiled by CI.
+- **Not yet confirmed by the user on a phone:** the whole ride flow, that "Pause my distraction apps" really suspends the chosen apps end to end, notification permission prompts, the new logo, and the release APK size.
 
 ## Constraints of the authoring sandbox (important)
 - No Android SDK: nothing can be compiled or run locally. **CI is the only compile check**, so push small and check CI.
@@ -49,12 +60,12 @@ Both are signed with the same key (release workflow), because the link between t
 - Be honest: never promise it will "cure" anything or that no more updates are needed.
 
 ## Ideas not built yet (roughly by value)
-1. **"Make this a rule"** button: turn the AI's "If X, then Y" into a Déchaîner schedule (needs a new tighten-only door action plus a confirmation screen).
-2. Quick access: home-screen widget, quick-settings tile, or a notification action to log an urge in two taps.
+1. **"Make this a rule" into Déchaîner**: turn a saved If-then rule into a real Déchaîner schedule (needs a new tighten-only door action plus a confirmation screen in Déchaîner).
+2. Quick access without opening the app: home-screen widget, quick-settings tile or lock-screen shortcut that fires the ride (the ember is the only one-tap today).
 3. Daily evening check-in reminder ("did you do the work?") tied to the study block.
-4. Grayscale during focus blocks or urge blocks (needs WRITE_SECURE_SETTINGS via Shizuku, as in upstream's ColorFilterController).
-5. Bedtime mode as a one-tap preset; "friction" delays before short unblocks.
-6. Optional accountability: share the weekly review (share sheet exists for the older urge log; add for the journal).
-7. Encrypt the stored AI key with the Android Keystore; crash logging for release builds.
-8. On-device UI tests; tune the coach prompts after a week of real entries.
-9. Housekeeping: merge the branch to `main-clean` once the user confirms it works on the phone, then delete the old branch in the GitHub UI, update `README.md` and `GUIDE.md`.
+4. Grayscale during rides or focus blocks (needs WRITE_SECURE_SETTINGS via Shizuku, as in upstream's ColorFilterController).
+5. Bedtime mode as a one-tap preset; "friction" delays before short unblocks; a phone-charges-outside reminder.
+6. Optional accountability beyond the counts-only share text (a weekly send to one trusted person).
+7. Crash logging for release builds; on-device UI tests; tune the coach prompts after a week of real entries (the AI prompt now includes the ride result and what was tried).
+8. A slip-in-focus-block flow inside Déchaîner itself (today the slip is logged in the journal).
+9. Housekeeping: delete old remote branches in the GitHub UI; keep README/GUIDE in step.

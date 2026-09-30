@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="ride"
+        android:enabled="true"
+        android:icon="@drawable/ic_flame"
+        android:shortcutShortLabel="@string/shortcut_ride_short"
+        android:shortcutLongLabel="@string/shortcut_ride_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="io.github.warleysr.urgejournal"
+            android:targetClass="io.github.warleysr.urgejournal.MainActivity">
+            <extra android:name="action" android:value="ride" />
+        </intent>
+    </shortcut>
+</shortcuts>
