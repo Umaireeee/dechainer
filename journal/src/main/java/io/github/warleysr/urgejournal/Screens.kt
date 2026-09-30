@@ -649,6 +649,7 @@ fun PlanScreen(
         Eyebrow(stringResource(R.string.deep_title))
         when (ai) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
+            is AiState.Streaming -> ReportView(ai.text, streaming = true)
             is AiState.Ready -> ReportView(ai.text)
             is AiState.Failed -> Panel {
                 Text(stringResource(errorRes(ai.error)), style = MaterialTheme.typography.bodyLarge)
@@ -747,11 +748,13 @@ fun PlanScreen(
 
 /** The deep dive as a short letter: what's going on, then what to do, then what to learn. */
 @Composable
-fun ReportView(raw: String) {
+fun ReportView(raw: String, streaming: Boolean = false) {
     val context = LocalContext.current
-    val report = remember(raw) { ReportParser.parse(raw) }
+    // While the reply is still being written, read what has arrived so far.
+    val report = remember(raw, streaming) { if (streaming) ReportParser.parsePartial(raw) else ReportParser.parse(raw) }
     if (report == null) {
-        Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
+        if (streaming) Panel { Breathing(stringResource(R.string.deep_loading)) }
+        else Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
         return
     }
     val startExpanded = remember { AiSettings(context).expandAll }
@@ -801,6 +804,7 @@ fun ReportView(raw: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (streaming) Breathing(stringResource(R.string.deep_writing))
     }
 }
 
@@ -839,6 +843,7 @@ fun ReviewScreen(
         )
         when (state) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.review_loading)) }
+            is AiState.Streaming -> ReportView(state.text, streaming = true)
             is AiState.Ready -> {
                 ReportView(state.text)
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {

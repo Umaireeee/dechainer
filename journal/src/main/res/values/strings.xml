@@ -378,4 +378,5 @@
     <string name="key_plain_no">Don\'t save</string>
 
     <string name="plan_fallback_note">The AI isn\'t available right now, so these are the app\'s basic tips. Add a key in Settings or try again for a personal plan.</string>
+    <string name="deep_writing">Still writing…</string>
 </resources>

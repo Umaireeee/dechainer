@@ -859,4 +859,89 @@ class JournalLogicTest {
         assertTrue("leave room 6 of 6" in weekly)
         assertFalse("SECRET" in weekly)
     }
+
+    // ---- Streaming ----
+
+    private fun sse(vararg lines: String) = java.io.BufferedReader(java.io.StringReader(lines.joinToString("\n")))
+
+    @Test
+    fun aStreamedReplyIsReadPieceByPieceAndIgnoresNoise() {
+        val shown = mutableListOf<String>()
+        val text = Sse.read(
+            sse(
+                """data: {"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}""",
+                """data: {"choices":[{"delta":{"content":"{\"headline\": \"You"}}]}""",
+                ": OPENROUTER PROCESSING",
+                "",
+                """data: {"choices":[{"delta":{"content":" are tired\","}}]}""",
+                """data: {"choices":[{"delta":{"content":null},"finish_reason":"stop"}]}""",
+                "data: [DONE]",
+                """data: {"choices":[{"delta":{"content":"never read"}}]}"""
+            )
+        ) { shown += it }
+        assertEquals("{\"headline\": \"You are tired\",", text)
+        // The screen is told everything written so far, each time more arrives.
+        assertEquals(listOf("{\"headline\": \"You", "{\"headline\": \"You are tired\","), shown)
+    }
+
+    @Test
+    fun aServiceThatSendsTheLastPieceAsAWholeMessageStillWorks() {
+        assertEquals("all of it", Sse.delta("""data: {"choices":[{"message":{"role":"assistant","content":"all of it"}}]}"""))
+        assertNull(Sse.delta("data: not json"))
+        assertNull(Sse.delta("event: ping"))
+        assertTrue(Sse.isDone("data: [DONE]"))
+        assertFalse(Sse.isDone("data: {}"))
+    }
+
+    @Test
+    fun anErrorInTheMiddleOfAStreamIsReportedNotSwallowed() {
+        val failure = try {
+            Sse.read(sse("""data: {"choices":[{"delta":{"content":"ab"}}]}""", """data: {"error":{"message":"rate limited"}}""")) { }
+            null
+        } catch (e: Sse.StreamFailure) {
+            e.message
+        }
+        assertEquals("rate limited", failure)
+    }
+
+    @Test
+    fun aPartlyWrittenReportShowsWhatHasArrivedSoFar() {
+        // Cut in the middle of a sentence: the words so far are shown.
+        assertEquals("You are tir", ReportParser.parsePartial("""{"headline":"You are tir""")!!.headline)
+        // Cut inside a list: finished items and the growing one.
+        val r = ReportParser.parsePartial("""```json
+            {"headline":"A","why":"B","right_now":["Stand up","Leave the ro""")!!
+        assertEquals("A", r.headline)
+        assertEquals(listOf("Stand up", "Leave the ro"), r.rightNow)
+        // Cut inside a key, or right after a colon or comma: the dangling part is dropped, not an error.
+        assertEquals("A", ReportParser.parsePartial("""{"headline":"A","wh""")!!.headline)
+        assertEquals("A", ReportParser.parsePartial("""{"headline":"A","why":""")!!.headline)
+        assertEquals("A", ReportParser.parsePartial("""{"headline":"A",""")!!.headline)
+        // Inside a list of objects.
+        val u = ReportParser.parsePartial("""{"headline":"A","understand":[{"title":"Urge surfing","body":"They pass""")!!
+        assertEquals(listOf("Urge surfing" to "They pass"), u.understand)
+        // A half-written escape at the very end.
+        assertEquals("say", ReportParser.parsePartial("{\"headline\":\"say \\")!!.headline)
+        assertEquals("caf", ReportParser.parsePartial("{\"headline\":\"caf\\u00")!!.headline)
+        // Nothing to show yet.
+        assertNull(ReportParser.parsePartial(""))
+        assertNull(ReportParser.parsePartial("Sure, here is"))
+        assertNull(ReportParser.parsePartial("{"))
+    }
+
+    @Test
+    fun aFinishedReplyReadsTheSameWhetherOrNotItWasStreamed() {
+        val full = """{"headline":"H","why":"W","right_now":["a","b"],"today":["t"],"this_week":["If 23:00, then charge outside."],
+            "long_term":["l"],"understand":[{"title":"T","body":"B"}],"pattern":"P","encouragement":"E"}"""
+        assertEquals(ReportParser.parse(full), ReportParser.parsePartial(full))
+        // And every prefix of it can be read without an error.
+        for (n in 1..full.length) {
+            ReportParser.parsePartial(full.substring(0, n))
+        }
+    }
+
+    @Test
+    fun aStreamingCallWithABadAddressFailsWithoutTouchingTheNetwork() {
+        assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chatStream(Provider.CUSTOM, "not a url", "k", "m", "s", "u") { })
+    }
 }

@@ -261,38 +261,98 @@ object AiClient {
         return first
     }
 
+    private fun buildBody(provider: Provider, model: String, system: String, user: String, stream: Boolean): JSONObject {
+        val body = JSONObject()
+            .put("model", model.trim().removePrefix("models/"))
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", system))
+                    .put(JSONObject().put("role", "user").put("content", user))
+            )
+        // OpenAI's newer models take a different name for the cap and refuse a custom temperature.
+        if (provider == Provider.OPENAI) {
+            body.put("max_completion_tokens", 4096)
+        } else {
+            body.put("max_tokens", 4096).put("temperature", 0.6)
+        }
+        if (stream) body.put("stream", true)
+        return body
+    }
+
+    private fun open(provider: Provider, baseUrl: String, key: String, body: JSONObject, stream: Boolean): HttpURLConnection {
+        val conn = (URL(endpoint(baseUrl)).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15_000
+            // Between pieces of the reply when streaming, so a long answer is not cut off while it is still arriving.
+            readTimeout = 120_000
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer $key")
+            setRequestProperty("Content-Type", "application/json")
+            if (stream) setRequestProperty("Accept", "text/event-stream")
+            if (provider == Provider.OPENROUTER) setRequestProperty("X-Title", "Urge Journal")
+        }
+        conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        return conn
+    }
+
     private fun chatOnce(provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String): AiResult {
         if (!validEndpoint(baseUrl)) return AiResult.Failed(AiError.BAD_URL)
         return try {
-            val body = JSONObject()
-                .put("model", model.trim().removePrefix("models/"))
-                .put(
-                    "messages",
-                    JSONArray()
-                        .put(JSONObject().put("role", "system").put("content", system))
-                        .put(JSONObject().put("role", "user").put("content", user))
-                )
-            // OpenAI's newer models take a different name for the cap and refuse a custom temperature.
-            if (provider == Provider.OPENAI) {
-                body.put("max_completion_tokens", 4096)
-            } else {
-                body.put("max_tokens", 4096).put("temperature", 0.6)
-            }
-            val conn = (URL(endpoint(baseUrl)).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 120_000
-                doOutput = true
-                setRequestProperty("Authorization", "Bearer $key")
-                setRequestProperty("Content-Type", "application/json")
-                if (provider == Provider.OPENROUTER) setRequestProperty("X-Title", "Urge Journal")
-            }
-            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val conn = open(provider, baseUrl, key, buildBody(provider, model, system, user, stream = false), stream = false)
             val code = conn.responseCode
             val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
             conn.disconnect()
             interpret(code, text)
+        } catch (_: IOException) {
+            AiResult.Failed(AiError.NETWORK)
+        } catch (_: RuntimeException) {
+            AiResult.Failed(AiError.SERVER)
+        }
+    }
+
+    /**
+     * Like [chat], but the reply is read as it is written: [onText] is called with everything
+     * received so far each time more arrives, so the screen can fill in while the model is still
+     * writing. Blocking; call it off the main thread. A service that answers with a whole reply
+     * instead of a stream is handled too, so nothing that worked before stops working.
+     */
+    fun chatStream(
+        provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String,
+        onText: (String) -> Unit
+    ): AiResult {
+        val first = streamOnce(provider, baseUrl, key, model, system, user, onText)
+        if (first is AiResult.Failed) {
+            fallbackModel(provider, model, first.error)?.let { return streamOnce(provider, baseUrl, key, it, system, user, onText) }
+        }
+        return first
+    }
+
+    private fun streamOnce(
+        provider: Provider, baseUrl: String, key: String, model: String, system: String, user: String,
+        onText: (String) -> Unit
+    ): AiResult {
+        if (!validEndpoint(baseUrl)) return AiResult.Failed(AiError.BAD_URL)
+        return try {
+            val conn = open(provider, baseUrl, key, buildBody(provider, model, system, user, stream = true), stream = true)
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val text = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                conn.disconnect()
+                return interpret(code, text)
+            }
+            if (!(conn.contentType ?: "").contains("event-stream", ignoreCase = true)) {
+                // Not a stream after all: the whole reply is in the body.
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                return interpret(code, text)
+            }
+            val full = conn.inputStream.bufferedReader(Charsets.UTF_8).use { Sse.read(it, onText) }
+            conn.disconnect()
+            if (full.isBlank()) AiResult.Failed(AiError.EMPTY) else AiResult.Ok(full)
+        } catch (e: Sse.StreamFailure) {
+            AiResult.Failed(AiError.SERVER, e.message.orEmpty().take(320))
         } catch (_: IOException) {
             AiResult.Failed(AiError.NETWORK)
         } catch (_: RuntimeException) {
@@ -370,6 +430,121 @@ object AiClient {
             JSONArray(body).getJSONObject(0).getJSONObject("error").getString("message")
         }.getOrNull()
         return (text ?: "").replace('\n', ' ').take(320)
+    }
+}
+
+/** Reads a streamed (server-sent events) reply: lines of `data: {json}` ending with `data: [DONE]`. */
+object Sse {
+    class StreamFailure(message: String) : RuntimeException(message)
+
+    private fun payload(line: String): String? {
+        val l = line.trim()
+        return if (l.startsWith("data:")) l.removePrefix("data:").trim() else null
+    }
+
+    fun isDone(line: String): Boolean = payload(line) == "[DONE]"
+
+    /**
+     * The piece of text one line carries, or null for lines that carry none: comments and
+     * keep-alives, the first chunk that only names the role, empty pieces, and the end marker.
+     */
+    fun delta(line: String): String? {
+        val data = payload(line)?.takeIf { it.isNotEmpty() && it != "[DONE]" } ?: return null
+        val choice = runCatching { JSONObject(data).optJSONArray("choices")?.optJSONObject(0) }.getOrNull() ?: return null
+        val piece = choice.optJSONObject("delta")
+        val text = when {
+            piece != null && !piece.isNull("content") -> piece.optString("content")
+            // Some services send the last piece as a whole message.
+            choice.optJSONObject("message")?.isNull("content") == false -> choice.optJSONObject("message")?.optString("content")
+            else -> null
+        }
+        return text?.takeIf { it.isNotEmpty() }
+    }
+
+    /** The service's own message when a line reports an error in the middle of a stream, else null. */
+    fun error(line: String): String? {
+        val data = payload(line)?.takeIf { it.startsWith("{") } ?: return null
+        val err = runCatching { JSONObject(data).optJSONObject("error") }.getOrNull() ?: return null
+        return err.optString("message").ifBlank { "The service reported an error." }
+    }
+
+    /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. */
+    fun read(reader: java.io.BufferedReader, onText: (String) -> Unit): String {
+        val all = StringBuilder()
+        while (true) {
+            val line = reader.readLine() ?: break
+            if (isDone(line)) break
+            error(line)?.let { throw StreamFailure(it) }
+            val piece = delta(line) ?: continue
+            all.append(piece)
+            onText(all.toString())
+        }
+        return all.toString()
+    }
+}
+
+/**
+ * Closes a JSON text that was cut off part-way, so what has arrived so far can be read while the
+ * rest is still being written: an open string is ended, a half-written key or a dangling colon or
+ * comma is dropped, and every open bracket is closed.
+ */
+object JsonRepair {
+    fun close(partial: String): String? {
+        if (partial.isEmpty()) return null
+        val stack = ArrayList<Char>()
+        val expectKey = ArrayList<Boolean>()
+        var inString = false
+        var escape = false
+        var stringStart = -1
+        var stringIsKey = false
+        var lastKeyStart = -1
+        partial.forEachIndexed { i, c ->
+            if (inString) {
+                when {
+                    escape -> escape = false
+                    c == '\\' -> escape = true
+                    c == '"' -> inString = false
+                }
+                return@forEachIndexed
+            }
+            when (c) {
+                '"' -> {
+                    inString = true
+                    stringStart = i
+                    stringIsKey = stack.isNotEmpty() && stack.last() == '{' && expectKey.last()
+                    if (stringIsKey) lastKeyStart = i
+                }
+                '{' -> { stack.add('{'); expectKey.add(true) }
+                '[' -> { stack.add('['); expectKey.add(false) }
+                '}', ']' -> if (stack.isNotEmpty()) { stack.removeAt(stack.size - 1); expectKey.removeAt(expectKey.size - 1) }
+                ':' -> if (stack.isNotEmpty() && stack.last() == '{') expectKey[expectKey.size - 1] = false
+                ',' -> if (stack.isNotEmpty() && stack.last() == '{') expectKey[expectKey.size - 1] = true
+            }
+        }
+        var out = when {
+            inString && stringIsKey -> partial.substring(0, stringStart)
+            inString -> {
+                var s = if (escape) partial.dropLast(1) else partial
+                s = s.replace(Regex("\\\\u[0-9a-fA-F]{0,3}$"), "")
+                "$s\""
+            }
+            else -> partial
+        }
+        // Whatever is left dangling after a cut: a comma, a colon with no value, a half-written literal.
+        var guard = 0
+        while (guard++ < 8) {
+            out = out.trimEnd()
+            out = when {
+                out.endsWith(",") -> out.dropLast(1)
+                out.endsWith(":") && lastKeyStart in 0 until out.length -> out.substring(0, lastKeyStart)
+                out.isNotEmpty() && out.last().let { it.isLetterOrDigit() || it == '.' || it == '-' || it == '+' } &&
+                    !out.endsWith("\"") -> out.trimEnd { it.isLetterOrDigit() || it == '.' || it == '-' || it == '+' }
+                else -> break
+            }
+        }
+        val sb = StringBuilder(out)
+        for (open in stack.asReversed()) sb.append(if (open == '{') '}' else ']')
+        return sb.toString()
     }
 }
 
@@ -569,6 +744,14 @@ data class Report(
 }
 
 object ReportParser {
+    /** Reads a reply that is still being written: whatever has arrived so far, or null before there is anything to show. */
+    fun parsePartial(text: String): Report? {
+        val start = text.indexOf('{')
+        if (start < 0) return null
+        val closed = JsonRepair.close(text.substring(start)) ?: return null
+        return parse(closed)
+    }
+
     /** Pulls the JSON object out of the reply, tolerating code fences and stray text around it. */
     fun parse(text: String): Report? {
         val start = text.indexOf('{')
