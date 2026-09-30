@@ -169,7 +169,7 @@
     <string name="note_continue">Continue</string>
 
     <string name="consent_title">Send this to an AI?</string>
-    <string name="consent_body">To write your deep dive, your answers and the note you wrote are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
+    <string name="consent_body">To write your deep dive, your answers, the note you wrote, your goals text, the rules you saved and counts from your own history are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
     <string name="consent_yes">Send</string>
     <string name="consent_no">Not now</string>
 
@@ -229,7 +229,7 @@
     <string name="review_intro">What your last days show, and what to try next. Only counts and patterns are used, never your notes.</string>
     <string name="review_loading">Looking at your week…</string>
     <string name="review_refresh">Write it again</string>
-    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal (never your notes) are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
+    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal, including which steps worked (never your notes), are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
     <string name="recent_more">Show more</string>
     <string name="deep_more">Show the rest</string>
     <string name="deep_less">Show less</string>
@@ -376,4 +376,6 @@
     <string name="key_plain_body">Android\'s secure storage isn\'t working here, so your AI key can\'t be encrypted. You can keep it as plain text in this app\'s private storage, or not save it. Anyone with a copy of the app\'s files could read a plain-text key.</string>
     <string name="key_plain_yes">Save it anyway</string>
     <string name="key_plain_no">Don\'t save</string>
+
+    <string name="plan_fallback_note">The AI isn\'t available right now, so these are the app\'s basic tips. Add a key in Settings or try again for a personal plan.</string>
 </resources>

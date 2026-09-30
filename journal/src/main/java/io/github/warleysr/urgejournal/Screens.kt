@@ -624,16 +624,23 @@ fun PlanScreen(
             Panel { Text(it.text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
         }
 
-        // The app's own quick steps are a fallback. Once the AI has written personal ones they
-        // would only repeat it, so they step aside.
+        // The AI is the coach whenever it is available. The app's own basic tips are only a safety
+        // net for when it is not: no key, no connection, a service error, or consent declined.
+        val builtInFallback = ai is AiState.Failed || ai is AiState.NeedsKey || ai is AiState.Idle
         val aiHasSteps = ai is AiState.Ready && ReportParser.parse(ai.text)?.rightNow?.isNotEmpty() == true
-        if (!aiHasSteps) {
+        if (builtInFallback) {
+            Text(
+                stringResource(R.string.plan_fallback_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (builtInFallback || (ai is AiState.Ready && !aiHasSteps)) {
             Eyebrow(stringResource(R.string.plan_now))
             NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
         }
 
-        // Without a deep dive, still say why it's probably happening.
-        if (ai !is AiState.Ready) {
+        if (builtInFallback) {
             Eyebrow(stringResource(R.string.plan_why))
             Bullets(plan.reasons.map { stringResource(reasonRes(it)) })
         }
@@ -663,7 +670,7 @@ fun PlanScreen(
             else -> {}
         }
 
-        if (plan.rules.isNotEmpty() && ai !is AiState.Ready) {
+        if (plan.rules.isNotEmpty() && builtInFallback) {
             Eyebrow(stringResource(R.string.plan_later))
             Bullets(plan.rules.map { stringResource(ruleRes(it)) })
         }
