@@ -45,6 +45,13 @@ class DechainerApplication : Application() {
             reloadJob = applicationScope.launch {
                 delay(1000)
                 AppRepository.getApps()
+                // A newly installed browser gets the blocklist, SafeSearch and the secure-DNS lock
+                // at once, instead of browsing around the DNS filter until something else re-applies them.
+                try {
+                    BrowserRestrictionsManager(this@DechainerApplication).applyRestrictions()
+                } catch (e: Exception) {
+                    Timber.w(e, "Browser policies not refreshed after an install")
+                }
             }
         }
     }
