@@ -712,4 +712,51 @@ class JournalLogicTest {
         assertNull(Times.checkInAt(start, start + maxAge + 1, delay, maxAge))
         assertNull(Times.checkInAt(0L, start, delay, maxAge))
     }
+
+    @Test
+    fun aRideAskedForFromOutsideCountsDownAndNeverRestartsARunningOne() {
+        val now = 10_000_000L
+        val ten = 10 * 60L
+        assertEquals(RideRequest.Decision.COUNTDOWN, RideRequest.decide(0L, now, ten, alreadyCountingDown = false))
+        // A ride started 3 minutes ago is shown again, not restarted (a double tap on the tile).
+        assertEquals(RideRequest.Decision.RESUME, RideRequest.decide(now - 3 * 60_000L, now, ten, false))
+        // An old ride no longer counts as running.
+        assertEquals(RideRequest.Decision.COUNTDOWN, RideRequest.decide(now - 11 * 60_000L, now, ten, false))
+        // A second request during the countdown does nothing.
+        assertEquals(RideRequest.Decision.IGNORE, RideRequest.decide(0L, now, ten, alreadyCountingDown = true))
+        assertEquals(5, RideRequest.COUNTDOWN_SECONDS)
+    }
+
+    @Test
+    fun theRideShowsTheRealLockStateNotJustThatARequestWasSent() {
+        val now = 5_000L
+        assertEquals(LockState.CHECKING, RideStatus.lockState(null, checked = false, now = now))
+        assertEquals(LockState.UNREACHABLE, RideStatus.lockState(null, checked = true, now = now))
+        assertEquals(LockState.NOT_DEVICE_OWNER, RideStatus.lockState(DoorStatus(false, now + 1000, 0), true, now))
+        assertEquals(LockState.ACTIVE, RideStatus.lockState(DoorStatus(true, now + 1000, 0), true, now))
+        assertEquals(LockState.NOT_ACTIVE, RideStatus.lockState(DoorStatus(true, 0L, 0L), true, now))
+        assertEquals(LockState.NOT_ACTIVE, RideStatus.lockState(DoorStatus(true, now - 1, 0L), true, now))
+    }
+
+    @Test
+    fun oldExportFilesAreDeletedAndNewOnesKept() {
+        val dir = java.nio.file.Files.createTempDirectory("exports").toFile()
+        try {
+            val old = java.io.File(dir, "old.csv").apply { writeText("x"); setLastModified(1_000L) }
+            val fresh = java.io.File(dir, "fresh.csv").apply { writeText("y"); setLastModified(9_000L) }
+            assertEquals(1, ExportFiles.cleanup(dir, olderThanMs = 5_000L, now = 10_000L))
+            assertFalse(old.exists())
+            assertTrue(fresh.exists())
+            // Zero age removes everything, which is what happens just before a new export is written.
+            assertEquals(1, ExportFiles.cleanup(dir, olderThanMs = 0L, now = 10_000L))
+            assertEquals(0, ExportFiles.cleanup(java.io.File(dir, "missing"), 0L, 10_000L))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun clockTimesAreFormattedInThePhonesZone() {
+        assertEquals("14:32", Times.clockAt(ms(5, 14) + 32 * 60_000L, zone))
+    }
 }

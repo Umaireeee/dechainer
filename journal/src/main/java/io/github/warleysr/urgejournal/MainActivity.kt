@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Only a fresh launch carries a request; a recreated screen must not repeat it.
+        applyPrivacy()
         pendingAction = if (savedInstanceState == null) intent?.getStringExtra(EXTRA_ACTION) else null
         setContent {
             UrgeTheme {
@@ -52,6 +53,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Hides the app in recents and blocks screenshots, unless the person turned that off in Settings. */
+    fun applyPrivacy() {
+        val flag = android.view.WindowManager.LayoutParams.FLAG_SECURE
+        if (PrivacySettings(this).hideInRecents) window.setFlags(flag, flag) else window.clearFlags(flag)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -70,7 +77,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW }
+private enum class Screen { HOME, STARTING, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW }
 
 /** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
@@ -98,6 +105,9 @@ private const val RIDE_LOCK_MINUTES = 10
 
 /** "Still strong" locks everything for as long as Déchaîner allows a ride lock to run. */
 private const val LONGER_LOCK_MINUTES = 30
+
+/** How long to wait before asking Déchaîner what is really in force: it has to receive the request first. */
+private const val STATUS_DELAY_MS = 1500L
 
 private const val FORTNIGHT_MS = 14L * 24 * 60 * 60 * 1000
 private const val SIX_HOURS_MS = Notifier.PENDING_MAX_AGE_MS
@@ -128,6 +138,10 @@ private fun App(activity: MainActivity) {
     var blockMinutes by remember { mutableIntStateOf(RIDE_BLOCK_MINUTES) }
     var lockMinutes by remember { mutableIntStateOf(RIDE_LOCK_MINUTES) }
     var doorResult by remember { mutableStateOf<Door.Result?>(null) }
+    var doorStatus by remember { mutableStateOf<DoorStatus?>(null) }
+    var statusChecked by remember { mutableStateOf(false) }
+    var startingAt by remember { mutableLongStateOf(0L) }
+    val privacy = remember { PrivacySettings(context) }
     var pendingAfter by remember { mutableStateOf<After?>(null) }
     var pendingTried by remember { mutableStateOf(emptyList<Step>()) }
     var plans by remember { mutableStateOf(store.plans()) }
@@ -275,6 +289,33 @@ private fun App(activity: MainActivity) {
         val locked = Door.send(context, DoorAction(DoorAction.RIDE_LOCK, totalLockMinutes))
         val paused = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, pauseMinutes))
         doorResult = if (locked == Door.Result.SENT) paused else locked
+        // What was asked for proves nothing on its own: ask Déchaîner what is really in force.
+        doorStatus = null
+        statusChecked = false
+        if (locked == Door.Result.SENT) {
+            thread {
+                Thread.sleep(STATUS_DELAY_MS)
+                doorStatus = Door.status(context)
+                statusChecked = true
+            }
+        } else {
+            statusChecked = true
+        }
+    }
+
+    /** A ride that is already running: show it again instead of starting another. */
+    fun resumeRide() {
+        val started = store.pendingRide()
+        if (started == 0L) return
+        rideStart = started
+        rideClock = started
+        slipped = false
+        quick = true
+        hour = hourOf(started)
+        answers = emptyMap()
+        pendingAfter = null
+        pendingTried = emptyList()
+        screen = Screen.RIDE
     }
 
     fun startRide() {
@@ -351,6 +392,7 @@ private fun App(activity: MainActivity) {
     // Once per launch: a ride nobody checked in on for hours is dropped, with its empty note.
     LaunchedEffect(Unit) {
         store.dropStaleRide(System.currentTimeMillis(), SIX_HOURS_MS)
+        Share.cleanup(context)
         refresh()
     }
 
@@ -368,7 +410,18 @@ private fun App(activity: MainActivity) {
     val action = activity.pendingAction
     LaunchedEffect(action) {
         when (action) {
-            MainActivity.ACTION_RIDE -> startRide()
+            // Asked for from outside the app: never starts at once. A countdown gives a chance to cancel,
+            // and asking again while a ride runs or is about to start changes nothing.
+            MainActivity.ACTION_RIDE -> when (
+                RideRequest.decide(store.pendingRide(), System.currentTimeMillis(), RIDE_SECONDS, screen == Screen.STARTING)
+            ) {
+                RideRequest.Decision.COUNTDOWN -> {
+                    startingAt = System.currentTimeMillis()
+                    screen = Screen.STARTING
+                }
+                RideRequest.Decision.RESUME -> resumeRide()
+                RideRequest.Decision.IGNORE -> {}
+            }
             MainActivity.ACTION_CHECKIN -> startCheckIn()
         }
         if (action != null) {
@@ -442,13 +495,18 @@ private fun App(activity: MainActivity) {
             )
         }
 
+        Screen.STARTING -> {
+            BackHandler { goHome() }
+            StartingScreen(startedAt = startingAt, onStart = { startRide() }, onCancel = { goHome() })
+        }
+
         Screen.RIDE -> {
             BackHandler { goHome() }
             RideScreen(
                 startedAt = rideClock,
-                blockMinutes = blockMinutes,
-                lockMinutes = lockMinutes,
                 door = doorResult,
+                status = doorStatus,
+                statusChecked = statusChecked,
                 step = Coach.rideStep(entries),
                 myPlan = MyPlan.forRide(plans, hour),
                 onDone = { screen = Screen.AFTER },
@@ -612,6 +670,8 @@ private fun App(activity: MainActivity) {
                 settings = settings,
                 store = store,
                 reminders = reminders,
+                privacy = privacy,
+                onPrivacyChanged = { activity.applyPrivacy() },
                 plans = plans,
                 onPlansChanged = { plans = store.plans() },
                 onNeedNotifications = { then -> withNotifications(then) },

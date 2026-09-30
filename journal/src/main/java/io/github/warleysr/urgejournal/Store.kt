@@ -196,6 +196,23 @@ object Door {
     fun hasPermission(context: Context): Boolean =
         context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
+    private const val STATUS_URI = "content://io.github.warleysr.dechainer.status/status"
+
+    /**
+     * Asks Déchaîner what is really going on: is it Device Owner, and until when is the ride lock
+     * running. Null if it can't be reached. Blocking, so call it off the main thread.
+     */
+    fun status(context: Context): DoorStatus? = runCatching {
+        context.contentResolver.query(android.net.Uri.parse(STATUS_URI), null, null, null, null)?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            DoorStatus(
+                deviceOwner = c.getInt(c.getColumnIndexOrThrow("device_owner")) == 1,
+                rideLockUntil = c.getLong(c.getColumnIndexOrThrow("ride_lock_until")),
+                impulseUntil = c.getLong(c.getColumnIndexOrThrow("impulse_until"))
+            )
+        }
+    }.getOrNull()
+
     /**
      * Asks Déchaîner to block. SENT means the request left this app; Déchaîner still has to be
      * Device Owner for it to take effect.
@@ -212,4 +229,13 @@ object Door {
         )
         return Result.SENT
     }
+}
+
+/** Whether the app hides itself in the recent-apps list and blocks screenshots. On by default: entries are private. */
+class PrivacySettings(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("privacy", Context.MODE_PRIVATE)
+
+    var hideInRecents: Boolean
+        get() = prefs.getBoolean("hide", true)
+        set(v) = prefs.edit { putBoolean("hide", v) }
 }

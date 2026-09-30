@@ -14,6 +14,8 @@ object Share {
     /** Writes [text] to [fileName] in the cache and opens the share sheet for it. False if it could not. */
     fun file(context: Context, fileName: String, mime: String, text: String): Boolean = try {
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        // Earlier exports are not needed any more; only the one being shared now stays.
+        ExportFiles.cleanup(dir, olderThanMs = 0L)
         val file = File(dir, fileName).apply { writeText(text) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val send = Intent(Intent.ACTION_SEND).apply {
@@ -25,6 +27,11 @@ object Share {
         true
     } catch (_: Exception) {
         false
+    }
+
+    /** Removes exports left in the cache. Called at launch; the share sheet has long since read anything older than a few minutes. */
+    fun cleanup(context: Context, olderThanMs: Long = 5L * 60 * 1000) {
+        ExportFiles.cleanup(File(context.cacheDir, "exports"), olderThanMs)
     }
 
     /** A short plain-text message, safe because it is small. */

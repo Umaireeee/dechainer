@@ -644,6 +644,51 @@ data class MyPlan(val id: Long, val text: String, val feeling: Opt?, val late: B
     }
 }
 
+/**
+ * What to do when a ride is asked for from outside the app: the quick-settings tile, the icon
+ * shortcut, or another app (the screen is exported, so anything can ask). It never starts at once:
+ * a short countdown gives a chance to cancel, and asking again while a ride is running or about to
+ * start changes nothing.
+ */
+object RideRequest {
+    enum class Decision { COUNTDOWN, RESUME, IGNORE }
+
+    const val COUNTDOWN_SECONDS = 5
+
+    fun decide(pendingStart: Long, now: Long, rideSeconds: Long, alreadyCountingDown: Boolean): Decision = when {
+        alreadyCountingDown -> Decision.IGNORE
+        pendingStart != 0L && now >= pendingStart && now - pendingStart < rideSeconds * 1000L -> Decision.RESUME
+        else -> Decision.COUNTDOWN
+    }
+}
+
+/** What Déchaîner says about itself, read through its signature-protected status provider. */
+data class DoorStatus(val deviceOwner: Boolean, val rideLockUntil: Long, val impulseUntil: Long)
+
+enum class LockState { CHECKING, UNREACHABLE, NOT_DEVICE_OWNER, ACTIVE, NOT_ACTIVE }
+
+object RideStatus {
+    /** The truth about the lock, not what was asked for: sending the request proves nothing on its own. */
+    fun lockState(status: DoorStatus?, checked: Boolean, now: Long): LockState = when {
+        !checked -> LockState.CHECKING
+        status == null -> LockState.UNREACHABLE
+        !status.deviceOwner -> LockState.NOT_DEVICE_OWNER
+        status.rideLockUntil > now -> LockState.ACTIVE
+        else -> LockState.NOT_ACTIVE
+    }
+}
+
+/** Files made for sharing live only briefly: old ones are deleted, so a journal is not left lying in the cache. */
+object ExportFiles {
+    /** Deletes files in [dir] not modified for [olderThanMs]. Returns how many. */
+    fun cleanup(dir: java.io.File, olderThanMs: Long, now: Long = System.currentTimeMillis()): Int {
+        val files = dir.listFiles() ?: return 0
+        var deleted = 0
+        files.filter { it.isFile && now - it.lastModified() >= olderThanMs }.forEach { if (it.delete()) deleted++ }
+        return deleted
+    }
+}
+
 object Times {
     /** The next moment after [now] that is [minuteOfDay] minutes past local midnight. */
     fun nextDaily(minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
@@ -662,6 +707,10 @@ object Times {
         if (rideStart <= 0L || now - rideStart > maxAgeMs) return null
         return maxOf(rideStart + delayMs, now + 60_000L)
     }
+
+    /** A moment as a 24-hour clock time, in the phone's time zone. */
+    fun clockAt(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+        java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(millis).atZone(zone))
 
     fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
 }

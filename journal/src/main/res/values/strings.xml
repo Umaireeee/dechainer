@@ -197,7 +197,7 @@
     <string name="settings_save">Save</string>
     <string name="settings_saved">Saved</string>
     <string name="settings_privacy">Your data</string>
-    <string name="settings_privacy_body">Entries are stored only on this phone. The AI deep dive is the only thing that leaves it, and only when you use it. Your key is kept in this app\'s private storage.</string>
+    <string name="settings_privacy_body">Entries are stored only on this phone. The AI deep dive is the only thing that leaves it, and only when you use it. Your key is kept encrypted in this app\'s private storage. Turn the option above off if you want to take screenshots.</string>
     <string name="delete_title">Delete all my entries</string>
     <string name="delete_body">This removes every entry, rule and deep dive from this phone. Your AI key and settings stay. It can\'t be undone.</string>
     <string name="delete_yes">Delete</string>
@@ -252,7 +252,12 @@
     <string name="ride_out">Breathe out slowly</string>
     <string name="ride_finished">You rode the peak.</string>
     <string name="ride_done_mark">Done</string>
-    <string name="ride_locked">Every other app is locked for %1$d minutes. Calls, your alarm and this app still work.</string>
+    <string name="ride_state_checking">Checking with Déchaîner…</string>
+    <string name="ride_state_unreachable">Couldn\'t get an answer from Déchaîner. Nothing may be locked.</string>
+    <string name="ride_state_not_owner">Déchaîner isn\'t Device Owner. Nothing is locked.</string>
+    <string name="ride_state_active">Lock active until %1$s. Calls, your alarm and this app still work.</string>
+    <string name="ride_state_inactive">Déchaîner didn\'t start the lock. Nothing is locked.</string>
+    <string name="ride_impulse_until">Your chosen distraction apps are paused until %1$s.</string>
     <string name="ride_paused">Your distraction apps stay paused for %1$d minutes.</string>
     <string name="ride_one_thing">Do one thing now</string>
     <string name="ride_your_rule">Your own rule</string>
@@ -360,4 +365,9 @@
     <string name="reminders_evening">Evening check-in: did today go to plan?</string>
     <string name="notif_evening_title">Evening check-in</string>
     <string name="notif_evening_text">Did today go the way you planned? Two taps.</string>
+
+    <string name="starting_title">Starting your ride in %1$d…</string>
+    <string name="starting_body">This locks your other apps. If you didn\'t mean to start it, cancel now.</string>
+    <string name="starting_cancel">Cancel</string>
+    <string name="settings_hide_recents">Hide the app in recent apps and block screenshots</string>
 </resources>
