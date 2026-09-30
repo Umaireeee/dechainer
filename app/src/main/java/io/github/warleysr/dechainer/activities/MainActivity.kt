@@ -100,6 +100,25 @@ class MainActivity : ComponentActivity() {
 
     private val authenticated = mutableStateOf(false)
 
+    // When the app last left the screen (uptime), so a long absence asks to unlock again.
+    private var leftAt = 0L
+
+    override fun onStop() {
+        super.onStop()
+        leftAt = android.os.SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Unlocking once must not keep the app open for days: after a real absence the unlock
+        // (and the impulse challenge) is asked again. A short trip to Settings keeps you in.
+        if (authenticated.value && leftAt > 0L &&
+            android.os.SystemClock.elapsedRealtime() - leftAt > RELOCK_AFTER_MS
+        ) {
+            authenticated.value = false
+        }
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,6 +152,20 @@ class MainActivity : ComponentActivity() {
                 // And a block always shows the Focus page, wherever you were.
                 LaunchedEffect(brick) {
                     if (brick && currentScreen != "focus") navViewModel.navigateTo("focus")
+                }
+
+                // An impulse lock locks Déchaîner itself, also when you are already inside (the
+                // journal can start one from outside): back to the countdown, and any open recovery
+                // session ends, so the code can't be used until the lock runs out.
+                var impulseOn by remember { mutableStateOf(SecurityManager.getImpulseBlockRemainingTime(this) > 0) }
+                RepeatWhileVisible(1000) {
+                    impulseOn = SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) > 0
+                }
+                LaunchedEffect(impulseOn) {
+                    if (impulseOn) {
+                        authenticated.value = false
+                        SecurityManager.endSession()
+                    }
                 }
 
                 var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -270,7 +303,10 @@ class MainActivity : ComponentActivity() {
                     else {
                         if (!authenticated.value)
                             LockScreen(
-                                onAuthenticated = { authenticated.value = true }
+                                // A challenge finished after an impulse lock started doesn't let you in.
+                                onAuthenticated = {
+                                    if (SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) <= 0) authenticated.value = true
+                                }
                             )
                         else
                             Box(modifier = Modifier.padding(innerPadding)) {
@@ -305,5 +341,10 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         SecurityManager.endSession()
+    }
+
+    private companion object {
+        /** Away longer than this, and the app asks to be unlocked again. */
+        const val RELOCK_AFTER_MS = 5 * 60 * 1000L
     }
 }

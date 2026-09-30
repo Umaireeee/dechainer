@@ -43,9 +43,9 @@ import kotlin.time.Duration.Companion.seconds
 fun LockScreen(onAuthenticated: () -> Unit) {
     var challengeMode by remember { mutableStateOf<SecurityManager.ImpulseLockMode?>(null) }
     var authError by remember { mutableStateOf<String?>(null) }
-    var impulseRemaining by remember { mutableLongStateOf(-1L) }
-
     val context = LocalContext.current
+    // Read at once, so a running impulse lock never shows the way in, even for one frame.
+    var impulseRemaining by remember { mutableLongStateOf(SecurityManager.getImpulseBlockRemainingTime(context)) }
 
     fun proceedAfterAuthentication() {
         authError = null
@@ -105,7 +105,8 @@ fun LockScreen(onAuthenticated: () -> Unit) {
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        if (challengeMode != null) {
+        // A running impulse lock wins over a challenge that was already on screen.
+        if (challengeMode != null && impulseRemaining <= 0) {
             when (challengeMode) {
                 SecurityManager.ImpulseLockMode.NORMAL -> MathChallenge(onSuccess = onAuthenticated)
                 SecurityManager.ImpulseLockMode.HARD -> WordChallenge(onSuccess = onAuthenticated)

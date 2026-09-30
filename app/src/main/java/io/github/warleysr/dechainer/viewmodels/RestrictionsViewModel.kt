@@ -95,6 +95,9 @@ class RestrictionsViewModel : ViewModel() {
         // Only the ones actually switched on in this apply, so a restriction a schedule is
         // currently holding isn't made permanent just because it showed as on in the list.
         ScheduleEnforcer.disownRestrictions(DechainerApplication.getInstance(), switchedOnByHand)
+        // Anything a schedule, focus block or lock holds right now (the clock lock, say) is put
+        // straight back: this screen can only change what is yours, never open a gap in one of those.
+        ScheduleEnforcer.requestSyncAll(DechainerApplication.getInstance())
         loadRestrictions()
     }
 

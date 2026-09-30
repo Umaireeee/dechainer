@@ -84,3 +84,9 @@ The all-apps ride lock (`RIDE_LOCK`, Déchaîner's `RideLock` + enforcer source;
 - README/GUIDE/URGE_ACTIONS describe the app as it is: focus blocks (brick), daily limits only (cooldowns, windows and groups were removed earlier).
 - Local compile check: `dl.google.com` (Google Maven) is blocked from the sandbox, so AGP cannot run; the pure-logic tests of both apps can be run in a scratch Kotlin/JVM project against the Maven Central mirror `maven-central.storage-download.googleapis.com`. CI remains the only full compile check.
 
+
+## Update: loophole pass on the gates (2026-09-30)
+Read in full: RecoveryGate, UnlockDelay, ConfigTab, the schedule list/editor/view model, Device Owner removal, LockScreen/MainActivity, Protections, ImpulseLockScreen, BrowserRestrictionsManager. Sound as they were: recovery code (hashed, unlock delay can't be shortened by a reboot), schedule locks (re-checked at save), Device Owner removal (code + refused during locked schedule / brick / ride), impulse and focus settings (session-gated / idle only). Fixed:
+- **Unlocking was forever:** `authenticated` never reset. Now an impulse lock (including one the journal starts) sends you back to the countdown and ends any recovery session; a challenge finished after it started doesn't let you in; and after more than 5 minutes in the background the app asks to be unlocked again (`RELOCK_AFTER_MS`).
+- **Protections could open a gap in a locked window:** switching off a restriction a schedule/block holds (the clock lock) now re-syncs at once, so it is put straight back.
+- **Newly installed browsers** get the blocklist, SafeSearch and the secure-DNS lock right after install (package listener in `DechainerApplication`), instead of resolving around the DNS filter until the next re-apply. Only while Déchaîner's process is alive; it usually is.
