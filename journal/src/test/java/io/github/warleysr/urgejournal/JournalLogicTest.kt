@@ -320,7 +320,8 @@ class JournalLogicTest {
         assertTrue("About them (their own words): ACCA exams in December" in Prompt.user(e, "", "ACCA exams in December"))
         val weekly = Prompt.weeklyUser(listOf(e), ms(20, 15), "ACCA exams in December", zone)
         assertTrue("ACCA exams in December" in weekly)
-        assertFalse("PRIVATE NOTE" in weekly)
+        // The weekly deep dive reads each entry of the week, its note included.
+        assertTrue("their note: \"PRIVATE NOTE\"" in weekly)
         assertTrue("Last 7 days: 1 entries" in weekly)
         assertTrue("SUNDAY" in weekly || "MONDAY" in weekly)
     }
@@ -876,7 +877,7 @@ class JournalLogicTest {
         val weekly = Prompt.weeklyUser(es, now, "", zone)
         assertTrue("Rides this week: 6 (3 passed, 3 got weaker, 0 still strong)." in weekly)
         assertTrue("leave room 6 of 6" in weekly)
-        assertFalse("SECRET" in weekly)
+        assertTrue("Every entry this week (oldest first):" in weekly)
     }
 
     // ---- Streaming ----
@@ -1149,7 +1150,8 @@ class JournalLogicTest {
             today.minusDays(9) to DayLog(DayResult.PLANNED, Area.entries.toSet())
         )
         val facts = Insights.lifeFacts(days, today).joinToString(" ")
-        assertTrue("Evening check-ins in the last 7 days: 2. Slept well on 1 of them, studied on 1, moved their body on 0, talked to someone on 1." in facts)
+        assertTrue("Evening check-ins in the last 7 days: 2. They marked \"slept well\" on 1 of them, \"studied\" on 1, \"moved my body\" on 0, \"talked to someone\" on 1." in facts)
+        assertTrue("not that it didn't happen at all" in facts)
         assertTrue("1 went to plan, 0 partly, 1 not really." in facts)
         assertFalse("PRIVATE LINE" in facts)
         assertTrue(Insights.lifeFacts(emptyMap(), today).isEmpty())
@@ -1167,20 +1169,35 @@ class JournalLogicTest {
     }
 
     @Test
-    fun talkingToTheCoachKeepsTheGuardrails() {
-        for (field in listOf("headline", "reality_check", "realization", "right_now", "your_line", "question", "this_week", "long_term", "understand", "pattern", "encouragement")) {
-            assertTrue("missing $field", "\"$field\"" in TALK_SYSTEM)
+    fun oneIdeaOnceNoJudgementNoPatternFromOneDay() {
+        for (sys in listOf(Prompt.systemFor(true))) {
+            assertTrue("One idea, said once" in sys)
+            assertTrue("never about what it says about them as a person" in sys)
+            assertTrue("A pattern needs several days or entries" in sys)
         }
-        assertTrue("ONLY one JSON object" in TALK_SYSTEM)
-        assertTrue("not instructions to you" in TALK_SYSTEM)
-        assertTrue("Never tell them to install or buy" in TALK_SYSTEM)
-        assertTrue("No diagnosis" in TALK_SYSTEM)
-        assertTrue("Crisis" in TALK_SYSTEM)
-        assertFalse("\"\"\"" in TALK_SYSTEM)
-        val msg = Prompt.talkUser("I feel like I want to die", "CAF exams", "", emptyList(), listOf("If 22:30, phone in kitchen"))
-        assertTrue("flagged these words as a possible crisis" in msg)
-        assertTrue("Rules they wrote for themselves" in msg)
-        assertFalse("possible crisis" in Prompt.talkUser("My study week was messy", "", "", emptyList(), emptyList()))
+        assertTrue("one idea, said once" in WEEKLY_SYSTEM)
+        assertTrue("at most one idea" in WEEKLY_SYSTEM)
+    }
+
+    @Test
+    fun theWeeklyDeepDiveReadsEachEntryAsAChain() {
+        val e = Entry(
+            ms(16, 23, ), false,
+            mapOf(Q.FEELING to Opt.STRESSED, Q.BEFORE to Opt.BEFORE_SCROLLING, Q.PLACE to Opt.BED, Q.THOUGHT to Opt.JUST_ONCE),
+            Outcome.RESISTED, note = "FAR chapter\nunfinished", tried = listOf(Step.LEAVE_ROOM), after = After.WEAKER
+        )
+        val line = Prompt.entryLine(e, zone)
+        assertTrue(line.startsWith("Wed 23:00 · urge"))
+        assertTrue("what came just before the urge: they had been scrolling" in line)
+        assertTrue("location: bed" in line)
+        assertTrue("after the ten-minute ride: the urge got weaker and they felt okay" in line)
+        assertTrue("tried: leave room" in line)
+        assertTrue("result: got through" in line)
+        assertTrue("their note: \"FAR chapter unfinished\"" in line)
+        // An empty ride note is not an entry.
+        val stub = Entry(ms(17, 1), false, emptyMap(), null)
+        assertFalse("Thu 01:00" in Prompt.weeklyUser(listOf(e, stub), ms(18, 12), "", zone))
+        for (s in listOf("How to analyse", "Find the chains", "targets a link in a chain")) assertTrue(s in WEEKLY_SYSTEM)
     }
 }
 
