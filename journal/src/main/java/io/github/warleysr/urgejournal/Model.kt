@@ -370,15 +370,15 @@ data class Entry(
             )
         }.getOrNull()
 
-        fun listFromJson(text: String?): List<Entry> {
-            if (text.isNullOrBlank()) return emptyList()
-            return runCatching {
-                val arr = JSONArray(text)
-                (0 until arr.length()).mapNotNull { fromJson(arr.getJSONObject(it)) }
-            }.getOrDefault(emptyList())
-        }
+        fun listFromJson(text: String?): List<Entry> = parseList(text).items
+
+        /** Row by row, keeping what could not be read; see [Stored]. */
+        fun parseList(text: String?): Stored<Entry> = parseStored(text) { fromJson(it) }
 
         fun listToJson(entries: List<Entry>): String = JSONArray(entries.map { it.toJson() }).toString()
+
+        fun composeList(entries: List<Entry>, unreadable: List<Any>): String =
+            composeStored(entries.map { it.toJson() }, unreadable)
 
         /** Adds [incoming] to [existing], keeping one entry per time (the existing one wins). */
         fun merge(existing: List<Entry>, incoming: List<Entry>): List<Entry> {
@@ -605,15 +605,15 @@ data class MyPlan(val id: Long, val text: String, val feeling: Opt?, val late: B
             )
         }.getOrNull()
 
-        fun listFromJson(text: String?): List<MyPlan> {
-            if (text.isNullOrBlank()) return emptyList()
-            return runCatching {
-                val arr = JSONArray(text)
-                (0 until arr.length()).mapNotNull { fromJson(arr.getJSONObject(it)) }
-            }.getOrDefault(emptyList())
-        }
+        fun listFromJson(text: String?): List<MyPlan> = parseList(text).items
+
+        /** Row by row, keeping what could not be read; see [Stored]. */
+        fun parseList(text: String?): Stored<MyPlan> = parseStored(text) { fromJson(it) }
 
         fun listToJson(plans: List<MyPlan>): String = JSONArray(plans.map { it.toJson() }).toString()
+
+        fun composeList(plans: List<MyPlan>, unreadable: List<Any>): String =
+            composeStored(plans.map { it.toJson() }, unreadable)
 
         /**
          * During a ride nothing has been asked yet, so the feeling is unknown: show the newest plan
@@ -641,6 +641,39 @@ object Times {
     }
 
     fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
+}
+
+/**
+ * What was read back from a stored list. [unreadable] holds the rows that would not parse, exactly
+ * as they were, so saving can put them back instead of silently dropping them. [rootOk] is false
+ * when the stored text is not a list at all: nothing should be written over it then.
+ */
+class Stored<T>(val items: List<T>, val unreadable: List<Any>, val rootOk: Boolean)
+
+/** Reads a stored JSON list row by row: one bad row never costs the others. */
+fun <T> parseStored(text: String?, parse: (JSONObject) -> T?): Stored<T> {
+    if (text.isNullOrBlank()) return Stored(emptyList(), emptyList(), true)
+    val arr = try {
+        JSONArray(text)
+    } catch (_: Exception) {
+        return Stored(emptyList(), emptyList(), false)
+    }
+    val good = mutableListOf<T>()
+    val bad = mutableListOf<Any>()
+    for (i in 0 until arr.length()) {
+        val raw = arr.opt(i)
+        val item = (raw as? JSONObject)?.let { runCatching { parse(it) }.getOrNull() }
+        if (item != null) good += item else if (raw != null) bad += raw
+    }
+    return Stored(good, bad, true)
+}
+
+/** Writes rows back together with the ones that could not be read. */
+fun composeStored(rows: List<JSONObject>, unreadable: List<Any>): String {
+    val arr = JSONArray()
+    rows.forEach { arr.put(it) }
+    unreadable.forEach { arr.put(it) }
+    return arr.toString()
 }
 
 /** Which entries the log shows. */

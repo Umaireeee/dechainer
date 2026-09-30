@@ -633,4 +633,43 @@ class JournalLogicTest {
         assertEquals("IMPULSE_BLOCK", DoorAction.IMPULSE_BLOCK)
         assertEquals("FOCUS_BLOCK", DoorAction.FOCUS_BLOCK)
     }
+
+    // ---- Batch 1: storage that never loses data ----
+
+    @Test
+    fun oneBadEntryDoesNotCostTheOthersAndIsKept() {
+        val good = Entry(5L, false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED).toJson()
+        val text = org.json.JSONArray().put(good).put("junk").put(org.json.JSONObject().put("s", true)).put(
+            Entry(6L, true, emptyMap(), null).toJson()
+        ).toString()
+        val read = Entry.parseList(text)
+        assertTrue(read.rootOk)
+        assertEquals(listOf(5L, 6L), read.items.map { it.time })
+        assertEquals(2, read.unreadable.size)
+        // Saving puts the unreadable rows back.
+        val saved = Entry.composeList(read.items + Entry(7L, false, emptyMap(), null), read.unreadable)
+        val again = Entry.parseList(saved)
+        assertEquals(listOf(5L, 6L, 7L), again.items.map { it.time })
+        assertEquals(2, again.unreadable.size)
+    }
+
+    @Test
+    fun aStoredValueThatIsNotAListIsNotEmptyItIsUnreadable() {
+        assertFalse(Entry.parseList("{oops").rootOk)
+        assertFalse(MyPlan.parseList("not json").rootOk)
+        assertTrue(Entry.parseList(null).rootOk)
+        assertTrue(Entry.parseList("").items.isEmpty())
+    }
+
+    @Test
+    fun oneBadPlanDoesNotCostTheOthers() {
+        val text = org.json.JSONArray()
+            .put(MyPlan(1, "If tired, then bed.", Opt.TIRED, true).toJson())
+            .put(org.json.JSONObject().put("x", "   "))
+            .put(MyPlan(2, "If bored, then walk.", Opt.BORED, false).toJson())
+            .toString()
+        val read = MyPlan.parseList(text)
+        assertEquals(listOf(1L, 2L), read.items.map { it.id })
+        assertEquals(1, read.unreadable.size)
+    }
 }
