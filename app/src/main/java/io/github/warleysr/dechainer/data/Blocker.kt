@@ -65,13 +65,17 @@ object Blocker {
         }
     }
 
-    /** Lifts the suspension on [pkgs]. */
-    fun release(context: Context, dpm: DevicePolicyManager, admin: ComponentName, pkgs: Collection<String>) {
-        if (pkgs.isEmpty()) return
-        try {
-            dpm.setPackagesSuspended(admin, pkgs.toTypedArray(), false)
+    /**
+     * Lifts the suspension on [pkgs]. Returns the ones Android did not release, so the caller keeps
+     * owning them and tries again instead of forgetting an app that is still suspended.
+     */
+    fun release(context: Context, dpm: DevicePolicyManager, admin: ComponentName, pkgs: Collection<String>): Set<String> {
+        if (pkgs.isEmpty()) return emptySet()
+        return try {
+            dpm.setPackagesSuspended(admin, pkgs.toTypedArray(), false).toSet()
         } catch (e: Exception) {
             Timber.w(e, "Could not unsuspend %s", pkgs)
+            pkgs.toSet()
         }
     }
 
