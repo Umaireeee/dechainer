@@ -142,7 +142,6 @@ fun HomeScreen(
     onLog: () -> Unit,
     onDay: (DayLog) -> Unit,
     onFocus: (Int) -> Door.Result,
-    onTalk: () -> Unit,
     onKept: () -> Unit,
     keptCount: Int
 ) {
@@ -341,10 +340,6 @@ fun HomeScreen(
             OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.review_button))
             }
-        }
-        // The coach, any time: no urge needed.
-        OutlinedButton(onClick = onTalk, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.home_talk))
         }
         if (keptCount > 0) {
             OutlinedButton(onClick = onKept, modifier = Modifier.fillMaxWidth()) {
@@ -1028,90 +1023,6 @@ fun ReviewScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onRefresh) { Text(stringResource(R.string.deep_retry)) }
-                    TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
-                }
-            }
-            is AiState.NeedsKey -> Panel {
-                Text(stringResource(R.string.deep_needs_key), style = MaterialTheme.typography.bodyLarge)
-                OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.deep_add_key)) }
-            }
-            else -> {}
-        }
-        TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-/** Talk to the coach about anything, with no urge: their week, study, a decision, how they're doing. */
-@Composable
-fun TalkScreen(
-    state: AiState,
-    initial: String,
-    providerLabel: String,
-    onSend: (String) -> Unit,
-    onConsent: (Boolean) -> Unit,
-    onSettings: () -> Unit,
-    onNew: () -> Unit,
-    onBack: () -> Unit
-) {
-    // What they wrote survives a trip to Settings and back.
-    var text by remember { mutableStateOf(initial) }
-    if (state is AiState.NeedsConsent) {
-        AlertDialog(
-            onDismissRequest = { onConsent(false) },
-            title = { Text(stringResource(R.string.consent_title)) },
-            text = { Text(stringResource(R.string.talk_consent_body, providerLabel)) },
-            confirmButton = { TextButton(onClick = { onConsent(true) }) { Text(stringResource(R.string.consent_yes)) } },
-            dismissButton = { TextButton(onClick = { onConsent(false) }) { Text(stringResource(R.string.consent_no)) } }
-        )
-    }
-    val asked = state !is AiState.Idle && state !is AiState.NeedsConsent
-    Page {
-        Spacer(Modifier.height(8.dp))
-        Text(stringResource(R.string.talk_title), style = MaterialTheme.typography.headlineMedium)
-        if (!asked) {
-            Text(
-                stringResource(R.string.talk_intro),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(TALK_LIMIT) },
-                placeholder = { Text(stringResource(R.string.talk_hint)) },
-                minLines = 6,
-                maxLines = 14,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                stringResource(R.string.note_privacy),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(onClick = { onSend(text) }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.talk_send))
-            }
-        } else {
-            // What they brought, so the reply reads against it.
-            Panel { Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
-            if (Safety.needsSupport(text)) SupportCard()
-        }
-        when (state) {
-            is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
-            is AiState.Streaming -> ReportView(state.text, streaming = true)
-            is AiState.Ready -> {
-                ReportView(state.text, keep = Kept.Kind.TALK)
-                OutlinedButton(onClick = { text = ""; onNew() }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.talk_again))
-                }
-            }
-            is AiState.Failed -> Panel {
-                Text(stringResource(errorRes(state.error)), style = MaterialTheme.typography.bodyLarge)
-                if (state.detail.isNotBlank()) {
-                    Text(state.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onSend(text) }) { Text(stringResource(R.string.deep_retry)) }
                     TextButton(onClick = onSettings) { Text(stringResource(R.string.settings_title)) }
                 }
             }

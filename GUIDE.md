@@ -96,15 +96,13 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **The AI deep dive:** in the journal's **Settings**, pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key, and press **Test connection**. Use **Load models from my account** if a model name is rejected. Fill in **About you** with your goals and how blunt you want the coach to be; it is added to every deep dive.
 
-**Weekly review:** once you have a few entries, a **Weekly review** button appears on Home. It looks at your counts and patterns (never your notes), your evening check-ins, and what it suggested last time, and suggests what to try next.
-
-**Talk to your coach:** a button on Home, no urge needed. Write about your week, your study, a decision or how you're really doing, and the coach answers with the same honest, warm deep dive. Every talk is kept.
+**Weekly deep dive:** once you have a few entries, a **Weekly deep dive** button appears on Home. It reads every entry of your last seven days (with your notes), your evening check-ins and what it suggested last time, finds the chains behind your urges (what came before, feeling, place, hour, how it ended), and gives strategies aimed at the earliest link. Do it once a week, for example on Sunday evening.
 
 **Kept deep dives:** under any deep dive, tap **Keep this deep dive**. Home shows **Kept deep dives**: your own collection to reread on a hard day. Backups include them, with your rules.
 
 **Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** shares them as text you can keep, and **Import from clipboard** restores them.
 
-Everything you write stays on your phone, except what you send for a deep dive, a weekly review or a talk with your coach. The journal can only ask Déchaîner to block more, never to unblock.
+Everything you write stays on your phone, except what you send for a deep dive or the weekly deep dive. The journal can only ask Déchaîner to block more, never to unblock.
 
 ## If you get locked out
 - **Lost your recovery code:** *Settings → Forced removal*. Start it, and after **4 days** you can remove everything without the code. The timer can't be sped up. This is the escape hatch, and it also works while a locked schedule is running.

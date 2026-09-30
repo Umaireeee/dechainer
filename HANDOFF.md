@@ -115,3 +115,8 @@ Read in full: RecoveryGate, UnlockDelay, ConfigTab, the schedule list/editor/vie
 - **Kept deep dives:** `Kept(id, kind, text)`, `JournalStore.keep/kept/unkeep`, a "Keep this deep dive" button inside `ReportView(keep = ...)`, `KeptScreen`, Home button; included in backups.
 - **Talk to your coach:** `TalkScreen`, `TALK_SYSTEM` (same voice, honesty, crisis and injection rules), `Prompt.talkUser` (their text, About, 30-day digest, 7-day life counts, their rules; flagged crisis words). Every finished talk is kept automatically.
 
+## Update: weekly deep dive instead of a coach chat (2026-09-30, owner's decision)
+- "Talk to your coach" was removed on request (a chat inside an urge app is one more screen to escape into). `Kept.Kind.TALK` and `kept_talk` stay so talks kept earlier still read.
+- The weekly review is now the **weekly deep dive**: `Prompt.weeklyUser` lists every real entry of the last 7 days via `Prompt.entryLine` (day, time, urge/slip, every answer including what came before, ride result, what was tried, result, the note trimmed to 300 chars), and `WEEKLY_SYSTEM` asks for chains (before -> feeling -> place -> hour -> ending), what worked vs failed, and strategies aimed at the earliest link. Notes are now sent for the weekly deep dive; the consent text says so. Evening lines are still never sent.
+- Also in this round: delete an entry (Detail > Delete this entry), kept headline shown once, check-in facts say "marked" (an unmarked box is not a zero), and every prompt says one idea once, no judging the person, patterns need several days.
+

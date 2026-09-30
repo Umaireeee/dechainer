@@ -164,7 +164,7 @@
     <string name="note_title">Anything you want to add?</string>
     <string name="note_hint">Say it in your own words. The more you write, the more specific your deep dive will be. Skipping is fine.</string>
     <string name="note_hint_slip">What happened, in your own words? No one is grading this.</string>
-    <string name="note_privacy">Stays on your phone unless you use the AI deep dive.</string>
+    <string name="note_privacy">Stays on your phone unless you use the AI deep dive or the weekly deep dive.</string>
     <string name="note_skip">Skip</string>
     <string name="note_continue">Continue</string>
 
@@ -248,12 +248,12 @@
     <string name="setup_dechainer">Install Déchaîner first, so the block button has something to control.</string>
     <string name="setup_permission">This app can\'t reach Déchaîner yet. Reinstall this app after Déchaîner, both from the same build.</string>
     <string name="setup_ai">Add an AI key in Settings for the deep dive (Google AI Studio has a free tier).</string>
-    <string name="review_button">Weekly review</string>
-    <string name="review_title">Your week</string>
-    <string name="review_intro">What your last days show, and what to try next. Only counts and patterns are used, never your notes.</string>
+    <string name="review_button">Weekly deep dive</string>
+    <string name="review_title">Your week, in depth</string>
+    <string name="review_intro">Every entry of your last seven days, your evening check-ins and your history, read together: the patterns behind your urges, what worked, and what to change next week.</string>
     <string name="review_loading">Looking at your week…</string>
     <string name="review_refresh">Write it again</string>
-    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal, including which steps worked (never your notes), are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
+    <string name="review_consent_body">To write your weekly deep dive, your entries from the last seven days (with their notes), your evening check-in counts and patterns from your history are sent to %1$s, the AI service you chose. Your evening lines are never sent. You can turn this off in Settings.</string>
     <string name="recent_more">Show more</string>
     <string name="deep_more">Show the rest</string>
     <string name="deep_less">Show less</string>
@@ -427,17 +427,9 @@
     <string name="kept_untitled">A deep dive</string>
     <string name="kept_urge">After an urge</string>
     <string name="kept_slip">After a slip</string>
-    <string name="kept_week">Weekly review</string>
+    <string name="kept_week">Weekly deep dive</string>
     <string name="kept_talk">Talk with your coach</string>
     <string name="home_kept">Kept deep dives (%1$d)</string>
-    <!-- Talk to your coach -->
-    <string name="home_talk">Talk to your coach</string>
-    <string name="talk_title">Talk to your coach</string>
-    <string name="talk_intro">No urge needed. Your week, your study, a decision, how you\'re really doing: write it the way you\'d say it to a friend who\'s on your side.</string>
-    <string name="talk_hint">What\'s on your mind?</string>
-    <string name="talk_send">Ask the coach</string>
-    <string name="talk_again">Talk about something else</string>
-    <string name="talk_consent_body">What you write here, your goals and counts from your journal (never your urge notes) are sent to %1$s to write the reply. OK?</string>
     <string name="entry_delete">Delete this entry</string>
     <string name="entry_delete_title">Delete this entry?</string>
     <string name="entry_delete_body">It\'s removed from your journal for good, with its deep dive. Your counts and patterns update without it.</string>
