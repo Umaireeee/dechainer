@@ -101,7 +101,7 @@ Everything you write stays on your phone, except what you send for a deep dive o
 ## A simple daily routine
 1. Morning: check today's schedule and pick your subject.
 2. Study: 60-minute focus sessions, answer honestly.
-3. When an urge hits: use the urge log instead of arguing with yourself.
+3. When an urge hits: use the Urge Journal instead of arguing with yourself.
 4. Sunday: read your focus log and urge summary, export a backup, and adjust one schedule.
 
 ## Be realistic

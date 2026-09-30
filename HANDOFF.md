@@ -6,7 +6,7 @@ The journal, the door and the guided-ride upgrade are all on `main-clean` (PR #3
 ## What this project is
 Two Android apps in one repo, built to cut compulsive phone use (and porn urges) and to protect study time.
 
-1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, impulse lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, a simple local urge log (Settings), and the "urge action door" below.
+1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, impulse lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, and the "urge action door" below.
 2. **`:journal` = Urge Journal** (new). An adaptive interview for the moment of an urge or a slip, a rule-based coach, an optional AI "deep dive", a weekly review, history, backup, and a **Lock it in** button that asks Déchaîner to block.
 
 Both are signed with the same key (release workflow), because the link between them is a signature-level permission.
