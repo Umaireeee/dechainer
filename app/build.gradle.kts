@@ -71,9 +71,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.timber)
-    implementation(libs.jsoup)
-    implementation(libs.json)
     testImplementation(libs.junit)
+    // Android has its own org.json; the real one is only needed by the unit tests on the JVM.
+    testImplementation(libs.json)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.androidx.test.core.ktx)
     testImplementation(libs.robolectric)
