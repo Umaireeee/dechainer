@@ -330,6 +330,15 @@ data class Entry(
     /** A slip, or an urge that was given in to. */
     val gaveIn: Boolean get() = slipped || outcome == Outcome.GAVE_IN
 
+    /**
+     * The empty note a ride leaves the moment it starts, before anything has been answered. It keeps
+     * the urge on record, but it is not data: statistics and patterns ignore it, so an accidental
+     * tap doesn't count as an urge.
+     */
+    val isStub: Boolean
+        get() = !slipped && answers.isEmpty() && outcome == null && after == null &&
+            tried.isEmpty() && note.isBlank() && report == null
+
     /** An urge that was ridden out. An entry still open (no answer yet) is neither ridden out nor given in to. */
     val ridden: Boolean get() = !gaveIn && outcome == Outcome.RESISTED
 
@@ -402,8 +411,11 @@ data class Week(
 object Insights {
     private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
 
+    /** The entries that count: without the empty notes a ride leaves before it has been answered. */
+    fun real(entries: List<Entry>): List<Entry> = entries.filterNot { it.isStub }
+
     fun week(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): Week {
-        val recent = entries.filter { it.time in (now - WEEK_MS)..now }
+        val recent = real(entries).filter { it.time in (now - WEEK_MS)..now }
         val top = recent.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .maxWithOrNull(compareBy<Map.Entry<Opt, Int>> { it.value }.thenBy { -it.key.ordinal })?.key
         val peak = recent.groupingBy { Instant.ofEpochMilli(it.time).atZone(zone).hour }.eachCount()
@@ -481,7 +493,7 @@ object Insights {
      * the trouble begins rather than hours earlier.
      */
     fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? {
-        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        val recent = real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
         if (recent.size < 6) return null
         val hours = recent.map { Instant.ofEpochMilli(it.time).atZone(zone).hour }
         fun inside(start: Int, hour: Int) = (hour - start + 24) % 24 < WINDOW_HOURS
@@ -510,8 +522,9 @@ object Insights {
      */
     fun heavier(entries: List<Entry>, now: Long): Boolean {
         val day = 24L * 60 * 60 * 1000
-        val last = entries.filter { it.time in (now - 14 * day)..now }
-        val before = entries.count { it.time in (now - 28 * day) until (now - 14 * day) }
+        val counted = real(entries)
+        val last = counted.filter { it.time in (now - 14 * day)..now }
+        val before = counted.count { it.time in (now - 28 * day) until (now - 14 * day) }
         val overwhelming = last.count { it.answers[Q.INTENSITY] == Opt.OVERWHELMING }
         return overwhelming >= 3 || (last.size >= 6 && last.size >= before * 3 / 2 + 1)
     }
@@ -551,7 +564,7 @@ object Insights {
 
     /** A short, anonymous digest of recent history for the AI: counts and patterns, no notes. */
     fun summary(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
-        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        val recent = real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
         if (recent.size < 3) return ""
         val feelings = recent.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.take(3).joinToString(", ") { "${Plain.answer(it.key)} (${it.value})" }
@@ -638,6 +651,16 @@ object Times {
         var at = nowAt.toLocalDate().atStartOfDay(zone).plusMinutes(minuteOfDay.toLong())
         if (!at.toInstant().isAfter(nowAt.toInstant())) at = at.plusDays(1)
         return at.toInstant().toEpochMilli()
+    }
+
+    /**
+     * When the check-in should fire for a ride that started at [rideStart] and is still waiting, or
+     * null if it is too old to ask about. Used to put the alarm back after a reboot: if the moment
+     * has already passed, it fires a minute from [now] instead.
+     */
+    fun checkInAt(rideStart: Long, now: Long, delayMs: Long, maxAgeMs: Long): Long? {
+        if (rideStart <= 0L || now - rideStart > maxAgeMs) return null
+        return maxOf(rideStart + delayMs, now + 60_000L)
     }
 
     fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)

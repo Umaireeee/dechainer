@@ -165,7 +165,7 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = { askFocus = false }) { Text(stringResource(R.string.delete_no)) } }
         )
     }
-    val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
+    val recentCount = entries.count { !it.isStub && it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(

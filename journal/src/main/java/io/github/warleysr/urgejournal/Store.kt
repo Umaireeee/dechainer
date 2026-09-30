@@ -40,6 +40,22 @@ class JournalStore(context: Context) {
         }
     }
 
+    /** Removes the entry made at [time], but only if it is still an empty ride note; anything answered stays. */
+    @Synchronized
+    fun deleteStub(time: Long) {
+        mutate { list -> list.filterNot { it.time == time && it.isStub } }
+    }
+
+    /** A ride nobody ever checked in on, older than [maxAgeMs]: its empty note and its reminder are dropped. */
+    @Synchronized
+    fun dropStaleRide(now: Long, maxAgeMs: Long) {
+        val started = pendingRide()
+        if (started != 0L && now - started > maxAgeMs) {
+            deleteStub(started)
+            clearPendingRide()
+        }
+    }
+
     @Synchronized
     fun setOutcome(time: Long, outcome: Outcome) = update(time) { it.copy(outcome = outcome) }
 

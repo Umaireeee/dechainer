@@ -58,7 +58,7 @@ fun LogScreen(
     // The range shown in the chart, in numbers.
     val inRange = Insights.entriesIn(
         entries, bars.first().date, bars.last().date.plusDays(if (weekly) 6L else 0L), zone
-    ).size
+    ).count { !it.isStub }
     val rangeThrough = bars.sumOf { it.resisted }
     val rangeGaveIn = bars.sumOf { it.gaveIn }
 
@@ -66,7 +66,7 @@ fun LogScreen(
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.log_title), style = MaterialTheme.typography.headlineMedium)
         Text(
-            stringResource(R.string.log_total, entries.size),
+            stringResource(R.string.log_total, entries.count { !it.isStub }),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

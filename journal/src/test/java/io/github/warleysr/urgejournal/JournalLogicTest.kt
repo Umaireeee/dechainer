@@ -457,7 +457,7 @@ class JournalLogicTest {
     @Test
     fun aWindowAcrossAnHourBoundaryIsNotSplit() {
         val now = ms(28, 12)
-        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, emptyMap(), null)
+        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, emptyMap(), Outcome.RESISTED)
         // Urges at 21, 22 and 23 would be cut in two by fixed windows; a sliding one keeps them.
         val evening = listOf(at(20, 21), at(21, 22), at(22, 23), at(23, 21), at(24, 22), at(25, 10))
         val hot = Insights.hotWindow(evening, now, zone)
@@ -531,7 +531,7 @@ class JournalLogicTest {
     fun heavierMeansMuchMoreLatelyOrSeveralOverwhelmingOnes() {
         val now = ms(28, 12)
         fun at(day: Int, intensity: Opt? = null) =
-            Entry(ms(day, 12), false, if (intensity != null) mapOf(Q.INTENSITY to intensity) else emptyMap(), null)
+            Entry(ms(day, 12), false, if (intensity != null) mapOf(Q.INTENSITY to intensity) else emptyMap(), Outcome.RESISTED)
         assertFalse(Insights.heavier(emptyList(), now))
         val surge = (16..21).map { at(it) }
         assertTrue(Insights.heavier(surge, now))
@@ -671,5 +671,45 @@ class JournalLogicTest {
         val read = MyPlan.parseList(text)
         assertEquals(listOf(1L, 2L), read.items.map { it.id })
         assertEquals(1, read.unreadable.size)
+    }
+
+    // ---- Batch 3 ----
+
+    @Test
+    fun theEmptyNoteARideLeavesIsNotDataUntilItIsAnswered() {
+        val now = ms(20, 12)
+        val stub = Entry(ms(20, 9), false, emptyMap(), null)
+        assertTrue(stub.isStub)
+        assertFalse(stub.copy(outcome = Outcome.RESISTED).isStub)
+        assertFalse(stub.copy(after = After.STILL).isStub)
+        assertFalse(stub.copy(note = "hard evening").isStub)
+        assertFalse(Entry(ms(20, 9), true, emptyMap(), null).isStub) // a slip is never a stub
+        // Statistics ignore stubs: an accidental tap is not an urge.
+        assertEquals(0, Insights.week(listOf(stub), now, zone).total)
+        assertEquals(0, Insights.week(listOf(stub, stub.copy(time = ms(19, 9))), now, zone).total)
+        assertEquals(1, Insights.week(listOf(stub, stub.copy(time = ms(19, 9), outcome = Outcome.RESISTED)), now, zone).total)
+    }
+
+    @Test
+    fun stubsDoNotMakeAPatternOrAHeavierFortnight() {
+        val now = ms(28, 12)
+        val stubs = (16..25).map { Entry(ms(it, 23), false, emptyMap(), null) }
+        assertNull(Insights.hotWindow(stubs, now, zone))
+        assertFalse(Insights.heavier(stubs, now))
+        assertEquals("", Insights.summary(stubs, now, zone))
+    }
+
+    @Test
+    fun theCheckInIsPutBackAfterARebootUnlessTheRideIsTooOld() {
+        val delay = 20 * 60_000L
+        val maxAge = 6 * 60 * 60_000L
+        val start = 1_000_000_000L
+        // Rebooted 5 minutes into the ride: the original moment is still ahead.
+        assertEquals(start + delay, Times.checkInAt(start, start + 5 * 60_000L, delay, maxAge))
+        // Rebooted an hour in: the moment has passed, so it fires a minute from now.
+        assertEquals(start + 3_600_000L + 60_000L, Times.checkInAt(start, start + 3_600_000L, delay, maxAge))
+        // Too old, or no ride waiting: nothing.
+        assertNull(Times.checkInAt(start, start + maxAge + 1, delay, maxAge))
+        assertNull(Times.checkInAt(0L, start, delay, maxAge))
     }
 }

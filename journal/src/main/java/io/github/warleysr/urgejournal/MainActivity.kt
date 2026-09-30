@@ -100,7 +100,7 @@ private const val RIDE_LOCK_MINUTES = 10
 private const val LONGER_LOCK_MINUTES = 30
 
 private const val FORTNIGHT_MS = 14L * 24 * 60 * 60 * 1000
-private const val SIX_HOURS_MS = 6L * 60 * 60 * 1000
+private const val SIX_HOURS_MS = Notifier.PENDING_MAX_AGE_MS
 
 private fun hourOf(time: Long): Int = Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).hour
 
@@ -348,6 +348,12 @@ private fun App(activity: MainActivity) {
         }
     }
 
+    // Once per launch: a ride nobody checked in on for hours is dropped, with its empty note.
+    LaunchedEffect(Unit) {
+        store.dropStaleRide(System.currentTimeMillis(), SIX_HOURS_MS)
+        refresh()
+    }
+
     fun leaveDetail() {
         if (detailBack == Screen.LOG) {
             refresh()
@@ -410,7 +416,11 @@ private fun App(activity: MainActivity) {
                 onSettings = { screen = Screen.SETTINGS },
                 onCheckIn = { startCheckIn() },
                 onDropRide = {
+                    // Skipping a ride drops its empty note too, so an accidental tap leaves nothing behind.
+                    val started = store.pendingRide()
                     clearRide()
+                    if (started != 0L) store.deleteStub(started)
+                    refresh()
                     cardsTick++
                 },
                 onNudge = { minute ->
