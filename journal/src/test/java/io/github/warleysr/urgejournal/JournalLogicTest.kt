@@ -457,7 +457,7 @@ class JournalLogicTest {
     @Test
     fun aWindowAcrossAnHourBoundaryIsNotSplit() {
         val now = ms(28, 12)
-        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, emptyMap(), null)
+        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, emptyMap(), Outcome.RESISTED)
         // Urges at 21, 22 and 23 would be cut in two by fixed windows; a sliding one keeps them.
         val evening = listOf(at(20, 21), at(21, 22), at(22, 23), at(23, 21), at(24, 22), at(25, 10))
         val hot = Insights.hotWindow(evening, now, zone)
@@ -531,7 +531,7 @@ class JournalLogicTest {
     fun heavierMeansMuchMoreLatelyOrSeveralOverwhelmingOnes() {
         val now = ms(28, 12)
         fun at(day: Int, intensity: Opt? = null) =
-            Entry(ms(day, 12), false, if (intensity != null) mapOf(Q.INTENSITY to intensity) else emptyMap(), null)
+            Entry(ms(day, 12), false, if (intensity != null) mapOf(Q.INTENSITY to intensity) else emptyMap(), Outcome.RESISTED)
         assertFalse(Insights.heavier(emptyList(), now))
         val surge = (16..21).map { at(it) }
         assertTrue(Insights.heavier(surge, now))
@@ -632,5 +632,166 @@ class JournalLogicTest {
         assertEquals("RIDE_LOCK", DoorAction.RIDE_LOCK)
         assertEquals("IMPULSE_BLOCK", DoorAction.IMPULSE_BLOCK)
         assertEquals("FOCUS_BLOCK", DoorAction.FOCUS_BLOCK)
+    }
+
+    // ---- Batch 1: storage that never loses data ----
+
+    @Test
+    fun oneBadEntryDoesNotCostTheOthersAndIsKept() {
+        val good = Entry(5L, false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED).toJson()
+        val text = org.json.JSONArray().put(good).put("junk").put(org.json.JSONObject().put("s", true)).put(
+            Entry(6L, true, emptyMap(), null).toJson()
+        ).toString()
+        val read = Entry.parseList(text)
+        assertTrue(read.rootOk)
+        assertEquals(listOf(5L, 6L), read.items.map { it.time })
+        assertEquals(2, read.unreadable.size)
+        // Saving puts the unreadable rows back.
+        val saved = Entry.composeList(read.items + Entry(7L, false, emptyMap(), null), read.unreadable)
+        val again = Entry.parseList(saved)
+        assertEquals(listOf(5L, 6L, 7L), again.items.map { it.time })
+        assertEquals(2, again.unreadable.size)
+    }
+
+    @Test
+    fun aStoredValueThatIsNotAListIsNotEmptyItIsUnreadable() {
+        assertFalse(Entry.parseList("{oops").rootOk)
+        assertFalse(MyPlan.parseList("not json").rootOk)
+        assertTrue(Entry.parseList(null).rootOk)
+        assertTrue(Entry.parseList("").items.isEmpty())
+    }
+
+    @Test
+    fun oneBadPlanDoesNotCostTheOthers() {
+        val text = org.json.JSONArray()
+            .put(MyPlan(1, "If tired, then bed.", Opt.TIRED, true).toJson())
+            .put(org.json.JSONObject().put("x", "   "))
+            .put(MyPlan(2, "If bored, then walk.", Opt.BORED, false).toJson())
+            .toString()
+        val read = MyPlan.parseList(text)
+        assertEquals(listOf(1L, 2L), read.items.map { it.id })
+        assertEquals(1, read.unreadable.size)
+    }
+
+    // ---- Batch 3 ----
+
+    @Test
+    fun theEmptyNoteARideLeavesIsNotDataUntilItIsAnswered() {
+        val now = ms(20, 12)
+        val stub = Entry(ms(20, 9), false, emptyMap(), null)
+        assertTrue(stub.isStub)
+        assertFalse(stub.copy(outcome = Outcome.RESISTED).isStub)
+        assertFalse(stub.copy(after = After.STILL).isStub)
+        assertFalse(stub.copy(note = "hard evening").isStub)
+        assertFalse(Entry(ms(20, 9), true, emptyMap(), null).isStub) // a slip is never a stub
+        // Statistics ignore stubs: an accidental tap is not an urge.
+        assertEquals(0, Insights.week(listOf(stub), now, zone).total)
+        assertEquals(0, Insights.week(listOf(stub, stub.copy(time = ms(19, 9))), now, zone).total)
+        assertEquals(1, Insights.week(listOf(stub, stub.copy(time = ms(19, 9), outcome = Outcome.RESISTED)), now, zone).total)
+    }
+
+    @Test
+    fun stubsDoNotMakeAPatternOrAHeavierFortnight() {
+        val now = ms(28, 12)
+        val stubs = (16..25).map { Entry(ms(it, 23), false, emptyMap(), null) }
+        assertNull(Insights.hotWindow(stubs, now, zone))
+        assertFalse(Insights.heavier(stubs, now))
+        assertEquals("", Insights.summary(stubs, now, zone))
+    }
+
+    @Test
+    fun theCheckInIsPutBackAfterARebootUnlessTheRideIsTooOld() {
+        val delay = 20 * 60_000L
+        val maxAge = 6 * 60 * 60_000L
+        val start = 1_000_000_000L
+        // Rebooted 5 minutes into the ride: the original moment is still ahead.
+        assertEquals(start + delay, Times.checkInAt(start, start + 5 * 60_000L, delay, maxAge))
+        // Rebooted an hour in: the moment has passed, so it fires a minute from now.
+        assertEquals(start + 3_600_000L + 60_000L, Times.checkInAt(start, start + 3_600_000L, delay, maxAge))
+        // Too old, or no ride waiting: nothing.
+        assertNull(Times.checkInAt(start, start + maxAge + 1, delay, maxAge))
+        assertNull(Times.checkInAt(0L, start, delay, maxAge))
+    }
+
+    @Test
+    fun aRideAskedForFromOutsideCountsDownAndNeverRestartsARunningOne() {
+        val now = 10_000_000L
+        val ten = 10 * 60L
+        assertEquals(RideRequest.Decision.COUNTDOWN, RideRequest.decide(0L, now, ten, alreadyCountingDown = false))
+        // A ride started 3 minutes ago is shown again, not restarted (a double tap on the tile).
+        assertEquals(RideRequest.Decision.RESUME, RideRequest.decide(now - 3 * 60_000L, now, ten, false))
+        // An old ride no longer counts as running.
+        assertEquals(RideRequest.Decision.COUNTDOWN, RideRequest.decide(now - 11 * 60_000L, now, ten, false))
+        // A second request during the countdown does nothing.
+        assertEquals(RideRequest.Decision.IGNORE, RideRequest.decide(0L, now, ten, alreadyCountingDown = true))
+        assertEquals(5, RideRequest.COUNTDOWN_SECONDS)
+    }
+
+    @Test
+    fun theRideShowsTheRealLockStateNotJustThatARequestWasSent() {
+        val now = 5_000L
+        assertEquals(LockState.CHECKING, RideStatus.lockState(null, checked = false, now = now))
+        assertEquals(LockState.UNREACHABLE, RideStatus.lockState(null, checked = true, now = now))
+        assertEquals(LockState.NOT_DEVICE_OWNER, RideStatus.lockState(DoorStatus(false, now + 1000, 0), true, now))
+        assertEquals(LockState.ACTIVE, RideStatus.lockState(DoorStatus(true, now + 1000, 0), true, now))
+        assertEquals(LockState.NOT_ACTIVE, RideStatus.lockState(DoorStatus(true, 0L, 0L), true, now))
+        assertEquals(LockState.NOT_ACTIVE, RideStatus.lockState(DoorStatus(true, now - 1, 0L), true, now))
+    }
+
+    @Test
+    fun oldExportFilesAreDeletedAndNewOnesKept() {
+        val dir = java.nio.file.Files.createTempDirectory("exports").toFile()
+        try {
+            val old = java.io.File(dir, "old.csv").apply { writeText("x"); setLastModified(1_000L) }
+            val fresh = java.io.File(dir, "fresh.csv").apply { writeText("y"); setLastModified(9_000L) }
+            assertEquals(1, ExportFiles.cleanup(dir, olderThanMs = 5_000L, now = 10_000L))
+            assertFalse(old.exists())
+            assertTrue(fresh.exists())
+            // Zero age removes everything, which is what happens just before a new export is written.
+            assertEquals(1, ExportFiles.cleanup(dir, olderThanMs = 0L, now = 10_000L))
+            assertEquals(0, ExportFiles.cleanup(java.io.File(dir, "missing"), 0L, 10_000L))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun clockTimesAreFormattedInThePhonesZone() {
+        assertEquals("14:32", Times.clockAt(ms(5, 14) + 32 * 60_000L, zone))
+    }
+
+    // ---- Batch 4 (journal) ----
+
+    @Test
+    fun aKeyIsNeverSavedAsPlainTextWithoutAgreement() {
+        assertEquals(KeyStorage.SEALED, KeyPolicy.decide("sealed-text", allowPlain = false))
+        assertEquals(KeyStorage.SEALED, KeyPolicy.decide("sealed-text", allowPlain = true))
+        assertEquals(KeyStorage.REFUSED, KeyPolicy.decide(null, allowPlain = false))
+        assertEquals(KeyStorage.PLAIN, KeyPolicy.decide(null, allowPlain = true))
+    }
+
+    @Test
+    fun googleFallsBackToTheLatestFlashModelOnAnUnknownModel() {
+        assertEquals("gemini-flash-latest", AiClient.fallbackModel(Provider.GOOGLE, "gemini-3.8-flash", AiError.BAD_MODEL))
+        assertEquals("gemini-flash-latest", AiClient.fallbackModel(Provider.GOOGLE, "models/old-model", AiError.BAD_MODEL))
+        // Never the same model twice, never for other errors, never for other providers.
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "gemini-flash-latest", AiError.BAD_MODEL))
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "models/gemini-flash-latest", AiError.BAD_MODEL))
+        assertNull(AiClient.fallbackModel(Provider.GOOGLE, "gemini-3.8-flash", AiError.BAD_KEY))
+        assertNull(AiClient.fallbackModel(Provider.OPENAI, "gpt-x", AiError.BAD_MODEL))
+    }
+
+    @Test
+    fun aMalformedServiceAddressIsItsOwnErrorNotANetworkProblem() {
+        assertTrue(AiClient.validEndpoint("https://api.example.com/v1"))
+        assertTrue(AiClient.validEndpoint("http://localhost:8080/v1"))
+        assertFalse(AiClient.validEndpoint(""))
+        assertFalse(AiClient.validEndpoint("not a url"))
+        assertFalse(AiClient.validEndpoint("ftp://example.com"))
+        assertFalse(AiClient.validEndpoint("file:///etc/passwd"))
+        assertFalse(AiClient.validEndpoint("https://"))
+        // No network is touched: the address is rejected first.
+        assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "not a url", "k", "m", "s", "u"))
+        assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chat(Provider.CUSTOM, "", "k", "m", "s", "u"))
     }
 }

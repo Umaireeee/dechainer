@@ -112,6 +112,15 @@ object PomodoroCore {
         else state.copy(endsAt = 0L, pausedRemaining = (state.endsAt - now).coerceAtLeast(1_000L))
 
     /** Back to an idle focus session, keeping the cycle count. */
+    /**
+     * The state that starts a committed block, or [state] itself when the timer is not idle. The
+     * idle check lives here, next to the change, so two quick block requests can never replace a
+     * long block that is already running.
+     */
+    fun beginBlockIfIdle(state: PomodoroState, endsAt: Long, now: Long, firstSessionMinutes: Int): PomodoroState =
+        if (!state.isIdle) state
+        else startFor(PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt), now, firstSessionMinutes)
+
     fun stop(state: PomodoroState): PomodoroState =
         PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = state.focusDoneInCycle)
 

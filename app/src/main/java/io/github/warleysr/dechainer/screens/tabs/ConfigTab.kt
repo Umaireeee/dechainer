@@ -95,6 +95,7 @@ fun ConfigTab(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
+            item { io.github.warleysr.dechainer.screens.common.FullScreenHint() }
             item { SectionHeader(stringResource(R.string.config_section_protection)) }
             item {
                 GroupedRow(GroupPos.Top) { ListItem(

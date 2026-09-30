@@ -165,7 +165,7 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = { askFocus = false }) { Text(stringResource(R.string.delete_no)) } }
         )
     }
-    val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
+    val recentCount = entries.count { !it.isStub && it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -343,9 +343,9 @@ fun HomeScreen(
 @Composable
 fun RideScreen(
     startedAt: Long,
-    blockMinutes: Int,
-    lockMinutes: Int,
     door: Door.Result?,
+    status: DoorStatus?,
+    statusChecked: Boolean,
     step: Step,
     myPlan: MyPlan?,
     onDone: () -> Unit,
@@ -376,16 +376,24 @@ fun RideScreen(
             centerText = if (finished) stringResource(R.string.ride_done_mark) else "%d:%02d".format(remaining / 60, remaining % 60),
             caption = stringResource(if (finished) R.string.ride_finished else if (inhale) R.string.ride_in else R.string.ride_out)
         )
+        val lockState = RideStatus.lockState(status, statusChecked, System.currentTimeMillis())
         Text(
             when (door) {
-                Door.Result.SENT -> stringResource(R.string.ride_locked, lockMinutes) + "\n" +
-                    stringResource(R.string.ride_paused, blockMinutes)
+                Door.Result.SENT -> when (lockState) {
+                    LockState.CHECKING -> stringResource(R.string.ride_state_checking)
+                    LockState.UNREACHABLE -> stringResource(R.string.ride_state_unreachable)
+                    LockState.NOT_DEVICE_OWNER -> stringResource(R.string.ride_state_not_owner)
+                    LockState.ACTIVE -> stringResource(R.string.ride_state_active, Times.clockAt(status?.rideLockUntil ?: 0L))
+                    LockState.NOT_ACTIVE -> stringResource(R.string.ride_state_inactive)
+                } + if (lockState == LockState.ACTIVE && (status?.impulseUntil ?: 0L) > System.currentTimeMillis()) {
+                    "\n" + stringResource(R.string.ride_impulse_until, Times.clockAt(status?.impulseUntil ?: 0L))
+                } else ""
                 Door.Result.NOT_INSTALLED -> stringResource(R.string.door_not_installed)
                 Door.Result.NO_PERMISSION -> stringResource(R.string.door_no_permission)
                 null -> ""
             },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (lockState == LockState.ACTIVE) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
@@ -403,6 +411,31 @@ fun RideScreen(
             Text(stringResource(R.string.ride_longer))
         }
         TextButton(onClick = onLeave) { Text(stringResource(R.string.ride_leave)) }
+    }
+}
+
+/** A short countdown before a ride that was asked for from outside the app, with a way out. */
+@Composable
+fun StartingScreen(startedAt: Long, onStart: () -> Unit, onCancel: () -> Unit) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (System.currentTimeMillis() - startedAt < RideRequest.COUNTDOWN_SECONDS * 1000L) {
+            now = System.currentTimeMillis()
+            delay(200)
+        }
+        onStart()
+    }
+    val left = (RideRequest.COUNTDOWN_SECONDS - (now - startedAt) / 1000L).coerceIn(1L, RideRequest.COUNTDOWN_SECONDS.toLong())
+    Page {
+        Spacer(Modifier.height(48.dp))
+        Text(stringResource(R.string.starting_title, left.toInt()), style = MaterialTheme.typography.headlineMedium)
+        Text(
+            stringResource(R.string.starting_body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.starting_cancel)) }
     }
 }
 
@@ -893,6 +926,8 @@ fun SettingsScreen(
     settings: AiSettings,
     store: JournalStore,
     reminders: ReminderSettings,
+    privacy: PrivacySettings,
+    onPrivacyChanged: () -> Unit,
     plans: List<MyPlan>,
     onPlansChanged: () -> Unit,
     onNeedNotifications: (() -> Unit) -> Unit,
@@ -912,6 +947,8 @@ fun SettingsScreen(
     var backupMessage by remember { mutableStateOf<Int?>(null) }
     var backupCount by remember { mutableIntStateOf(0) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var askPlainKey by remember { mutableStateOf(false) }
+    var hideInRecents by remember { mutableStateOf(privacy.hideInRecents) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
     var evening by remember { mutableIntStateOf(reminders.eveningMinute) }
@@ -931,6 +968,33 @@ fun SettingsScreen(
         consent = false
         saved = false
         test = TestState.Idle
+    }
+
+    fun finishSave() {
+        settings.provider = provider
+        settings.customBase = customBase
+        settings.model = model
+        settings.consent = consent
+        settings.about = about
+        settings.deep = deep
+        settings.expandAll = expandAll
+        saved = true
+    }
+
+    if (askPlainKey) {
+        AlertDialog(
+            onDismissRequest = { askPlainKey = false },
+            title = { Text(stringResource(R.string.key_plain_title)) },
+            text = { Text(stringResource(R.string.key_plain_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    settings.saveKey(key, allowPlain = true)
+                    askPlainKey = false
+                    finishSave()
+                }) { Text(stringResource(R.string.key_plain_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { askPlainKey = false }) { Text(stringResource(R.string.key_plain_no)) } }
+        )
     }
 
     if (confirmDelete) {
@@ -1179,15 +1243,8 @@ fun SettingsScreen(
 
         Button(
             onClick = {
-                settings.key = key
-                settings.provider = provider
-                settings.customBase = customBase
-                settings.model = model
-                settings.consent = consent
-                settings.about = about
-                settings.deep = deep
-                settings.expandAll = expandAll
-                saved = true
+                // The key first: if this phone cannot encrypt it, nothing is saved until the person agrees.
+                if (settings.saveKey(key)) finishSave() else askPlainKey = true
             },
             modifier = Modifier.fillMaxWidth()
         ) { Text(stringResource(if (saved) R.string.settings_saved else R.string.settings_save)) }
@@ -1285,6 +1342,17 @@ fun SettingsScreen(
         }
 
         Eyebrow(stringResource(R.string.settings_privacy))
+        Row(
+            Modifier.fillMaxWidth().clickable {
+                hideInRecents = !hideInRecents
+                privacy.hideInRecents = hideInRecents
+                onPrivacyChanged()
+            },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(checked = hideInRecents, onCheckedChange = null)
+            Text(stringResource(R.string.settings_hide_recents), style = MaterialTheme.typography.bodyMedium)
+        }
         Text(
             stringResource(R.string.settings_privacy_body),
             style = MaterialTheme.typography.bodyMedium,
@@ -1342,4 +1410,5 @@ private fun errorRes(e: AiError): Int = when (e) {
     AiError.SERVER -> R.string.error_server
     AiError.EMPTY -> R.string.error_empty
     AiError.BAD_MODEL -> R.string.error_bad_model
+    AiError.BAD_URL -> R.string.error_bad_url
 }

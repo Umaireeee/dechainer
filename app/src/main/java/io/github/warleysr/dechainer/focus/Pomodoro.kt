@@ -197,12 +197,16 @@ object Pomodoro {
         ensureLoaded(context)
         val total = ((endsAt - now()) / 60_000L).toInt()
         val first = BlockPlanner.plan(total, _settings.value).firstOrNull() ?: return false
-        if (!_state.value.isIdle) return false
-        dismissAlarm(context)
-        change(context) {
-            PomodoroCore.startFor(PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt), now(), first.second)
+        var started = false
+        // The idle check is made inside the change, under the lock: a second request that arrives
+        // a moment later sees the block the first one started and leaves it alone.
+        change(context) { current ->
+            val next = PomodoroCore.beginBlockIfIdle(current, endsAt, now(), first.second)
+            started = next != current
+            next
         }
-        return true
+        if (started) dismissAlarm(context)
+        return started
     }
 
     fun pause(context: Context) = change(context) { PomodoroCore.pause(it, now()) }
@@ -803,7 +807,11 @@ object Pomodoro {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(questionIntent(ctx, id))
-                .setFullScreenIntent(questionIntent(ctx, id), true)
+            // Android 14+ can refuse the full-screen alert. Without it the notification and its
+            // Yes/No buttons still work; Settings shows a one-time hint about the permission.
+            if (io.github.warleysr.dechainer.data.FullScreenAlerts.isAllowed(ctx)) {
+                b.setFullScreenIntent(questionIntent(ctx, id), true)
+            }
             if (id != null) addQuestionActions(ctx, b, id)
             // Three lecture answers already fill the notification; tapping any stops the ring too.
             if (id == null || _lectureAsk.value != id) {

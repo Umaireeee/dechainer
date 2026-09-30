@@ -15,7 +15,13 @@ import androidx.core.content.edit
 class SecurityManager {
 
     enum class ImpulseLockMode {
-        OFF, NORMAL, HARD
+        OFF, NORMAL, HARD;
+
+        companion object {
+            /** A stored mode that is missing or unknown (an older or damaged value) means OFF, never a crash. */
+            fun parse(raw: String?): ImpulseLockMode =
+                runCatching { valueOf(raw ?: OFF.name) }.getOrDefault(OFF)
+        }
     }
 
     /** What the "I'm having impulses" panic button does on top of locking Dechainer itself. */
@@ -120,7 +126,7 @@ class SecurityManager {
 
         fun getImpulseLockMode(context: Context): ImpulseLockMode {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return ImpulseLockMode.valueOf(prefs.getString("impulse_lock_mode", ImpulseLockMode.OFF.name)!!)
+            return ImpulseLockMode.parse(prefs.getString("impulse_lock_mode", null))
         }
 
         fun setImpulseLockMode(context: Context, mode: ImpulseLockMode) {
@@ -243,27 +249,56 @@ class SecurityManager {
                 .joinToString("")
         }
 
-        fun getRecoveryCode(context: Context) : String? {
-            return context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE).getString("recovery_code", null)
+        private const val KEY_RECOVERY_PLAIN = "recovery_code"
+        private const val KEY_RECOVERY_HASH = "recovery_hash"
+
+        private fun recoveryPrefs(context: Context) =
+            context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
+
+        /**
+         * The stored hash of the recovery code, or null when none is set. A code saved by an older
+         * version as plain text is turned into a hash here, on first read, and the text is removed.
+         */
+        private fun recoveryHash(context: Context): String? = synchronized(RECOVERY_LOCK) {
+            val prefs = recoveryPrefs(context)
+            prefs.getString(KEY_RECOVERY_HASH, null)?.let { return@synchronized it }
+            val plain = prefs.getString(KEY_RECOVERY_PLAIN, null) ?: return@synchronized null
+            val hash = RecoveryCodeHash.create(plain)
+            prefs.edit(commit = true) {
+                putString(KEY_RECOVERY_HASH, hash)
+                remove(KEY_RECOVERY_PLAIN)
+            }
+            hash
         }
 
+        private val RECOVERY_LOCK = Any()
+
+        /** Whether a recovery code has been set. The code itself can no longer be read back. */
+        fun hasRecoveryCode(context: Context): Boolean = recoveryHash(context) != null
+
         fun isRecoveryCodeSet(context: Context) : Boolean  {
-            isRecoveryKeySet.value = getRecoveryCode(context) != null
+            isRecoveryKeySet.value = hasRecoveryCode(context)
             return isRecoveryKeySet.value
         }
 
         fun saveRecoveryCode(context: Context, code: String) {
-            val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("recovery_code", code) }
+            synchronized(RECOVERY_LOCK) {
+                recoveryPrefs(context).edit(commit = true) {
+                    putString(KEY_RECOVERY_HASH, RecoveryCodeHash.create(code))
+                    remove(KEY_RECOVERY_PLAIN)
+                }
+            }
             isRecoveryKeySet.value = true
         }
 
-        fun validateRecoveryCode(userInput: String, storedKey: String): Boolean {
+        /** Checks [userInput] against the stored hash. An open recovery session counts as correct. */
+        fun validateRecoveryCode(context: Context, userInput: String): Boolean {
             if (isSessionActive()) return true
 
             // Opening the session is now RecoveryGate's call, via beginUnlock, so the unlock
             // delay can sit between a correct code and changes unlocking.
-            return userInput == storedKey
+            val stored = recoveryHash(context) ?: return false
+            return RecoveryCodeHash.verify(userInput, stored)
         }
 
         private const val KEY_UNLOCK_DELAY_MIN = "unlock_delay_minutes"
@@ -342,15 +377,24 @@ class SecurityManager {
             remove(KEY_UNLOCK_AT)
         }
 
-        fun startForcedRemoval(context: Context) {
+        private val forcedRemovalLock = Any()
+
+        /** Android's count of boots, so a reboot is noticed for certain; -1 if it can't be read. */
+        private fun bootCount(context: Context): Int = try {
+            android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, ForcedRemovalClock.UNKNOWN_BOOT)
+        } catch (_: Exception) {
+            ForcedRemovalClock.UNKNOWN_BOOT
+        }
+
+        fun startForcedRemoval(context: Context) = synchronized(forcedRemovalLock) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            prefs.edit {
+            prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", true)
                 putLong("forced_removal_accumulated", 0L)
                 putLong("forced_removal_last_elapsed", SystemClock.elapsedRealtime())
+                putInt("forced_removal_last_boot", bootCount(context))
             }
         }
-
         fun cancelForcedRemoval(context: Context) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit {
@@ -358,23 +402,31 @@ class SecurityManager {
             }
         }
 
-        fun getForcedRemovalRemainingTime(context: Context): Long {
+        /**
+         * Milliseconds of the wait left, or -1 when no forced removal is running. Every call also
+         * checkpoints the running time, which is why the enforcer calls it on every sync: time only
+         * counts when it is written down, and a reboot would otherwise lose what came after the last write.
+         */
+        fun getForcedRemovalRemainingTime(context: Context): Long = synchronized(forcedRemovalLock) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            if (!prefs.getBoolean("forced_removal_active", false)) return -1L
+            if (!prefs.getBoolean("forced_removal_active", false)) return@synchronized -1L
 
-            var accumulated = prefs.getLong("forced_removal_accumulated", 0L)
-            val lastElapsed = prefs.getLong("forced_removal_last_elapsed", 0L)
             val now = SystemClock.elapsedRealtime()
+            val boot = bootCount(context)
+            val accumulated = prefs.getLong("forced_removal_accumulated", 0L) + ForcedRemovalClock.elapsedSince(
+                lastElapsed = prefs.getLong("forced_removal_last_elapsed", 0L),
+                lastBootCount = prefs.getInt("forced_removal_last_boot", ForcedRemovalClock.UNKNOWN_BOOT),
+                nowElapsed = now,
+                nowBootCount = boot
+            )
 
-            val diff = if (now >= lastElapsed) now - lastElapsed else now
-            accumulated += diff
-
-            prefs.edit {
+            prefs.edit(commit = true) {
                 putLong("forced_removal_accumulated", accumulated)
                 putLong("forced_removal_last_elapsed", now)
+                putInt("forced_removal_last_boot", boot)
             }
 
-            return (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
+            (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
         }
 
     }

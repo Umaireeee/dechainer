@@ -330,6 +330,15 @@ data class Entry(
     /** A slip, or an urge that was given in to. */
     val gaveIn: Boolean get() = slipped || outcome == Outcome.GAVE_IN
 
+    /**
+     * The empty note a ride leaves the moment it starts, before anything has been answered. It keeps
+     * the urge on record, but it is not data: statistics and patterns ignore it, so an accidental
+     * tap doesn't count as an urge.
+     */
+    val isStub: Boolean
+        get() = !slipped && answers.isEmpty() && outcome == null && after == null &&
+            tried.isEmpty() && note.isBlank() && report == null
+
     /** An urge that was ridden out. An entry still open (no answer yet) is neither ridden out nor given in to. */
     val ridden: Boolean get() = !gaveIn && outcome == Outcome.RESISTED
 
@@ -370,15 +379,15 @@ data class Entry(
             )
         }.getOrNull()
 
-        fun listFromJson(text: String?): List<Entry> {
-            if (text.isNullOrBlank()) return emptyList()
-            return runCatching {
-                val arr = JSONArray(text)
-                (0 until arr.length()).mapNotNull { fromJson(arr.getJSONObject(it)) }
-            }.getOrDefault(emptyList())
-        }
+        fun listFromJson(text: String?): List<Entry> = parseList(text).items
+
+        /** Row by row, keeping what could not be read; see [Stored]. */
+        fun parseList(text: String?): Stored<Entry> = parseStored(text) { fromJson(it) }
 
         fun listToJson(entries: List<Entry>): String = JSONArray(entries.map { it.toJson() }).toString()
+
+        fun composeList(entries: List<Entry>, unreadable: List<Any>): String =
+            composeStored(entries.map { it.toJson() }, unreadable)
 
         /** Adds [incoming] to [existing], keeping one entry per time (the existing one wins). */
         fun merge(existing: List<Entry>, incoming: List<Entry>): List<Entry> {
@@ -402,8 +411,11 @@ data class Week(
 object Insights {
     private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
 
+    /** The entries that count: without the empty notes a ride leaves before it has been answered. */
+    fun real(entries: List<Entry>): List<Entry> = entries.filterNot { it.isStub }
+
     fun week(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): Week {
-        val recent = entries.filter { it.time in (now - WEEK_MS)..now }
+        val recent = real(entries).filter { it.time in (now - WEEK_MS)..now }
         val top = recent.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .maxWithOrNull(compareBy<Map.Entry<Opt, Int>> { it.value }.thenBy { -it.key.ordinal })?.key
         val peak = recent.groupingBy { Instant.ofEpochMilli(it.time).atZone(zone).hour }.eachCount()
@@ -481,7 +493,7 @@ object Insights {
      * the trouble begins rather than hours earlier.
      */
     fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? {
-        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        val recent = real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
         if (recent.size < 6) return null
         val hours = recent.map { Instant.ofEpochMilli(it.time).atZone(zone).hour }
         fun inside(start: Int, hour: Int) = (hour - start + 24) % 24 < WINDOW_HOURS
@@ -510,8 +522,9 @@ object Insights {
      */
     fun heavier(entries: List<Entry>, now: Long): Boolean {
         val day = 24L * 60 * 60 * 1000
-        val last = entries.filter { it.time in (now - 14 * day)..now }
-        val before = entries.count { it.time in (now - 28 * day) until (now - 14 * day) }
+        val counted = real(entries)
+        val last = counted.filter { it.time in (now - 14 * day)..now }
+        val before = counted.count { it.time in (now - 28 * day) until (now - 14 * day) }
         val overwhelming = last.count { it.answers[Q.INTENSITY] == Opt.OVERWHELMING }
         return overwhelming >= 3 || (last.size >= 6 && last.size >= before * 3 / 2 + 1)
     }
@@ -551,7 +564,7 @@ object Insights {
 
     /** A short, anonymous digest of recent history for the AI: counts and patterns, no notes. */
     fun summary(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
-        val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
+        val recent = real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
         if (recent.size < 3) return ""
         val feelings = recent.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.take(3).joinToString(", ") { "${Plain.answer(it.key)} (${it.value})" }
@@ -605,15 +618,15 @@ data class MyPlan(val id: Long, val text: String, val feeling: Opt?, val late: B
             )
         }.getOrNull()
 
-        fun listFromJson(text: String?): List<MyPlan> {
-            if (text.isNullOrBlank()) return emptyList()
-            return runCatching {
-                val arr = JSONArray(text)
-                (0 until arr.length()).mapNotNull { fromJson(arr.getJSONObject(it)) }
-            }.getOrDefault(emptyList())
-        }
+        fun listFromJson(text: String?): List<MyPlan> = parseList(text).items
+
+        /** Row by row, keeping what could not be read; see [Stored]. */
+        fun parseList(text: String?): Stored<MyPlan> = parseStored(text) { fromJson(it) }
 
         fun listToJson(plans: List<MyPlan>): String = JSONArray(plans.map { it.toJson() }).toString()
+
+        fun composeList(plans: List<MyPlan>, unreadable: List<Any>): String =
+            composeStored(plans.map { it.toJson() }, unreadable)
 
         /**
          * During a ride nothing has been asked yet, so the feeling is unknown: show the newest plan
@@ -631,6 +644,51 @@ data class MyPlan(val id: Long, val text: String, val feeling: Opt?, val late: B
     }
 }
 
+/**
+ * What to do when a ride is asked for from outside the app: the quick-settings tile, the icon
+ * shortcut, or another app (the screen is exported, so anything can ask). It never starts at once:
+ * a short countdown gives a chance to cancel, and asking again while a ride is running or about to
+ * start changes nothing.
+ */
+object RideRequest {
+    enum class Decision { COUNTDOWN, RESUME, IGNORE }
+
+    const val COUNTDOWN_SECONDS = 5
+
+    fun decide(pendingStart: Long, now: Long, rideSeconds: Long, alreadyCountingDown: Boolean): Decision = when {
+        alreadyCountingDown -> Decision.IGNORE
+        pendingStart != 0L && now >= pendingStart && now - pendingStart < rideSeconds * 1000L -> Decision.RESUME
+        else -> Decision.COUNTDOWN
+    }
+}
+
+/** What Déchaîner says about itself, read through its signature-protected status provider. */
+data class DoorStatus(val deviceOwner: Boolean, val rideLockUntil: Long, val impulseUntil: Long)
+
+enum class LockState { CHECKING, UNREACHABLE, NOT_DEVICE_OWNER, ACTIVE, NOT_ACTIVE }
+
+object RideStatus {
+    /** The truth about the lock, not what was asked for: sending the request proves nothing on its own. */
+    fun lockState(status: DoorStatus?, checked: Boolean, now: Long): LockState = when {
+        !checked -> LockState.CHECKING
+        status == null -> LockState.UNREACHABLE
+        !status.deviceOwner -> LockState.NOT_DEVICE_OWNER
+        status.rideLockUntil > now -> LockState.ACTIVE
+        else -> LockState.NOT_ACTIVE
+    }
+}
+
+/** Files made for sharing live only briefly: old ones are deleted, so a journal is not left lying in the cache. */
+object ExportFiles {
+    /** Deletes files in [dir] not modified for [olderThanMs]. Returns how many. */
+    fun cleanup(dir: java.io.File, olderThanMs: Long, now: Long = System.currentTimeMillis()): Int {
+        val files = dir.listFiles() ?: return 0
+        var deleted = 0
+        files.filter { it.isFile && now - it.lastModified() >= olderThanMs }.forEach { if (it.delete()) deleted++ }
+        return deleted
+    }
+}
+
 object Times {
     /** The next moment after [now] that is [minuteOfDay] minutes past local midnight. */
     fun nextDaily(minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
@@ -640,7 +698,54 @@ object Times {
         return at.toInstant().toEpochMilli()
     }
 
+    /**
+     * When the check-in should fire for a ride that started at [rideStart] and is still waiting, or
+     * null if it is too old to ask about. Used to put the alarm back after a reboot: if the moment
+     * has already passed, it fires a minute from [now] instead.
+     */
+    fun checkInAt(rideStart: Long, now: Long, delayMs: Long, maxAgeMs: Long): Long? {
+        if (rideStart <= 0L || now - rideStart > maxAgeMs) return null
+        return maxOf(rideStart + delayMs, now + 60_000L)
+    }
+
+    /** A moment as a 24-hour clock time, in the phone's time zone. */
+    fun clockAt(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+        java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(millis).atZone(zone))
+
     fun clock(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
+}
+
+/**
+ * What was read back from a stored list. [unreadable] holds the rows that would not parse, exactly
+ * as they were, so saving can put them back instead of silently dropping them. [rootOk] is false
+ * when the stored text is not a list at all: nothing should be written over it then.
+ */
+class Stored<T>(val items: List<T>, val unreadable: List<Any>, val rootOk: Boolean)
+
+/** Reads a stored JSON list row by row: one bad row never costs the others. */
+fun <T> parseStored(text: String?, parse: (JSONObject) -> T?): Stored<T> {
+    if (text.isNullOrBlank()) return Stored(emptyList(), emptyList(), true)
+    val arr = try {
+        JSONArray(text)
+    } catch (_: Exception) {
+        return Stored(emptyList(), emptyList(), false)
+    }
+    val good = mutableListOf<T>()
+    val bad = mutableListOf<Any>()
+    for (i in 0 until arr.length()) {
+        val raw = arr.opt(i)
+        val item = (raw as? JSONObject)?.let { runCatching { parse(it) }.getOrNull() }
+        if (item != null) good += item else if (raw != null) bad += raw
+    }
+    return Stored(good, bad, true)
+}
+
+/** Writes rows back together with the ones that could not be read. */
+fun composeStored(rows: List<JSONObject>, unreadable: List<Any>): String {
+    val arr = JSONArray()
+    rows.forEach { arr.put(it) }
+    unreadable.forEach { arr.put(it) }
+    return arr.toString()
 }
 
 /** Which entries the log shows. */

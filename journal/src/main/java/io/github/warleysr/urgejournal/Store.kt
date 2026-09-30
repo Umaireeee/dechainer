@@ -11,20 +11,49 @@ class JournalStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("journal", Context.MODE_PRIVATE)
 
     @Synchronized
-    fun all(): List<Entry> = Entry.listFromJson(prefs.getString(KEY, null)).sortedBy { it.time }
+    fun all(): List<Entry> = Entry.parseList(prefs.getString(KEY, null)).items.sortedBy { it.time }
+
+    /**
+     * Changes the stored entries. If the stored text cannot be read as a list at all, nothing is
+     * written, so a read that failed can never be saved over the journal. Rows that could not be
+     * parsed individually are kept as they were. Returns false when nothing was written.
+     */
+    @Synchronized
+    private fun mutate(change: (List<Entry>) -> List<Entry>): Boolean {
+        val read = Entry.parseList(prefs.getString(KEY, null))
+        if (!read.rootOk) return false
+        val next = change(read.items.sortedBy { it.time }).takeLast(LIMIT)
+        prefs.edit(commit = true) { putString(KEY, Entry.composeList(next, read.unreadable)) }
+        return true
+    }
 
     @Synchronized
     fun add(entry: Entry) {
-        val next = (all() + entry).takeLast(LIMIT)
-        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next)) }
+        mutate { it + entry }
     }
 
     /** Adds the entry, or replaces the one made at the same moment (a ride's first note becomes its full entry). */
     @Synchronized
     fun put(entry: Entry) {
-        val list = all()
-        val next = if (list.any { it.time == entry.time }) list.map { if (it.time == entry.time) entry else it } else list + entry
-        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next.takeLast(LIMIT))) }
+        mutate { list ->
+            if (list.any { it.time == entry.time }) list.map { if (it.time == entry.time) entry else it } else list + entry
+        }
+    }
+
+    /** Removes the entry made at [time], but only if it is still an empty ride note; anything answered stays. */
+    @Synchronized
+    fun deleteStub(time: Long) {
+        mutate { list -> list.filterNot { it.time == time && it.isStub } }
+    }
+
+    /** A ride nobody ever checked in on, older than [maxAgeMs]: its empty note and its reminder are dropped. */
+    @Synchronized
+    fun dropStaleRide(now: Long, maxAgeMs: Long) {
+        val started = pendingRide()
+        if (started != 0L && now - started > maxAgeMs) {
+            deleteStub(started)
+            clearPendingRide()
+        }
     }
 
     @Synchronized
@@ -45,26 +74,28 @@ class JournalStore(context: Context) {
     // ---- The if-then plans the person saved ----
 
     @Synchronized
-    fun plans(): List<MyPlan> = MyPlan.listFromJson(prefs.getString(PLANS, null))
+    fun plans(): List<MyPlan> = MyPlan.parseList(prefs.getString(PLANS, null)).items
+
+    /** Same rule as [mutate]: a failed read is never saved over the plans. */
+    @Synchronized
+    private fun mutatePlans(change: (List<MyPlan>) -> List<MyPlan>) {
+        val read = MyPlan.parseList(prefs.getString(PLANS, null))
+        if (!read.rootOk) return
+        prefs.edit(commit = true) { putString(PLANS, MyPlan.composeList(change(read.items), read.unreadable)) }
+    }
 
     @Synchronized
-    fun addPlan(plan: MyPlan) {
-        prefs.edit(commit = true) { putString(PLANS, MyPlan.listToJson((plans() + plan).takeLast(PLAN_LIMIT))) }
-    }
+    fun addPlan(plan: MyPlan) = mutatePlans { (it + plan).takeLast(PLAN_LIMIT) }
 
     @Synchronized
     fun editPlan(id: Long, text: String) {
         val clean = text.trim()
         if (clean.isEmpty()) return
-        prefs.edit(commit = true) {
-            putString(PLANS, MyPlan.listToJson(plans().map { if (it.id == id) it.copy(text = clean.take(300)) else it }))
-        }
+        mutatePlans { list -> list.map { if (it.id == id) it.copy(text = clean.take(300)) else it } }
     }
 
     @Synchronized
-    fun removePlan(id: Long) {
-        prefs.edit(commit = true) { putString(PLANS, MyPlan.listToJson(plans().filter { it.id != id })) }
-    }
+    fun removePlan(id: Long) = mutatePlans { list -> list.filter { it.id != id } }
 
     // ---- The evening question: did the day go the way you planned? ----
 
@@ -82,6 +113,8 @@ class JournalStore(context: Context) {
 
     @Synchronized
     fun setDay(date: java.time.LocalDate, result: DayResult) {
+        // A stored value that cannot be read is left alone rather than replaced by one day.
+        if (runCatching { org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}") }.isFailure) return
         val kept = (days() + (date to result)).toSortedMap().entries.toList().takeLast(120)
         val o = org.json.JSONObject()
         kept.forEach { o.put(it.key.toString(), it.value.name) }
@@ -112,10 +145,13 @@ class JournalStore(context: Context) {
     fun importJson(text: String): Int {
         val incoming = Entry.listFromJson(text)
         if (incoming.isEmpty()) return 0
-        val before = all()
-        val merged = Entry.merge(before, incoming).takeLast(LIMIT)
-        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(merged)) }
-        return (merged.size - before.size).coerceAtLeast(0)
+        var added = 0
+        mutate { before ->
+            val merged = Entry.merge(before, incoming).takeLast(LIMIT)
+            added = (merged.size - before.size).coerceAtLeast(0)
+            merged
+        }
+        return added
     }
 
     /** The last weekly review and when it was written, if any. */
@@ -129,8 +165,7 @@ class JournalStore(context: Context) {
     }
 
     private fun update(time: Long, change: (Entry) -> Entry) {
-        val next = all().map { if (it.time == time) change(it) else it }
-        prefs.edit(commit = true) { putString(KEY, Entry.listToJson(next)) }
+        mutate { list -> list.map { if (it.time == time) change(it) else it } }
     }
 
     private companion object {
@@ -161,6 +196,23 @@ object Door {
     fun hasPermission(context: Context): Boolean =
         context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
+    private const val STATUS_URI = "content://io.github.warleysr.dechainer.status/status"
+
+    /**
+     * Asks Déchaîner what is really going on: is it Device Owner, and until when is the ride lock
+     * running. Null if it can't be reached. Blocking, so call it off the main thread.
+     */
+    fun status(context: Context): DoorStatus? = runCatching {
+        context.contentResolver.query(android.net.Uri.parse(STATUS_URI), null, null, null, null)?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            DoorStatus(
+                deviceOwner = c.getInt(c.getColumnIndexOrThrow("device_owner")) == 1,
+                rideLockUntil = c.getLong(c.getColumnIndexOrThrow("ride_lock_until")),
+                impulseUntil = c.getLong(c.getColumnIndexOrThrow("impulse_until"))
+            )
+        }
+    }.getOrNull()
+
     /**
      * Asks Déchaîner to block. SENT means the request left this app; Déchaîner still has to be
      * Device Owner for it to take effect.
@@ -177,4 +229,13 @@ object Door {
         )
         return Result.SENT
     }
+}
+
+/** Whether the app hides itself in the recent-apps list and blocks screenshots. On by default: entries are private. */
+class PrivacySettings(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("privacy", Context.MODE_PRIVATE)
+
+    var hideInRecents: Boolean
+        get() = prefs.getBoolean("hide", true)
+        set(v) = prefs.edit { putBoolean("hide", v) }
 }

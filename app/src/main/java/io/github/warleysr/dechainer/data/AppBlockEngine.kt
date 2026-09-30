@@ -93,9 +93,14 @@ abstract class AppBlockEngine {
             }
         }
         if (toBlock.isNotEmpty()) {
+            // Ownership is written BEFORE the suspension: if the process dies in between, the apps
+            // are still on record as ours to release, instead of orphaned and suspended for good.
+            owned += toBlock
+            prefs.edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned.toSet()) }
             val failed = Blocker.block(ctx, dpm, admin, toBlock)
             if (failed.isNotEmpty()) Timber.w("$logName: could not block $failed")
-            owned += toBlock - failed
+            owned.clear()
+            owned += ownedAfterBlock(initiallyOwned, toBlock.toSet(), failed)
         }
 
         // Release what this engine applied and no longer wants — unless something else still needs
@@ -104,8 +109,12 @@ abstract class AppBlockEngine {
         if (toRelease.isNotEmpty()) {
             val heldElsewhere = takeOver(toRelease)
             val releasable = (toRelease - heldElsewhere).filter { Blocker.isInstalled(ctx, it) }
-            if (releasable.isNotEmpty()) Blocker.release(ctx, dpm, admin, releasable)
-            owned -= toRelease
+            // An app Android refused to release stays on our list, so the next sync tries again.
+            val notReleased = if (releasable.isNotEmpty()) Blocker.release(ctx, dpm, admin, releasable) else emptySet()
+            if (notReleased.isNotEmpty()) Timber.w("$logName: could not release $notReleased")
+            val remaining = ownedAfterRelease(owned, toRelease, notReleased)
+            owned.clear()
+            owned += remaining
         }
 
         // Only touch disk when something changed — this runs on every tick, app switch and alarm.
@@ -150,3 +159,11 @@ abstract class AppBlockEngine {
     )
 
 }
+
+/** Packages owned once [toBlock] has been attempted: the ones Android refused ([failed]) were never suspended, so they are not ours. */
+internal fun ownedAfterBlock(ownedBefore: Set<String>, toBlock: Set<String>, failed: Set<String>): Set<String> =
+    ownedBefore + (toBlock - failed)
+
+/** Packages still owned after [toRelease] was attempted: only the ones actually released are given up. */
+internal fun ownedAfterRelease(owned: Set<String>, toRelease: Set<String>, notReleased: Set<String>): Set<String> =
+    owned - (toRelease - notReleased)
