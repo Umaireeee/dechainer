@@ -398,7 +398,6 @@ private fun App(activity: MainActivity) {
                     store.setDay(LocalDate.now(), result)
                     cardsTick++
                 },
-                onFocus = { minutes -> Door.send(context, DoorAction(DoorAction.FOCUS_BLOCK, minutes)) },
                 onShare = {
                     val send = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"

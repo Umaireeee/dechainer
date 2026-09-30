@@ -3,8 +3,7 @@
     <string name="app_name">Urge Journal</string>
 
     <string name="home_urge">I feel an urge</string>
-    <string name="home_urge_hint">Hold the button. It pauses your distraction apps for 30 minutes, and we ride it out together.</string>
-    <string name="home_urge_hold">Keep holding for a moment. It starts on a hold so a bump can\'t start it.</string>
+    <string name="home_urge_hint">One tap pauses your distraction apps for 30 minutes, and we ride it out together.</string>
     <string name="entry_urge">Urge</string>
     <string name="home_log_only">Just log it</string>
     <string name="home_slip">I already slipped</string>
@@ -326,11 +325,6 @@
     <string name="reminders_blocked">Notifications are off for this app. Turn them on in your phone\'s settings for reminders to appear.</string>
 
     <!-- One-tap focus, evening check-in, tile -->
-    <string name="home_focus">Start a focus block</string>
-    <string name="focus_title">Start a focus block?</string>
-    <string name="focus_body">Déchaîner locks your distraction apps in study sessions and breaks until the time is up. Leaving early takes your recovery code, so pick a length you can keep. How many minutes?</string>
-    <string name="focus_minutes">%1$d min</string>
-    <string name="focus_sent">Sent to Déchaîner. Your focus block is starting.</string>
     <string name="day_title">Did today go the way you planned?</string>
     <string name="day_planned">Yes, it went to plan</string>
     <string name="day_partly">Partly</string>

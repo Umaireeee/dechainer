@@ -77,12 +77,10 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 **One-time setup in Déchaîner:** *Settings → Impulse lock*, set the panic button to "timer and suspend" and pick the apps to pause. The journal's "Block my phone" button uses that.
 
 **When an urge hits:**
-1. **Hold** the glowing button in the journal (about a second, so a bump in your pocket can't start it), or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately pauses your distraction apps for 30 minutes (the ones chosen in Déchaîner's Impulse lock) and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), and your own rule if you've written one. Nothing to answer.
+1. Tap the glowing button in the journal, or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately pauses your distraction apps for 30 minutes (the ones chosen in Déchaîner's Impulse lock) and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), and your own rule if you've written one. Nothing to answer.
 2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes or pause your apps for an hour.
 3. Then choose **Save it and finish** (two taps) or **Add a few details** (three short questions and a plan). If you leave the app, a plain "Quick check-in" notification about 20 minutes later brings you back (you can turn it off in Settings), and a card on Home waits for you.
 4. The coach learns from your check-ins: once a step has worked for you a few times, it moves to the top of your plans.
-
-**Start a focus block in one tap:** the journal's Home has **Start a focus block** (25, 50 or 90 minutes). It asks Déchaîner to lock your distraction apps for study sessions until the time is up. Leaving early takes your recovery code, so pick a length you can keep.
 
 **Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "Did today go the way you planned?" with three answers, and the week panel shows how many days went to plan.
 
