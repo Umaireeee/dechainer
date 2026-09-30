@@ -85,6 +85,8 @@ sealed interface AiState {
     data object NeedsKey : AiState
     data object NeedsConsent : AiState
     data object Loading : AiState
+    /** The reply is arriving: [text] is everything written so far. */
+    data class Streaming(val text: String) : AiState
     /** The note suggests crisis, so care is shown instead of a report. */
     data object Support : AiState
     data class Ready(val text: String) : AiState
@@ -108,6 +110,9 @@ private const val LONGER_LOCK_MINUTES = 30
 
 /** How long to wait before asking Déchaîner what is really in force: it has to receive the request first. */
 private const val STATUS_DELAY_MS = 1500L
+
+/** The screen is refreshed with the streaming reply at most this often (milliseconds). */
+private const val STREAM_UI_MS = 80L
 
 private const val FORTNIGHT_MS = 14L * 24 * 60 * 60 * 1000
 private const val SIX_HOURS_MS = Notifier.PENDING_MAX_AGE_MS
@@ -209,8 +214,22 @@ private fun App(activity: MainActivity) {
         thread {
             val result = try {
                 // Built here, off the main thread: reading the whole journal can take a moment.
-                val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), about)
-                AiClient.chat(provider, baseUrl, key, model, system, user)
+                val history = store.all()
+                val user = Prompt.user(
+                    entry,
+                    Insights.summary(history, System.currentTimeMillis()),
+                    about,
+                    Prompt.extras(history, entry, store.plans().map { it.text })
+                )
+                var lastPush = 0L
+                AiClient.chatStream(provider, baseUrl, key, model, system, user) { text ->
+                    // Show what has arrived, at most a few times a second, and only if this is still the screen asking.
+                    val nowMs = System.currentTimeMillis()
+                    if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
+                        lastPush = nowMs
+                        ai = AiState.Streaming(text)
+                    }
+                }
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
             }
@@ -246,7 +265,14 @@ private fun App(activity: MainActivity) {
         val about = settings.about
         thread {
             val result = try {
-                AiClient.chat(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about))
+                var lastPush = 0L
+                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about)) { text ->
+                    val nowMs = System.currentTimeMillis()
+                    if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
+                        lastPush = nowMs
+                        review = AiState.Streaming(text)
+                    }
+                }
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
             }

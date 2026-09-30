@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -144,6 +145,10 @@ fun HomeScreen(
     val week = Insights.week(entries, now)
     val clean = Insights.cleanDays(entries, now)
     var tapped by remember { mutableStateOf(false) }
+    // The "hold it" nudge fades back to the calm hint after a few seconds.
+    LaunchedEffect(tapped) {
+        if (tapped) { delay(3000); tapped = false }
+    }
     var askFocus by remember { mutableStateOf(false) }
     var focusResult by remember { mutableStateOf<Door.Result?>(null) }
 
@@ -308,27 +313,42 @@ fun HomeScreen(
 
         if (entries.isNotEmpty()) {
             Eyebrow(stringResource(R.string.recent_title))
-            entries.takeLast(5).reversed().forEach { e ->
-                val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
-                    .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
-                val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
-                    ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
-                val result = when {
-                    e.slipped -> stringResource(R.string.result_slipped)
-                    e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
-                    e.outcome == Outcome.GAVE_IN -> stringResource(R.string.result_gave_in)
-                    else -> stringResource(R.string.result_open)
-                }
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("$whenText · $feeling", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        result,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (e.gaveIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
+            Panel {
+                val zone = ZoneId.systemDefault()
+                val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+                val recent = entries.takeLast(5).reversed()
+                recent.forEachIndexed { i, e ->
+                    val at = Instant.ofEpochMilli(e.time).atZone(zone)
+                    val clock = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(at)
+                    val whenText = when (Times.dayKind(at.toLocalDate(), today)) {
+                        0 -> stringResource(R.string.when_today, clock)
+                        1 -> stringResource(R.string.when_yesterday, clock)
+                        else -> DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).format(at)
+                    }
+                    val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
+                        ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
+                    val result = when {
+                        e.slipped -> stringResource(R.string.result_slipped)
+                        e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
+                        e.outcome == Outcome.GAVE_IN -> stringResource(R.string.result_gave_in)
+                        else -> stringResource(R.string.result_open)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpen(e) },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(feeling, style = MaterialTheme.typography.bodyLarge)
+                            Text(whenText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(
+                            result,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (e.gaveIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (i < recent.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
             }
             OutlinedButton(onClick = onLog, modifier = Modifier.fillMaxWidth()) {
@@ -624,16 +644,23 @@ fun PlanScreen(
             Panel { Text(it.text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
         }
 
-        // The app's own quick steps are a fallback. Once the AI has written personal ones they
-        // would only repeat it, so they step aside.
+        // The AI is the coach whenever it is available. The app's own basic tips are only a safety
+        // net for when it is not: no key, no connection, a service error, or consent declined.
+        val builtInFallback = ai is AiState.Failed || ai is AiState.NeedsKey || ai is AiState.Idle
         val aiHasSteps = ai is AiState.Ready && ReportParser.parse(ai.text)?.rightNow?.isNotEmpty() == true
-        if (!aiHasSteps) {
+        if (builtInFallback) {
+            Text(
+                stringResource(R.string.plan_fallback_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (builtInFallback || (ai is AiState.Ready && !aiHasSteps)) {
             Eyebrow(stringResource(R.string.plan_now))
             NumberedSteps(plan.steps.map { stringResource(stepRes(it)) })
         }
 
-        // Without a deep dive, still say why it's probably happening.
-        if (ai !is AiState.Ready) {
+        if (builtInFallback) {
             Eyebrow(stringResource(R.string.plan_why))
             Bullets(plan.reasons.map { stringResource(reasonRes(it)) })
         }
@@ -642,7 +669,8 @@ fun PlanScreen(
         Eyebrow(stringResource(R.string.deep_title))
         when (ai) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
-            is AiState.Ready -> ReportView(ai.text)
+            is AiState.Streaming -> ReportView(ai.text, streaming = true)
+            is AiState.Ready -> ReportView(ai.text, onSaveRule = onSavePlan)
             is AiState.Failed -> Panel {
                 Text(stringResource(errorRes(ai.error)), style = MaterialTheme.typography.bodyLarge)
                 if (ai.detail.isNotBlank()) {
@@ -663,7 +691,7 @@ fun PlanScreen(
             else -> {}
         }
 
-        if (plan.rules.isNotEmpty() && ai !is AiState.Ready) {
+        if (plan.rules.isNotEmpty() && builtInFallback) {
             Eyebrow(stringResource(R.string.plan_later))
             Bullets(plan.rules.map { stringResource(ruleRes(it)) })
         }
@@ -681,8 +709,9 @@ fun PlanScreen(
         var editing by remember(entry.time) { mutableStateOf(false) }
         var saved by remember(entry.time) { mutableStateOf(false) }
         var draft by remember(entry.time) { mutableStateOf(prefill) }
-        Eyebrow(stringResource(R.string.plan_yours))
-        Panel {
+        val aiGaveLine = ai is AiState.Ready && ReportParser.parse(ai.text)?.yourLine?.isNotBlank() == true
+        if (!aiGaveLine) Eyebrow(stringResource(R.string.plan_yours))
+        if (!aiGaveLine) Panel {
             if (saved) {
                 Text(stringResource(R.string.plan_saved), style = MaterialTheme.typography.bodyLarge)
             } else if (!editing) {
@@ -738,22 +767,38 @@ fun PlanScreen(
     }
 }
 
-/** The deep dive as a short letter: what's going on, then what to do, then what to learn. */
+/**
+ * The deep dive as a short letter: the honest read first, then the one thing that makes it click,
+ * then what to do now and the one line to run next time. Older saved replies keep their old layout.
+ */
 @Composable
-fun ReportView(raw: String) {
+fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) -> Unit)? = null) {
     val context = LocalContext.current
-    val report = remember(raw) { ReportParser.parse(raw) }
+    // While the reply is still being written, read what has arrived so far.
+    val report = remember(raw, streaming) { if (streaming) ReportParser.parsePartial(raw) else ReportParser.parse(raw) }
     if (report == null) {
-        Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
+        if (streaming) Panel { Breathing(stringResource(R.string.deep_loading)) }
+        else Panel { Text(raw.trim(), style = MaterialTheme.typography.bodyLarge) }
         return
     }
     val startExpanded = remember { AiSettings(context).expandAll }
     var expanded by remember(raw) { mutableStateOf(startExpanded) }
+    var ruleSaved by remember(raw) { mutableStateOf(false) }
     val hasMore = report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
-        report.understand.isNotEmpty() || report.pattern.isNotBlank()
+        report.understand.isNotEmpty() || report.pattern.isNotBlank() || report.thisWeek.isNotEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (report.headline.isNotBlank()) {
             Text(report.headline, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        if (report.realityCheck.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_reality))
+            Text(report.realityCheck, style = MaterialTheme.typography.bodyLarge)
+        }
+        if (report.realization.isNotBlank()) {
+            Panel(highlight = true) {
+                Eyebrow(stringResource(R.string.deep_realization))
+                Text(report.realization, style = MaterialTheme.typography.titleMedium)
+            }
         }
         if (report.why.isNotBlank()) {
             Panel { Text(report.why, style = MaterialTheme.typography.bodyLarge) }
@@ -762,11 +807,40 @@ fun ReportView(raw: String) {
             Eyebrow(stringResource(R.string.deep_right_now))
             NumberedSteps(report.rightNow)
         }
-        ReportList(R.string.deep_this_week, report.thisWeek)
+        if (report.yourLine.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_your_line))
+            Panel {
+                Text(report.yourLine, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic))
+                if (onSaveRule != null && !streaming) {
+                    if (ruleSaved) {
+                        Text(stringResource(R.string.plan_saved), style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSaveRule(report.yourLine); ruleSaved = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.deep_save_rule)) }
+                    }
+                }
+            }
+        }
+        if (report.trap.isNotBlank() && report.reply.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_trap))
+            Panel {
+                Text("\u201C${report.trap}\u201D", style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic))
+                Text(report.reply, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        if (report.question.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_question))
+            Text(report.question, style = MaterialTheme.typography.titleMedium)
+        }
+        // Older saved replies had this list up front; new ones fold it away.
+        if (!report.isModern) ReportList(R.string.deep_this_week, report.thisWeek)
 
         // The rest is a tap away, so the first screen stays short enough to act on.
         if (expanded) {
             ReportList(R.string.deep_today, report.today)
+            if (report.isModern) ReportList(R.string.deep_this_week, report.thisWeek)
             ReportList(R.string.deep_long_term, report.longTerm)
             if (report.understand.isNotEmpty()) {
                 Eyebrow(stringResource(R.string.deep_understand))
@@ -782,7 +856,8 @@ fun ReportView(raw: String) {
                 Text(report.pattern, style = MaterialTheme.typography.bodyLarge)
             }
         }
-        if (hasMore) {
+        if (hasMore && (report.isModern || report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
+                report.understand.isNotEmpty() || report.pattern.isNotBlank())) {
             TextButton(onClick = { expanded = !expanded }) {
                 Text(stringResource(if (expanded) R.string.deep_less else R.string.deep_more))
             }
@@ -794,6 +869,7 @@ fun ReportView(raw: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (streaming) Breathing(stringResource(R.string.deep_writing))
     }
 }
 
@@ -832,6 +908,7 @@ fun ReviewScreen(
         )
         when (state) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.review_loading)) }
+            is AiState.Streaming -> ReportView(state.text, streaming = true)
             is AiState.Ready -> {
                 ReportView(state.text)
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
@@ -1038,78 +1115,73 @@ fun SettingsScreen(
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium)
 
         Eyebrow(stringResource(R.string.reminders_title))
-        Text(
-            stringResource(R.string.reminders_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(
-            Modifier.fillMaxWidth().clickable {
-                val next = !checkIn
+        Panel {
+            Text(
+                stringResource(R.string.reminders_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SwitchRow(stringResource(R.string.reminders_checkin), checkIn) { next ->
                 if (next) onNeedNotifications { checkIn = true; reminders.checkIn = true }
                 else { checkIn = false; reminders.checkIn = false }
-            },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Checkbox(checked = checkIn, onCheckedChange = null)
-            Text(stringResource(R.string.reminders_checkin), style = MaterialTheme.typography.bodyMedium)
-        }
-        Text(stringResource(R.string.reminders_nudge), style = MaterialTheme.typography.bodyMedium)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = nudge < 0,
-                onClick = {
-                    nudge = -1
-                    reminders.nudgeMinute = -1
-                    Notifier.rearmNudge(context)
-                },
-                label = { Text(stringResource(R.string.reminders_off)) }
-            )
-            listOf(20 * 60, 21 * 60, 21 * 60 + 30, 22 * 60, 23 * 60).forEach { minute ->
+            }
+            Text(stringResource(R.string.reminders_nudge), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
-                    selected = nudge == minute,
+                    selected = nudge < 0,
                     onClick = {
-                        onNeedNotifications {
-                            nudge = minute
-                            reminders.nudgeMinute = minute
-                            Notifier.rearmNudge(context)
-                        }
+                        nudge = -1
+                        reminders.nudgeMinute = -1
+                        Notifier.rearmNudge(context)
                     },
-                    label = { Text(Times.clock(minute)) }
+                    label = { Text(stringResource(R.string.reminders_off)) }
+                )
+                listOf(20 * 60, 21 * 60, 21 * 60 + 30, 22 * 60, 23 * 60).forEach { minute ->
+                    FilterChip(
+                        selected = nudge == minute,
+                        onClick = {
+                            onNeedNotifications {
+                                nudge = minute
+                                reminders.nudgeMinute = minute
+                                Notifier.rearmNudge(context)
+                            }
+                        },
+                        label = { Text(Times.clock(minute)) }
+                    )
+                }
+            }
+            Text(stringResource(R.string.reminders_evening), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = evening < 0,
+                    onClick = {
+                        evening = -1
+                        reminders.eveningMinute = -1
+                        Notifier.rearmEvening(context)
+                    },
+                    label = { Text(stringResource(R.string.reminders_off)) }
+                )
+                listOf(19 * 60, 20 * 60, 21 * 60, 22 * 60).forEach { minute ->
+                    FilterChip(
+                        selected = evening == minute,
+                        onClick = {
+                            onNeedNotifications {
+                                evening = minute
+                                reminders.eveningMinute = minute
+                                Notifier.rearmEvening(context)
+                            }
+                        },
+                        label = { Text(Times.clock(minute)) }
+                    )
+                }
+            }
+            if (!Notifier.canPost(context)) {
+                Text(
+                    stringResource(R.string.reminders_blocked),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
-        }
-        Text(stringResource(R.string.reminders_evening), style = MaterialTheme.typography.bodyMedium)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = evening < 0,
-                onClick = {
-                    evening = -1
-                    reminders.eveningMinute = -1
-                    Notifier.rearmEvening(context)
-                },
-                label = { Text(stringResource(R.string.reminders_off)) }
-            )
-            listOf(19 * 60, 20 * 60, 21 * 60, 22 * 60).forEach { minute ->
-                FilterChip(
-                    selected = evening == minute,
-                    onClick = {
-                        onNeedNotifications {
-                            evening = minute
-                            reminders.eveningMinute = minute
-                            Notifier.rearmEvening(context)
-                        }
-                    },
-                    label = { Text(Times.clock(minute)) }
-                )
-            }
-        }
-        if (!Notifier.canPost(context)) {
-            Text(
-                stringResource(R.string.reminders_blocked),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
         }
 
         Eyebrow(stringResource(R.string.plans_title))
@@ -1135,183 +1207,169 @@ fun SettingsScreen(
         }
 
         Eyebrow(stringResource(R.string.settings_ai))
-        Text(
-            stringResource(R.string.settings_ai_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Which service. Pasting a key picks it automatically.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Provider.entries.forEach { p ->
-                FilterChip(selected = provider == p, onClick = { pick(p) }, label = { Text(p.label) })
-            }
-        }
-        if (provider != Provider.CUSTOM) {
+        Panel {
             Text(
-                stringResource(R.string.settings_key_hint, provider.keyHint),
-                style = MaterialTheme.typography.bodySmall,
+                stringResource(R.string.settings_ai_body),
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        } else {
+
+            // Which service. Pasting a key picks it automatically.
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Provider.entries.forEach { p ->
+                    FilterChip(selected = provider == p, onClick = { pick(p) }, label = { Text(p.label) })
+                }
+            }
+            if (provider != Provider.CUSTOM) {
+                Text(
+                    stringResource(R.string.settings_key_hint, provider.keyHint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                OutlinedTextField(
+                    value = customBase,
+                    onValueChange = { customBase = it; saved = false; test = TestState.Idle },
+                    label = { Text(stringResource(R.string.settings_base)) },
+                    supportingText = { Text(stringResource(R.string.settings_base_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             OutlinedTextField(
-                value = customBase,
-                onValueChange = { customBase = it; saved = false; test = TestState.Idle },
-                label = { Text(stringResource(R.string.settings_base)) },
-                supportingText = { Text(stringResource(R.string.settings_base_hint)) },
+                value = key,
+                onValueChange = { new ->
+                    key = new
+                    saved = false
+                    test = TestState.Idle
+                    val guess = Provider.detect(new)
+                    if (guess != null && guess != provider) pick(guess)
+                },
+                label = { Text(stringResource(R.string.settings_key)) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = model,
+                onValueChange = { model = it; saved = false; test = TestState.Idle },
+                label = { Text(stringResource(R.string.settings_model)) },
+                supportingText = { Text(stringResource(R.string.settings_model_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-        }
-        OutlinedTextField(
-            value = key,
-            onValueChange = { new ->
-                key = new
-                saved = false
-                test = TestState.Idle
-                val guess = Provider.detect(new)
-                if (guess != null && guess != provider) pick(guess)
-            },
-            label = { Text(stringResource(R.string.settings_key)) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it; saved = false; test = TestState.Idle },
-            label = { Text(stringResource(R.string.settings_model)) },
-            supportingText = { Text(stringResource(R.string.settings_model_hint)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (provider.models.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                provider.models.forEach { m ->
-                    AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
-                }
-            }
-        }
-
-        // Ask the service which models this key can use; names change, so don't rely on a fixed list.
-        val canLoad = key.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
-        OutlinedButton(
-            onClick = {
-                loadingModels = true
-                modelsFailed = false
-                val base = if (provider == Provider.CUSTOM) customBase else provider.baseUrl
-                val k = key.trim()
-                Thread {
-                    val list = AiClient.listModels(base, k)
-                    available = list.orEmpty()
-                    modelsFailed = list == null
-                    loadingModels = false
-                }.start()
-            },
-            enabled = canLoad && !loadingModels,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(stringResource(if (loadingModels) R.string.settings_loading_models else R.string.settings_load_models)) }
-        if (modelsFailed) {
-            Text(
-                stringResource(R.string.settings_models_none),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-        if (available.isNotEmpty()) {
-            Text(
-                stringResource(R.string.settings_models_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            val query = model.trim().removePrefix("models/")
-            val shown = available.filter { it.contains(query, ignoreCase = true) }.ifEmpty { available }.take(14)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                shown.forEach { m ->
-                    AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
-                }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().clickable { consent = !consent; saved = false },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Checkbox(checked = consent, onCheckedChange = { consent = it; saved = false })
-            Text(stringResource(R.string.settings_consent, provider.label), style = MaterialTheme.typography.bodyMedium)
-        }
-
-        Button(
-            onClick = {
-                // The key first: if this phone cannot encrypt it, nothing is saved until the person agrees.
-                if (settings.saveKey(key)) finishSave() else askPlainKey = true
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(stringResource(if (saved) R.string.settings_saved else R.string.settings_save)) }
-
-        // A quick check that the key, the address and the model name actually work together.
-        val canTest = key.isNotBlank() && model.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
-        OutlinedButton(
-            onClick = {
-                test = TestState.Running
-                val p = provider
-                val base = if (p == Provider.CUSTOM) customBase else p.baseUrl
-                val k = key.trim()
-                val m = model.trim()
-                Thread {
-                    test = when (val r = AiClient.chat(p, base, k, m, "Reply with the single word OK.", "Say OK.")) {
-                        is AiResult.Ok -> TestState.Ok
-                        is AiResult.Failed -> TestState.Failed(r.error, r.detail)
+            if (provider.models.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    provider.models.forEach { m ->
+                        AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
                     }
-                }.start()
-            },
-            enabled = canTest && test != TestState.Running,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(stringResource(R.string.settings_test)) }
-        when (val t = test) {
-            is TestState.Running -> Breathing(stringResource(R.string.settings_testing))
-            is TestState.Ok -> Text(
-                stringResource(R.string.settings_test_ok),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-            is TestState.Failed -> {
-                Text(stringResource(errorRes(t.error)), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
-                if (t.detail.isNotBlank()) {
-                    Text(t.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            else -> {}
+
+            // Ask the service which models this key can use; names change, so don't rely on a fixed list.
+            val canLoad = key.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
+            OutlinedButton(
+                onClick = {
+                    loadingModels = true
+                    modelsFailed = false
+                    val base = if (provider == Provider.CUSTOM) customBase else provider.baseUrl
+                    val k = key.trim()
+                    Thread {
+                        val list = AiClient.listModels(base, k)
+                        available = list.orEmpty()
+                        modelsFailed = list == null
+                        loadingModels = false
+                    }.start()
+                },
+                enabled = canLoad && !loadingModels,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(stringResource(if (loadingModels) R.string.settings_loading_models else R.string.settings_load_models)) }
+            if (modelsFailed) {
+                Text(
+                    stringResource(R.string.settings_models_none),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (available.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.settings_models_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val query = model.trim().removePrefix("models/")
+                val shown = available.filter { it.contains(query, ignoreCase = true) }.ifEmpty { available }.take(14)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    shown.forEach { m ->
+                        AssistChip(onClick = { model = m; saved = false; test = TestState.Idle }, label = { Text(m) })
+                    }
+                }
+            }
+            SwitchRow(stringResource(R.string.settings_consent, provider.label), consent) { consent = it; saved = false }
+
+            Button(
+                onClick = {
+                    // The key first: if this phone cannot encrypt it, nothing is saved until the person agrees.
+                    if (settings.saveKey(key)) finishSave() else askPlainKey = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(stringResource(if (saved) R.string.settings_saved else R.string.settings_save)) }
+
+            // A quick check that the key, the address and the model name actually work together.
+            val canTest = key.isNotBlank() && model.isNotBlank() && (provider != Provider.CUSTOM || customBase.isNotBlank())
+            OutlinedButton(
+                onClick = {
+                    test = TestState.Running
+                    val p = provider
+                    val base = if (p == Provider.CUSTOM) customBase else p.baseUrl
+                    val k = key.trim()
+                    val m = model.trim()
+                    Thread {
+                        test = when (val r = AiClient.chat(p, base, k, m, "Reply with the single word OK.", "Say OK.")) {
+                            is AiResult.Ok -> TestState.Ok
+                            is AiResult.Failed -> TestState.Failed(r.error, r.detail)
+                        }
+                    }.start()
+                },
+                enabled = canTest && test != TestState.Running,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(stringResource(R.string.settings_test)) }
+            when (val t = test) {
+                is TestState.Running -> Breathing(stringResource(R.string.settings_testing))
+                is TestState.Ok -> Text(
+                    stringResource(R.string.settings_test_ok),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                is TestState.Failed -> {
+                    Text(stringResource(errorRes(t.error)), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                    if (t.detail.isNotBlank()) {
+                        Text(t.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                else -> {}
+            }
         }
 
         Eyebrow(stringResource(R.string.settings_about))
-        Text(
-            stringResource(R.string.settings_about_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedTextField(
-            value = about,
-            onValueChange = { about = it.take(ABOUT_LIMIT); saved = false },
-            label = { Text(stringResource(R.string.settings_about_label)) },
-            minLines = 3,
-            maxLines = 8,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Panel {
+            Text(
+                stringResource(R.string.settings_about_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = about,
+                onValueChange = { about = it.take(ABOUT_LIMIT); saved = false },
+                label = { Text(stringResource(R.string.settings_about_label)) },
+                minLines = 3,
+                maxLines = 8,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        Row(
-            Modifier.fillMaxWidth().clickable { deep = !deep; saved = false },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Checkbox(checked = deep, onCheckedChange = { deep = it; saved = false })
-            Text(stringResource(R.string.settings_deep), style = MaterialTheme.typography.bodyMedium)
-        }
-        Row(
-            Modifier.fillMaxWidth().clickable { expandAll = !expandAll; saved = false },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Checkbox(checked = expandAll, onCheckedChange = { expandAll = it; saved = false })
-            Text(stringResource(R.string.settings_expand), style = MaterialTheme.typography.bodyMedium)
+            SwitchRow(stringResource(R.string.settings_deep), deep) { deep = it; saved = false }
+            SwitchRow(stringResource(R.string.settings_expand), expandAll) { expandAll = it; saved = false }
         }
 
         Eyebrow(stringResource(R.string.settings_backup))
@@ -1342,16 +1400,10 @@ fun SettingsScreen(
         }
 
         Eyebrow(stringResource(R.string.settings_privacy))
-        Row(
-            Modifier.fillMaxWidth().clickable {
-                hideInRecents = !hideInRecents
-                privacy.hideInRecents = hideInRecents
-                onPrivacyChanged()
-            },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            androidx.compose.material3.Checkbox(checked = hideInRecents, onCheckedChange = null)
-            Text(stringResource(R.string.settings_hide_recents), style = MaterialTheme.typography.bodyMedium)
+        SwitchRow(stringResource(R.string.settings_hide_recents), hideInRecents) { on ->
+            hideInRecents = on
+            privacy.hideInRecents = on
+            onPrivacyChanged()
         }
         Text(
             stringResource(R.string.settings_privacy_body),

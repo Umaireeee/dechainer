@@ -169,7 +169,7 @@
     <string name="note_continue">Continue</string>
 
     <string name="consent_title">Send this to an AI?</string>
-    <string name="consent_body">To write your deep dive, your answers and the note you wrote are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
+    <string name="consent_body">To write your deep dive, your answers, the note you wrote, your goals text, the rules you saved and counts from your own history are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
     <string name="consent_yes">Send</string>
     <string name="consent_no">Not now</string>
 
@@ -179,6 +179,16 @@
     <string name="deep_needs_key">Add your OpenRouter key for a personal deep dive: why it\'s happening, what to do now, and what to change.</string>
     <string name="deep_add_key">Add key</string>
     <string name="support_body">What you wrote sounds really heavy, and you deserve real support more than a list of tips. If you might hurt yourself or you are in danger, please contact your local emergency number or a crisis line now, or reach someone you trust and stay with them. You don\'t have to carry this alone.</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="when_today">Today, %1$s</string>
+    <string name="when_yesterday">Yesterday, %1$s</string>
+    <string name="deep_reality">The honest read</string>
+    <string name="deep_realization">What to see</string>
+    <string name="deep_your_line">Your line for next time</string>
+    <string name="deep_save_rule">Save as my rule</string>
+    <string name="deep_trap">The thought that tricks you</string>
+    <string name="deep_question">Ask yourself</string>
     <string name="deep_right_now">Right now</string>
     <string name="deep_today">Today</string>
     <string name="deep_this_week">This week</string>
@@ -229,7 +239,7 @@
     <string name="review_intro">What your last days show, and what to try next. Only counts and patterns are used, never your notes.</string>
     <string name="review_loading">Looking at your week…</string>
     <string name="review_refresh">Write it again</string>
-    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal (never your notes) are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
+    <string name="review_consent_body">To write your weekly review, counts and patterns from your journal, including which steps worked (never your notes), are sent to %1$s, the AI service you chose. You can turn this off in Settings.</string>
     <string name="recent_more">Show more</string>
     <string name="deep_more">Show the rest</string>
     <string name="deep_less">Show less</string>
@@ -376,4 +386,7 @@
     <string name="key_plain_body">Android\'s secure storage isn\'t working here, so your AI key can\'t be encrypted. You can keep it as plain text in this app\'s private storage, or not save it. Anyone with a copy of the app\'s files could read a plain-text key.</string>
     <string name="key_plain_yes">Save it anyway</string>
     <string name="key_plain_no">Don\'t save</string>
+
+    <string name="plan_fallback_note">The AI isn\'t available right now, so these are the app\'s basic tips. Add a key in Settings or try again for a personal plan.</string>
+    <string name="deep_writing">Still writing…</string>
 </resources>

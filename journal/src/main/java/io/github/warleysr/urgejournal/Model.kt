@@ -437,7 +437,8 @@ object Insights {
     }
 
     /** One bar of the seven-day chart: urges ridden out, and given in to (slips count here). */
-    data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int)
+    /** [open] counts real entries with no result yet, so a day with only those is not drawn as empty. */
+    data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int, val open: Int = 0)
 
     /** The last [days] calendar days ending today, oldest first, with a bar for each. */
     fun days(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault(), days: Int = 7): List<DayBar> {
@@ -446,7 +447,7 @@ object Insights {
         return (days - 1 downTo 0).map { back ->
             val d = today.minusDays(back.toLong())
             val list = byDay[d].orEmpty()
-            DayBar(d, list.count { it.ridden }, list.count { it.gaveIn })
+            DayBar(d, list.count { it.ridden }, list.count { it.gaveIn }, list.count { !it.isStub && !it.ridden && !it.gaveIn })
         }
     }
 
@@ -529,6 +530,25 @@ object Insights {
         return overwhelming >= 3 || (last.size >= 6 && last.size >= before * 3 / 2 + 1)
     }
 
+    /** How a step has gone across the person's rides: how many times tried, and how many times the urge passed or weakened. */
+    data class StepResult(val step: Step, val tries: Int, val wins: Int)
+
+    /** Steps tried at least [Coach.MIN_TRIES] times, best results first. Counts only, no notes. */
+    fun stepEvidence(history: List<Entry>): List<StepResult> {
+        val tries = mutableMapOf<Step, Int>()
+        val wins = mutableMapOf<Step, Int>()
+        history.forEach { e ->
+            val after = e.after ?: return@forEach
+            e.tried.distinct().forEach { step ->
+                tries[step] = (tries[step] ?: 0) + 1
+                if (after == After.GONE || after == After.WEAKER) wins[step] = (wins[step] ?: 0) + 1
+            }
+        }
+        return tries.filter { it.value >= Coach.MIN_TRIES }
+            .map { (step, n) -> StepResult(step, n, wins[step] ?: 0) }
+            .sortedWith(compareBy({ -(it.wins.toDouble() / it.tries) }, { -it.tries }, { it.step.ordinal }))
+    }
+
     /** Counts only, safe to hand to someone you trust. No notes, no feelings, no places. */
     fun shareText(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
         val w = week(entries, now, zone)
@@ -546,7 +566,7 @@ object Insights {
         return (weeks - 1 downTo 0).map { back ->
             val start = thisMonday.minusWeeks(back.toLong())
             val list = entriesIn(entries, start, start.plusDays(6), zone)
-            DayBar(start, list.count { it.ridden }, list.count { it.gaveIn })
+            DayBar(start, list.count { it.ridden }, list.count { it.gaveIn }, list.count { !it.isStub && !it.ridden && !it.gaveIn })
         }
     }
 
@@ -690,6 +710,13 @@ object ExportFiles {
 }
 
 object Times {
+    /** 0 for today, 1 for yesterday, 2 for any other day: lets a list say "Today" instead of a date. */
+    fun dayKind(day: java.time.LocalDate, today: java.time.LocalDate): Int = when (day) {
+        today -> 0
+        today.minusDays(1) -> 1
+        else -> 2
+    }
+
     /** The next moment after [now] that is [minuteOfDay] minutes past local midnight. */
     fun nextDaily(minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
         val nowAt = Instant.ofEpochMilli(now).atZone(zone)

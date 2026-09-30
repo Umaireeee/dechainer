@@ -121,8 +121,8 @@ fun Ember(text: String, onTap: () -> Unit, onStart: () -> Unit) {
 fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(
             1.dp,
             if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
@@ -132,8 +132,21 @@ fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
         Text(
             text,
             style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp)
         )
+    }
+}
+
+/** A label with a switch on the right; the whole row is the tap target. */
+@Composable
+fun SwitchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -144,7 +157,7 @@ fun Eyebrow(text: String) {
         text.uppercase(),
         style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp),
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp)
+        modifier = Modifier.padding(top = 12.dp)
     )
 }
 
@@ -152,15 +165,16 @@ fun Eyebrow(text: String) {
 @Composable
 fun Panel(highlight: Boolean = false, content: @Composable () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (highlight) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(24.dp),
+        // Raised a step above the page, so a panel reads as a surface and not as an outline.
+        color = if (highlight) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(
             1.dp,
-            if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
+            if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.30f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
     }
 }
 
@@ -228,11 +242,12 @@ fun WeekBars(
     selected: Int? = null,
     onPick: ((Int) -> Unit)? = null
 ) {
-    val max = (bars.maxOfOrNull { it.resisted + it.gaveIn } ?: 0).coerceAtLeast(1)
+    val max = (bars.maxOfOrNull { it.resisted + it.gaveIn + it.open } ?: 0).coerceAtLeast(1)
     val ok = MaterialTheme.colorScheme.primary
     val bad = MaterialTheme.colorScheme.error
     val track = MaterialTheme.colorScheme.surfaceVariant
     val picked = MaterialTheme.colorScheme.outlineVariant
+    val pending = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
     val tap = if (onPick != null) {
         Modifier.pointerInput(bars.size) {
             detectTapGestures { offset ->
@@ -251,6 +266,10 @@ fun WeekBars(
                 val x = i * (w + gap)
                 drawRoundRect(if (i == selected) picked else track, Offset(x, 0f), Size(w, size.height), radius)
                 val total = b.resisted + b.gaveIn
+                if (b.open > 0) {
+                    val ho = size.height * (total + b.open) / max
+                    drawRoundRect(pending, Offset(x, size.height - ho), Size(w, ho), radius)
+                }
                 if (total > 0) {
                     val h = size.height * total / max
                     drawRoundRect(bad, Offset(x, size.height - h), Size(w, h), radius)

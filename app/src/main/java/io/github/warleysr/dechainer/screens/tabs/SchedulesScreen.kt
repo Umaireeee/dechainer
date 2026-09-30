@@ -364,6 +364,7 @@ fun ScheduleEditorScreen(
     val noDaysMsg = stringResource(R.string.schedule_error_no_days)
     val nothingMsg = stringResource(R.string.schedule_error_nothing)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
+    val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
     var showLongLockConfirm by remember { mutableStateOf(false) }
 
     var showStartPicker by remember { mutableStateOf(false) }
@@ -387,6 +388,7 @@ fun ScheduleEditorScreen(
             SchedulesViewModel.SaveResult.NO_FREE_TIME ->
                 scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
             SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
+            SchedulesViewModel.SaveResult.NOT_SAVED -> scope.launch { snackbarHostState.showSnackbar(notSavedMsg) }
         }
     }
 

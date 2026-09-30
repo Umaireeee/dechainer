@@ -25,7 +25,7 @@ import java.util.UUID
 class SchedulesViewModel : ViewModel() {
     private val context = DechainerApplication.getInstance()
 
-    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION }
+    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED }
 
     var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
         private set
@@ -178,7 +178,8 @@ class SchedulesViewModel : ViewModel() {
                 return SaveResult.NEEDS_CONFIRMATION
         }
 
-        ScheduleRepository.upsert(context, current.copy(name = current.name.trim()))
+        // Storage refused the write (unreadable file, full disk): keep the editor open and say so.
+        if (!ScheduleRepository.upsert(context, current.copy(name = current.name.trim()))) return SaveResult.NOT_SAVED
         draft = null
         applyAndRefresh()
         return SaveResult.OK
@@ -188,7 +189,7 @@ class SchedulesViewModel : ViewModel() {
         val current = draft ?: return SaveResult.OK
         val stored = ScheduleRepository.getSchedule(context, current.id)
         if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
-        ScheduleRepository.delete(context, current.id)
+        if (!ScheduleRepository.delete(context, current.id)) return SaveResult.NOT_SAVED
         draft = null
         applyAndRefresh()
         return SaveResult.OK
@@ -207,7 +208,7 @@ class SchedulesViewModel : ViewModel() {
             val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
             if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME
         }
-        ScheduleRepository.upsert(context, stored.copy(enabled = enabled))
+        if (!ScheduleRepository.upsert(context, stored.copy(enabled = enabled))) return SaveResult.NOT_SAVED
         applyAndRefresh()
         return SaveResult.OK
     }
