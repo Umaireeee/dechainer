@@ -650,7 +650,7 @@ fun PlanScreen(
         when (ai) {
             is AiState.Loading -> Panel { Breathing(stringResource(R.string.deep_loading)) }
             is AiState.Streaming -> ReportView(ai.text, streaming = true)
-            is AiState.Ready -> ReportView(ai.text)
+            is AiState.Ready -> ReportView(ai.text, onSaveRule = onSavePlan)
             is AiState.Failed -> Panel {
                 Text(stringResource(errorRes(ai.error)), style = MaterialTheme.typography.bodyLarge)
                 if (ai.detail.isNotBlank()) {
@@ -689,8 +689,9 @@ fun PlanScreen(
         var editing by remember(entry.time) { mutableStateOf(false) }
         var saved by remember(entry.time) { mutableStateOf(false) }
         var draft by remember(entry.time) { mutableStateOf(prefill) }
-        Eyebrow(stringResource(R.string.plan_yours))
-        Panel {
+        val aiGaveLine = ai is AiState.Ready && ReportParser.parse(ai.text)?.yourLine?.isNotBlank() == true
+        if (!aiGaveLine) Eyebrow(stringResource(R.string.plan_yours))
+        if (!aiGaveLine) Panel {
             if (saved) {
                 Text(stringResource(R.string.plan_saved), style = MaterialTheme.typography.bodyLarge)
             } else if (!editing) {
@@ -746,9 +747,12 @@ fun PlanScreen(
     }
 }
 
-/** The deep dive as a short letter: what's going on, then what to do, then what to learn. */
+/**
+ * The deep dive as a short letter: the honest read first, then the one thing that makes it click,
+ * then what to do now and the one line to run next time. Older saved replies keep their old layout.
+ */
 @Composable
-fun ReportView(raw: String, streaming: Boolean = false) {
+fun ReportView(raw: String, streaming: Boolean = false, onSaveRule: ((String) -> Unit)? = null) {
     val context = LocalContext.current
     // While the reply is still being written, read what has arrived so far.
     val report = remember(raw, streaming) { if (streaming) ReportParser.parsePartial(raw) else ReportParser.parse(raw) }
@@ -759,11 +763,22 @@ fun ReportView(raw: String, streaming: Boolean = false) {
     }
     val startExpanded = remember { AiSettings(context).expandAll }
     var expanded by remember(raw) { mutableStateOf(startExpanded) }
+    var ruleSaved by remember(raw) { mutableStateOf(false) }
     val hasMore = report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
-        report.understand.isNotEmpty() || report.pattern.isNotBlank()
+        report.understand.isNotEmpty() || report.pattern.isNotBlank() || report.thisWeek.isNotEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (report.headline.isNotBlank()) {
             Text(report.headline, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        if (report.realityCheck.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_reality))
+            Text(report.realityCheck, style = MaterialTheme.typography.bodyLarge)
+        }
+        if (report.realization.isNotBlank()) {
+            Panel(highlight = true) {
+                Eyebrow(stringResource(R.string.deep_realization))
+                Text(report.realization, style = MaterialTheme.typography.titleMedium)
+            }
         }
         if (report.why.isNotBlank()) {
             Panel { Text(report.why, style = MaterialTheme.typography.bodyLarge) }
@@ -772,11 +787,40 @@ fun ReportView(raw: String, streaming: Boolean = false) {
             Eyebrow(stringResource(R.string.deep_right_now))
             NumberedSteps(report.rightNow)
         }
-        ReportList(R.string.deep_this_week, report.thisWeek)
+        if (report.yourLine.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_your_line))
+            Panel {
+                Text(report.yourLine, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic))
+                if (onSaveRule != null && !streaming) {
+                    if (ruleSaved) {
+                        Text(stringResource(R.string.plan_saved), style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSaveRule(report.yourLine); ruleSaved = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.deep_save_rule)) }
+                    }
+                }
+            }
+        }
+        if (report.trap.isNotBlank() && report.reply.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_trap))
+            Panel {
+                Text("\u201C${report.trap}\u201D", style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic))
+                Text(report.reply, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        if (report.question.isNotBlank()) {
+            Eyebrow(stringResource(R.string.deep_question))
+            Text(report.question, style = MaterialTheme.typography.titleMedium)
+        }
+        // Older saved replies had this list up front; new ones fold it away.
+        if (!report.isModern) ReportList(R.string.deep_this_week, report.thisWeek)
 
         // The rest is a tap away, so the first screen stays short enough to act on.
         if (expanded) {
             ReportList(R.string.deep_today, report.today)
+            if (report.isModern) ReportList(R.string.deep_this_week, report.thisWeek)
             ReportList(R.string.deep_long_term, report.longTerm)
             if (report.understand.isNotEmpty()) {
                 Eyebrow(stringResource(R.string.deep_understand))
@@ -792,7 +836,8 @@ fun ReportView(raw: String, streaming: Boolean = false) {
                 Text(report.pattern, style = MaterialTheme.typography.bodyLarge)
             }
         }
-        if (hasMore) {
+        if (hasMore && (report.isModern || report.today.isNotEmpty() || report.longTerm.isNotEmpty() ||
+                report.understand.isNotEmpty() || report.pattern.isNotBlank())) {
             TextButton(onClick = { expanded = !expanded }) {
                 Text(stringResource(if (expanded) R.string.deep_less else R.string.deep_more))
             }
