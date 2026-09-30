@@ -55,6 +55,15 @@ object LimitMath {
         limits.filter { (pkg, minutes) -> (used[pkg] ?: 0L) >= minutes * 60_000L }.keys
 
     /**
+     * The apps already recorded as out of time on [recordedDay] that still count on [today]: only
+     * the same day, and only apps that still have a limit. Used when the usage log can't be read
+     * (Usage access switched off, say), so turning that off is not a way around a limit. Removing
+     * the limit (with the recovery code) still frees the app at once.
+     */
+    fun carried(recordedDay: String?, recorded: Set<String>, today: String, limits: Map<String, Int>): Set<String> =
+        if (recordedDay != today) emptySet() else recorded.filterTo(mutableSetOf()) { limits[it]?.let { m -> m > 0 } == true }
+
+    /**
      * How long until the next look: the soonest any app *could* run out (if it were used
      * non-stop from now), or midnight when everything resets. Usage can never outrun the clock, so
      * looking then can't miss a limit.

@@ -37,15 +37,14 @@ Also open **Settings → Protections** and switch on the ones you want, for exam
 
 Tips: the clock is locked while schedules are on, so you can't skip a window by changing the time. Long locked windows ask you to confirm, and a set of locked schedules that leaves under an hour free all week is refused, so you can't lock yourself out completely.
 
-## Step 5: Do a focus session
+## Step 5: Do a focus block
 1. Open **Focus**.
 2. Add a **subject** (for example FAR, Tax) with *Add subject*, and give it a daily target if you like.
-3. In the timer settings, set your focus length (for example 60 minutes) and a daily goal (for example 4 sessions).
+3. In the timer settings (the sliders icon), set your focus length (for example 60 minutes), a daily goal, and the **allowed apps** you need for study (lecture app, PDF reader). Keep browsers off that list.
 4. Write one line for your **intention** ("IAS 16, questions 1 to 10").
-5. Press **Start**.
-6. When it rings, the alarm keeps going until you stop it. Then a full-screen question asks **"Did you do the work?"** about exactly what you wrote. Answer honestly. It goes in your log.
-
-Want it stricter? Turn on **lock apps** so apps are paused during each session, or start a **focus block**: you commit until a set end time, sessions and breaks run by themselves, and leaving early takes your recovery code.
+5. Press **Start focus block**, pick the end time and commit.
+6. The phone is **bricked until that time**, breaks included: only Déchaîner, calls, your alarm clock, the Urge Journal, Quick Settings and your allowed apps work. Sessions and breaks run by themselves. **Nothing ends a block early, not even your recovery code**, so start with a short one.
+7. Between phases a short chime asks **"Did you do the work?"** on the notification, about exactly what you wrote. Answer honestly. It goes in your log.
 
 ## Step 6: Read your log weekly
 On **Focus**, open the log. You'll see a 14-day and 12-week chart, tap a point for that day's sessions, and hours by subject so a neglected subject shows. Use **Export** to save a CSV backup (do this weekly). **Import** restores it on a new phone.
@@ -59,11 +58,7 @@ Urges are handled in the second app, the **Urge Journal** (see Step 11). Décha�
 ## Step 9: Block single apps by hand, and set time limits
 On the **Apps** tab, flip the switch next to any app to pause it. Paused apps are greyed out, can't open, and their notifications are hidden.
 
-**Time limits** are on the same tab. Open an app's row and choose:
-- **Daily limit:** once you have used the app this long today, it is suspended until midnight.
-- **Time between openings:** after you close it, you wait this long before you can open it again.
-- **Time windows:** the app only works at the hours you allow.
-You can put apps in a group so one shared limit covers all of them (hitting it blocks the whole group). Usage is read from Android's own usage log, so Déchaîner needs **Usage access** once: Settings → Status shows a **Fix** button if it is missing. Limits are enforced by suspending the app, so they still hold if Déchaîner is closed.
+**Daily limits** are on the same tab. Open an app's row and set how long it can be used each day. Once that time is used up, the app is suspended until midnight. Lowering a limit is free; raising or removing it takes your recovery code. Usage is read from Android's own usage log, so Déchaîner needs **Usage access** once: Settings → Status shows a **Fix** button if it is missing. An app that has run out stays suspended until midnight even if Usage access is switched off, and limits hold even if Déchaîner is closed.
 
 ## Step 10: Check it's really working
 Open **Settings → Status**. It shows whether device owner, exact alarms, battery optimization and notifications are all fine, with a **Fix** button for anything red. It also lists every blocked app and why. **On Xiaomi, Redmi and POCO (MIUI / HyperOS):** open *Settings → Apps → Manage apps → Déchaîner*, turn **Autostart** on, and set the battery option to **No restrictions**. Do the same for the Urge Journal. Without this the phone can stop the app in the background and delay alarms and the end of a block.
@@ -85,7 +80,7 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Add the tile:** pull the notification shade down fully, tap the pencil or "Edit", find **I feel an urge**, and drag it to the top row.
 
-**Start a focus block in one tap:** the journal's Home has **Start a focus block** (25, 50 or 90 minutes). It asks Déchaîner to lock your distraction apps for study sessions until the time is up. Leaving early takes your recovery code, so pick a length you can keep.
+**Start a focus block in one tap:** the journal's Home has **Start a focus block** (25, 50 or 90 minutes). It asks Déchaîner to brick your phone until the time is up, exactly like a block started in Déchaîner. Nothing ends it early, not even your recovery code, so pick a length you can keep.
 
 **Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "Did today go the way you planned?" with three answers, and the week panel shows how many days went to plan.
 
@@ -110,7 +105,7 @@ Everything you write stays on your phone, except what you send for a deep dive o
 
 ## A simple daily routine
 1. Morning: check today's schedule and pick your subject.
-2. Study: 60-minute focus sessions, answer honestly.
+2. Study: one focus block for your study hours, answer each question honestly.
 3. When an urge hits: use the Urge Journal instead of arguing with yourself.
 4. Sunday: read your focus log and urge summary, export a backup, and adjust one schedule.
 

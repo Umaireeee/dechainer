@@ -72,3 +72,15 @@ Both are signed with the same key (release workflow), because the link between t
 
 ## Update: restored on request (after the first merge)
 The all-apps ride lock (`RIDE_LOCK`, Déchaîner's `RideLock` + enforcer source; Déchaîner has no new visible UI for it), the 0.7 s hold-to-start ember, the one-tap FOCUS_BLOCK button and the evening "did today go to plan?" check-in are back in the journal. Déchaîner's own Urge log stays removed and its unlock screen has no journal buttons.
+
+## Update: bug-fix and quality pass (2026-09-30)
+- **Focus intention restored:** the one-line intention field was lost when the patches became source; it is back on the Focus screen (`Pomodoro.setIntention`), under the subject chips.
+- **Daily limits can't be dodged by switching off Usage access:** apps that ran out today are recorded (`app_time_limits_reached`, `LimitMath.carried`) and stay suspended until midnight even when the usage log can't be read. Removing the limit (recovery code) still frees them.
+- **Impulse lock locks the clock** while it runs, like the ride lock and focus blocks (after a reboot it can only go by the wall clock).
+- **The Urge Journal stays usable during a brick:** excluded from brick suspension and on the lock-task list, opened from its Quick Settings tile.
+- **Journal copy fixed:** the "Start a focus block?" dialog no longer claims the recovery code can end it (a block bricks the phone to the end).
+- **AI replies cut off by the network** are kept when what arrived already reads as a report (`AiClient.usablePartial`).
+- Check-in reminders skip rides older than six hours; deleting a focus session clears its pending lecture question.
+- README/GUIDE/URGE_ACTIONS describe the app as it is: focus blocks (brick), daily limits only (cooldowns, windows and groups were removed earlier).
+- Local compile check: `dl.google.com` (Google Maven) is blocked from the sandbox, so AGP cannot run; the pure-logic tests of both apps can be run in a scratch Kotlin/JVM project against the Maven Central mirror `maven-central.storage-download.googleapis.com`. CI remains the only full compile check.
+

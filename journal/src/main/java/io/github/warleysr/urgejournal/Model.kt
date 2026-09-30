@@ -203,19 +203,8 @@ object Coach {
     const val MIN_TRIES = 3
 
     /** Success rate of each step you have tried enough times, smoothed so two lucky tries don't crown it. */
-    fun stepScores(history: List<Entry>): Map<Step, Double> {
-        val tries = mutableMapOf<Step, Int>()
-        val wins = mutableMapOf<Step, Int>()
-        history.forEach { e ->
-            val after = e.after ?: return@forEach
-            e.tried.distinct().forEach { step ->
-                tries[step] = (tries[step] ?: 0) + 1
-                if (after == After.GONE || after == After.WEAKER) wins[step] = (wins[step] ?: 0) + 1
-            }
-        }
-        return tries.filter { it.value >= MIN_TRIES }
-            .mapValues { (step, n) -> ((wins[step] ?: 0) + 1.0) / (n + 2.0) }
-    }
+    fun stepScores(history: List<Entry>): Map<Step, Double> =
+        Insights.stepEvidence(history).associate { it.step to (it.wins + 1.0) / (it.tries + 2.0) }
 
     /** Puts what has worked for you first, and adds a proven step the rules didn't pick. */
     fun rank(steps: List<Step>, history: List<Entry>): List<Step> {
@@ -436,8 +425,9 @@ object Insights {
         )
     }
 
-    /** One bar of the seven-day chart: urges ridden out, and given in to (slips count here). */
-    /** [open] counts real entries with no result yet, so a day with only those is not drawn as empty. */
+    /**
+     * One bar of the seven-day chart: urges ridden out, and given in to (slips count here).
+     * [open] counts real entries with no result yet, so a day with only those is not drawn as empty. */
     data class DayBar(val date: LocalDate, val resisted: Int, val gaveIn: Int, val open: Int = 0)
 
     /** The last [days] calendar days ending today, oldest first, with a bar for each. */

@@ -8,15 +8,14 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 
 ## What it does
 
-### Focus: a Pomodoro that keeps you honest
-- Focus sessions and breaks, with a long break every few sessions. All lengths are adjustable.
-- **An alarm that rings until you stop it** when a session or break ends. It works with the screen off and the app closed.
-- Breaks and the next session **wait for you to start them**, or start automatically if you prefer.
-- **"Did you do the work?"** When a session ends, a full-screen Yes/No question appears, even over the lock screen. Your answer is logged.
-- **Intention:** optionally write one line before starting ("IAS 16, questions 1–10"). The end-of-session question asks about exactly that.
-- **Subjects:** tag each session (e.g. FAR, Tax, CAF 4), with an optional daily target per subject.
-- **Daily goal:** a quiet progress bar for how many sessions you aim for each day.
-- **Changeable alarm sound:** any ringtone or your own file.
+### Focus: committed blocks that keep you honest
+- **Focus block:** pick an end time and commit. Sessions and breaks (a long one every few sessions) run by themselves until then. All lengths are adjustable.
+- **The phone is bricked for the whole block**, breaks included: only Déchaîner, incoming calls, your alarm clock, the Urge Journal, Quick Settings and any apps you allowed work. The clock is locked. **Nothing ends a block early**, not even your recovery code, so choose a length you can keep. Pause is there for physical work; the end time never moves.
+- A short **chime** between phases, with **"Did you do the work?"** right on the notification. Your answer is logged.
+- **Intention:** optionally write one line for the next session ("IAS 16, questions 1–10"). The question asks about exactly that.
+- **Subjects and lectures:** tag each session (e.g. FAR, Tax, CAF 4), with an optional daily target per subject. From two-thirds of a lecture's length on, it asks how the lecture is going.
+- **Daily goal:** a quiet progress bar for how many lectures you aim to finish each day.
+- **Changeable chime sound:** any ringtone or your own file.
 
 ### Focus log
 - A smooth line chart of your study time for the **last 14 days** or **last 12 weeks**, with your average marked.
@@ -26,7 +25,7 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 
 ### Blocking
 - **Apps:** suspend any app with one switch. Suspended apps are greyed out, can't open, and their notifications are hidden.
-- **Time limits (Apps tab):** open an app's row to set a **daily limit** (the app is suspended for the rest of the day once you have used it that long), a **time between openings** (a cooldown before you can open it again), or **time windows** (only usable at certain hours). Apps can be grouped so one shared limit covers the whole group. Usage is read from Android's own usage log, so the app has to be given **Usage access** once (Settings → Status shows a Fix button). Nothing runs in the background to measure it.
+- **Daily limits (Apps tab):** open an app's row to set how long it can be used each day. Once the time is used up, the app is suspended until midnight, and it stays suspended even if Usage access is switched off. Lowering a limit is free; raising or removing it takes your recovery code. Usage is read from Android's own usage log, so Déchaîner needs **Usage access** once (Settings → Status shows a Fix button). Nothing runs in the background to measure it.
 - **Schedules:** block chosen apps, system features and websites at set times each week. "Allow only" mode flips it: only the apps you list work.
   - **Duplicate** a schedule, or **copy apps** from another, so you never pick the same apps twice.
   - The clock is locked while schedules are on, so a window can't be skipped by changing the time.
@@ -86,7 +85,7 @@ If the installer says *"You can't install the app"*, a restriction is blocking i
 2. **Timer:** in the timer settings, set focus to your lecture length (e.g. 60 min) and set a daily goal (e.g. 4).
 3. **Study schedule:** create one schedule for your study hours with *Allow only* on. List just your lecture app, notes app, PDF reader and one AI chat app. Everything else is suspended automatically.
 4. **DNS:** in *Settings → Private DNS*, choose **CleanBrowsing Family**.
-5. **Each session:** pick the subject, write your intention, press Start. When it rings, answer honestly.
+5. **Each block:** pick the subject, write your intention, and start a focus block for your study hours. When it chimes, answer honestly.
 6. **Weekly:** check the log, see which subject is behind, and export a backup.
 
 ---

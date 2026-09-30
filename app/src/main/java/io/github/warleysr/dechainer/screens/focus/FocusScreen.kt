@@ -248,6 +248,17 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             )
         }
         Spacer(Modifier.height(12.dp))
+        // One line on what the next session is for. Logged with it, and the end-of-session
+        // question asks about exactly this ("You planned: ...").
+        OutlinedTextField(
+            value = intention,
+            onValueChange = { Pomodoro.setIntention(context, it.replace('\n', ' ')) },
+            placeholder = { Text(stringResource(R.string.focus_intention_hint)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
+        )
         Spacer(Modifier.height(20.dp))
 
         // --- The ring ---

@@ -104,8 +104,9 @@ object DeviceOwnerRepository {
      * other app are out of reach.
      */
     fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
-        // Déchaîner, the dialers, and the apps you allowed: a pinned phone opens only these.
-        val pkgs = mutableSetOf(context.packageName)
+        // Déchaîner, the dialers, the apps you allowed and the urge journal (opened from its Quick
+        // Settings tile when an urge hits mid-block): a pinned phone opens only these.
+        val pkgs = mutableSetOf(context.packageName, RideLock.JOURNAL_PACKAGE)
         pkgs += allowed
         try {
             val telecom = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager

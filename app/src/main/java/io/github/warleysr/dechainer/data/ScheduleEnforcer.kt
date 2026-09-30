@@ -228,9 +228,10 @@ object ScheduleEnforcer : AppBlockEngine() {
         val desiredSites = active.flatMap { it.websites }.toSet()
 
         // The clock is locked while schedules are on (if you chose that), and always during a locked
-        // focus session or a focus block: moving the time would end either one early.
+        // focus session, a focus block, a ride lock or an impulse lock: moving the time would end
+        // any of them early (after a reboot the impulse lock can only go by the wall clock).
         if ((ScheduleRepository.isAntiTamperEnabled(ctx) && schedules.any { it.enabled }) ||
-            Pomodoro.holdsClock() || rideRemaining > 0
+            Pomodoro.holdsClock() || rideRemaining > 0 || impulseRemaining > 0
         ) {
             desiredRestrictions += UserManager.DISALLOW_CONFIG_DATE_TIME
             try {
@@ -616,10 +617,12 @@ object ScheduleEnforcer : AppBlockEngine() {
 
     /**
      * What the brick suspends: every app with an icon except the ones the phone can't work
-     * without (home screen, dialer, keyboards, Déchaîner), the alarm clock, and [allowed].
+     * without (home screen, dialer, keyboards, Déchaîner), the alarm clock, [allowed], and the
+     * urge journal, so an urge in the middle of a block can still be ridden out there (it can only
+     * ever add blocking).
      */
     private fun brickBlocked(ctx: Context, protectedPkgs: Set<String>, allowed: Set<String>): Set<String> =
-        LockSafety.brickTargets(launcherApps(ctx), protectedPkgs, alarmApps(ctx), allowed)
+        LockSafety.brickTargets(launcherApps(ctx), protectedPkgs, alarmApps(ctx), allowed + RideLock.JOURNAL_PACKAGE)
 
     /** What an "allow only" window suspends: every app with an icon except [allowed] and the essentials. */
     private fun allowOnlyBlocked(ctx: Context, allowed: Set<String>, protectedPkgs: Set<String>): Set<String> =

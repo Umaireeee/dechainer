@@ -88,14 +88,38 @@ object TimeLimits {
 
     fun evaluate(ctx: Context, now: Long): Status {
         val limits = all(ctx)
-        // Without Usage access nothing can be measured, so nothing is held and nothing is scheduled.
-        if (limits.isEmpty() || !hasUsageAccess(ctx)) return Status(emptySet(), null)
-        val used = usedToday(ctx, limits.keys, now)
-        return Status(
-            LimitMath.reached(limits, used),
-            LimitMath.nextCheckDelay(limits, used, midnightMillis(now) - now)
+        if (limits.isEmpty()) return Status(emptySet(), null)
+        val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+        val record = reachedPrefs(ctx)
+        val carried = LimitMath.carried(
+            record.getString(KEY_REACHED_DAY, null),
+            record.getStringSet(KEY_REACHED, emptySet()) ?: emptySet(),
+            today, limits
         )
+        val untilMidnight = midnightMillis(now) - now
+        // Without Usage access nothing new can be measured, but what already ran out today stays
+        // out until midnight: switching access off must not be a way around a limit.
+        if (!hasUsageAccess(ctx)) {
+            return Status(carried, if (carried.isNotEmpty()) untilMidnight.coerceAtLeast(LimitMath.MIN_DELAY_MS) else null)
+        }
+        // Measured, the log is the truth: a limit raised with the recovery code gives its time back.
+        val used = usedToday(ctx, limits.keys, now)
+        val reached = LimitMath.reached(limits, used)
+        if (reached != carried || record.getString(KEY_REACHED_DAY, null) != today) {
+            record.edit(commit = true) {
+                putString(KEY_REACHED_DAY, today)
+                putStringSet(KEY_REACHED, reached)
+            }
+        }
+        return Status(reached, LimitMath.nextCheckDelay(limits, used, untilMidnight))
     }
+
+    // Kept apart from the limits themselves, which are read as "every Int in the file".
+    private const val REACHED_PREFS = "app_time_limits_reached"
+    private const val KEY_REACHED_DAY = "day"
+    private const val KEY_REACHED = "apps"
+
+    private fun reachedPrefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(REACHED_PREFS, Context.MODE_PRIVATE)
 
     /** The look-again alarm. Non-wakeup: it fires the next time the phone is awake, never wakes it. */
     fun armCheck(ctx: Context, delayMs: Long?) {

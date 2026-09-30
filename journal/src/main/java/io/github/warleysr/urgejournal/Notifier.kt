@@ -185,8 +185,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val ctx = context.applicationContext
         when (intent.action) {
             Notifier.ACTION_CHECKIN -> {
-                // Only if a ride is still waiting for its check-in.
-                if (JournalStore(ctx).pendingRide() != 0L && ReminderSettings(ctx).checkIn) Notifier.postCheckIn(ctx)
+                // Only if a ride is still waiting for its check-in, and is not so old the app has let it go.
+                val started = JournalStore(ctx).pendingRide()
+                val fresh = started != 0L && System.currentTimeMillis() - started <= Notifier.PENDING_MAX_AGE_MS
+                if (fresh && ReminderSettings(ctx).checkIn) Notifier.postCheckIn(ctx)
             }
             Notifier.ACTION_NUDGE -> {
                 if (ReminderSettings(ctx).nudgeMinute >= 0) Notifier.postNudge(ctx)

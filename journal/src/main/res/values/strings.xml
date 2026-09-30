@@ -365,7 +365,7 @@
     <!-- One-tap focus and the evening check-in -->
     <string name="home_focus">Start a focus block</string>
     <string name="focus_title">Start a focus block?</string>
-    <string name="focus_body">Déchaîner locks your distraction apps in study sessions and breaks until the time is up. Leaving early takes your recovery code, so pick a length you can keep. How many minutes?</string>
+    <string name="focus_body">Déchaîner bricks your phone until the time is up, breaks included: only Déchaîner, incoming calls, your alarm clock, this journal (from its Quick Settings tile) and Quick Settings keep working, plus any apps you allowed in its timer settings. Nothing ends it early, not even your recovery code, so pick a length you can keep. How many minutes?</string>
     <string name="focus_minutes">%1$d min</string>
     <string name="focus_sent">Sent to Déchaîner. Your focus block is starting.</string>
     <string name="day_title">Did today go the way you planned?</string>

@@ -427,9 +427,11 @@ object Pomodoro {
         synchronized(lock) {
             _log.value = _log.value.filterNot { it.id == id }
             if (_pending.value == id) _pending.value = null
+            if (_lectureAsk.value == id) _lectureAsk.value = null
             prefs(context).edit(commit = true) {
                 putString(K_LOG, FocusLogMath.encode(_log.value))
                 if (_pending.value == null) remove(K_PENDING)
+                if (_lectureAsk.value == null) remove(K_LECTURE_ASK)
             }
         }
     }
