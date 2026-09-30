@@ -342,15 +342,24 @@ class SecurityManager {
             remove(KEY_UNLOCK_AT)
         }
 
-        fun startForcedRemoval(context: Context) {
+        private val forcedRemovalLock = Any()
+
+        /** Android's count of boots, so a reboot is noticed for certain; -1 if it can't be read. */
+        private fun bootCount(context: Context): Int = try {
+            android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, ForcedRemovalClock.UNKNOWN_BOOT)
+        } catch (_: Exception) {
+            ForcedRemovalClock.UNKNOWN_BOOT
+        }
+
+        fun startForcedRemoval(context: Context) = synchronized(forcedRemovalLock) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            prefs.edit {
+            prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", true)
                 putLong("forced_removal_accumulated", 0L)
                 putLong("forced_removal_last_elapsed", SystemClock.elapsedRealtime())
+                putInt("forced_removal_last_boot", bootCount(context))
             }
         }
-
         fun cancelForcedRemoval(context: Context) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit {
@@ -358,23 +367,31 @@ class SecurityManager {
             }
         }
 
-        fun getForcedRemovalRemainingTime(context: Context): Long {
+        /**
+         * Milliseconds of the wait left, or -1 when no forced removal is running. Every call also
+         * checkpoints the running time, which is why the enforcer calls it on every sync: time only
+         * counts when it is written down, and a reboot would otherwise lose what came after the last write.
+         */
+        fun getForcedRemovalRemainingTime(context: Context): Long = synchronized(forcedRemovalLock) {
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            if (!prefs.getBoolean("forced_removal_active", false)) return -1L
+            if (!prefs.getBoolean("forced_removal_active", false)) return@synchronized -1L
 
-            var accumulated = prefs.getLong("forced_removal_accumulated", 0L)
-            val lastElapsed = prefs.getLong("forced_removal_last_elapsed", 0L)
             val now = SystemClock.elapsedRealtime()
+            val boot = bootCount(context)
+            val accumulated = prefs.getLong("forced_removal_accumulated", 0L) + ForcedRemovalClock.elapsedSince(
+                lastElapsed = prefs.getLong("forced_removal_last_elapsed", 0L),
+                lastBootCount = prefs.getInt("forced_removal_last_boot", ForcedRemovalClock.UNKNOWN_BOOT),
+                nowElapsed = now,
+                nowBootCount = boot
+            )
 
-            val diff = if (now >= lastElapsed) now - lastElapsed else now
-            accumulated += diff
-
-            prefs.edit {
+            prefs.edit(commit = true) {
                 putLong("forced_removal_accumulated", accumulated)
                 putLong("forced_removal_last_elapsed", now)
+                putInt("forced_removal_last_boot", boot)
             }
 
-            return (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
+            (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
         }
 
     }
