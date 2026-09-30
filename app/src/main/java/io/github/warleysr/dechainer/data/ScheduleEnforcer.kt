@@ -256,18 +256,32 @@ object ScheduleEnforcer : AppBlockEngine() {
                 UserManager.DISALLOW_USER_SWITCH
             )
         }
-        applyBrickHome(ctx, dpm, admin, brick)
-
-        applyApps(ctx, dpm, admin, desiredApps) { emptySet() }
-        applyRestrictions(ctx, dpm, admin, desiredRestrictions)
-        applySites(ctx, desiredSites)
-
-        // An exact alarm at the moment the impulse lock ends, so its apps come back on time
-        // even with the screen off.
-        armImpulseEnd(ctx, impulseRemaining)
-        armRideEnd(ctx, rideRemaining)
-        // And a non-wakeup alarm for the earliest moment a limit could run out (or midnight).
-        TimeLimits.armCheck(ctx, limitStatus.nextCheckDelayMs)
+        // Each stage on its own: one that fails must not stop the others (a refused restriction
+        // must not leave apps unsuspended, and the other way round). A failed stage makes the next
+        // sync run in full instead of trusting the cache.
+        var anyFailed = false
+        fun stage(name: String, work: () -> Unit) {
+            try {
+                work()
+            } catch (e: Exception) {
+                Timber.e(e, "Schedule sync: $name failed")
+                anyFailed = true
+            }
+        }
+        stage("brick home") { if (!applyBrickHome(ctx, dpm, admin, brick)) anyFailed = true }
+        stage("apps") { applyApps(ctx, dpm, admin, desiredApps) { emptySet() } }
+        stage("restrictions") { applyRestrictions(ctx, dpm, admin, desiredRestrictions) }
+        stage("sites") { applySites(ctx, desiredSites) }
+        stage("alarms") {
+            // An exact alarm at the moment the impulse lock ends, so its apps come back on time
+            // even with the screen off.
+            armImpulseEnd(ctx, impulseRemaining)
+            armRideEnd(ctx, rideRemaining)
+            // And a non-wakeup alarm for the earliest moment a limit could run out (or midnight).
+            TimeLimits.armCheck(ctx, limitStatus.nextCheckDelayMs)
+        }
+        // Write down the running time of a forced removal, so a reboot can't lose what came after the last write.
+        stage("forced removal clock") { SecurityManager.getForcedRemovalRemainingTime(ctx) }
 
         activeBlocks = buildMap<String, ActiveBlock> {
             sources.forEach { source ->
@@ -282,7 +296,7 @@ object ScheduleEnforcer : AppBlockEngine() {
 
         val next = armNextBoundary(ctx, schedules, now)
         val cap = System.currentTimeMillis() + ENGINE_MAX_CACHE_MS
-        cacheValidUntil = if (next != null) minOf(next, cap) else cap
+        cacheValidUntil = if (anyFailed) 0L else if (next != null) minOf(next, cap) else cap
     }
 
     /**
@@ -559,10 +573,10 @@ object ScheduleEnforcer : AppBlockEngine() {
      * phone opens the timer (which pins itself again) instead of the launcher. Switched off, and
      * your own launcher restored, when the block ends.
      */
-    private fun applyBrickHome(ctx: Context, dpm: DevicePolicyManager, admin: ComponentName, on: Boolean) {
+    private fun applyBrickHome(ctx: Context, dpm: DevicePolicyManager, admin: ComponentName, on: Boolean): Boolean {
         val alias = ComponentName(ctx, "io.github.warleysr.dechainer.activities.BrickHome")
         val pm = ctx.packageManager
-        try {
+        return try {
             val enabled = pm.getComponentEnabledSetting(alias) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             if (on && !enabled) {
                 pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
@@ -570,13 +584,22 @@ object ScheduleEnforcer : AppBlockEngine() {
                     addCategory(Intent.CATEGORY_HOME)
                     addCategory(Intent.CATEGORY_DEFAULT)
                 }
-                dpm.addPersistentPreferredActivity(admin, home, alias)
+                try {
+                    dpm.addPersistentPreferredActivity(admin, home, alias)
+                } catch (e: Exception) {
+                    // Half done is worse than not done: an enabled alias with no preference set would
+                    // look finished on the next sync and never be retried. Undo it so it is.
+                    pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
+                    throw e
+                }
             } else if (!on && enabled) {
                 dpm.clearPackagePersistentPreferredActivities(admin, ctx.packageName)
                 pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
             }
+            true
         } catch (e: Exception) {
             Timber.w(e, "Brick home screen not changed")
+            false
         }
     }
 
@@ -596,7 +619,7 @@ object ScheduleEnforcer : AppBlockEngine() {
      * without (home screen, dialer, keyboards, Déchaîner), the alarm clock, and [allowed].
      */
     private fun brickBlocked(ctx: Context, protectedPkgs: Set<String>, allowed: Set<String>): Set<String> =
-        launcherApps(ctx) - protectedPkgs - alarmApps(ctx) - allowed
+        LockSafety.brickTargets(launcherApps(ctx), protectedPkgs, alarmApps(ctx), allowed)
 
     /** What an "allow only" window suspends: every app with an icon except [allowed] and the essentials. */
     private fun allowOnlyBlocked(ctx: Context, allowed: Set<String>, protectedPkgs: Set<String>): Set<String> =
