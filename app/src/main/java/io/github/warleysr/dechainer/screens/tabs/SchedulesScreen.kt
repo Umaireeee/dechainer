@@ -73,7 +73,6 @@ fun SchedulesScreen(
     val scope = rememberCoroutineScope()
     val lockedMsg = stringResource(R.string.schedule_locked_message)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
-    val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
     val defaultName = stringResource(R.string.schedule_default_name)
     val antiTamperLabel = stringResource(R.string.schedule_anti_tamper)
     val copySuffix = stringResource(R.string.schedule_copy_suffix)
@@ -365,6 +364,7 @@ fun ScheduleEditorScreen(
     val noDaysMsg = stringResource(R.string.schedule_error_no_days)
     val nothingMsg = stringResource(R.string.schedule_error_nothing)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
+    val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
     var showLongLockConfirm by remember { mutableStateOf(false) }
 
     var showStartPicker by remember { mutableStateOf(false) }
