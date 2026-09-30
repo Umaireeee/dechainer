@@ -1071,5 +1071,17 @@ class JournalLogicTest {
         // The banned verdict is described, not quoted, so it isn't planted.
         assertFalse("not luck" in sys)
     }
+
+    @Test
+    fun theCoachSpeaksLikeAPersonAndEndsWithASpark() {
+        for (sys in listOf(Prompt.systemFor(true), WEEKLY_SYSTEM)) {
+            assertTrue("Voice" in sys)
+            assertTrue("the spark" in sys)
+            assertTrue("No slogans" in sys)
+        }
+        // Honesty stays: warm is not the same as flattering.
+        assertTrue("Never flatter" in Prompt.systemFor(true))
+        assertFalse("each with a short reason" in Prompt.systemFor(true))
+    }
 }
 
