@@ -56,11 +56,17 @@ Urges are handled in the second app, the **Urge Journal** (see Step 11). Décha�
 ## Step 8: The panic button
 **Settings → Impulse lock** sets what happens when you press the panic button on the unlock screen: it locks the app, and any apps you choose, for a set time (15 minutes to 6 hours). Set it up on a calm day.
 
-## Step 9: Block single apps by hand
-On the **Apps** tab, flip the switch next to any app to pause it. Paused apps are greyed out, can't open, and their notifications are hidden. You can also set daily time limits and time-between-openings limits per app.
+## Step 9: Block single apps by hand, and set time limits
+On the **Apps** tab, flip the switch next to any app to pause it. Paused apps are greyed out, can't open, and their notifications are hidden.
+
+**Time limits** are on the same tab. Open an app's row and choose:
+- **Daily limit:** once you have used the app this long today, it is suspended until midnight.
+- **Time between openings:** after you close it, you wait this long before you can open it again.
+- **Time windows:** the app only works at the hours you allow.
+You can put apps in a group so one shared limit covers all of them (hitting it blocks the whole group). Usage is read from Android's own usage log, so Déchaîner needs **Usage access** once: Settings → Status shows a **Fix** button if it is missing. Limits are enforced by suspending the app, so they still hold if Déchaîner is closed.
 
 ## Step 10: Check it's really working
-Open **Settings → Status**. It shows whether device owner, exact alarms, battery optimization and notifications are all fine, with a **Fix** button for anything red. It also lists every blocked app and why. On Xiaomi phones also allow autostart and remove the battery limit for Déchaîner.
+Open **Settings → Status**. It shows whether device owner, exact alarms, battery optimization and notifications are all fine, with a **Fix** button for anything red. It also lists every blocked app and why. **On Xiaomi, Redmi and POCO (MIUI / HyperOS):** open *Settings → Apps → Manage apps → Déchaîner*, turn **Autostart** on, and set the battery option to **No restrictions**. Do the same for the Urge Journal. Without this the phone can stop the app in the background and delay alarms and the end of a block.
 
 ---
 

@@ -26,6 +26,7 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 
 ### Blocking
 - **Apps:** suspend any app with one switch. Suspended apps are greyed out, can't open, and their notifications are hidden.
+- **Time limits (Apps tab):** open an app's row to set a **daily limit** (the app is suspended for the rest of the day once you have used it that long), a **time between openings** (a cooldown before you can open it again), or **time windows** (only usable at certain hours). Apps can be grouped so one shared limit covers the whole group. Usage is read from Android's own usage log, so the app has to be given **Usage access** once (Settings → Status shows a Fix button). Nothing runs in the background to measure it.
 - **Schedules:** block chosen apps, system features and websites at set times each week. "Allow only" mode flips it: only the apps you list work.
   - **Duplicate** a schedule, or **copy apps** from another, so you never pick the same apps twice.
   - The clock is locked while schedules are on, so a window can't be skipped by changing the time.
@@ -40,6 +41,13 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 A second app in this repository, signed with the same key, for the moment an urge hits. One tap pauses your distraction apps and starts a ten-minute guided ride (breathing, one step, your own rule); a short check-in afterwards teaches the coach what actually works for you. A full log of every entry (chart, filters, CSV export) sits one tap away. It also offers an optional AI deep dive (bring your own key), a weekly review, your own "If ..., then ..." rules, and a daily heads-up before the time of day your urges cluster. Install Déchaîner first, then the journal. See the **[GUIDE](GUIDE.md)** (Step 11) and `URGE_ACTIONS.md`.
 
 New here? Read the step-by-step **[GUIDE](GUIDE.md)**.
+
+### Xiaomi, Redmi and POCO phones (MIUI / HyperOS)
+These phones stop apps in the background unless told otherwise, which can delay alarms and the moment a block ends. For Déchaîner (and the Urge Journal):
+1. *Settings → Apps → Manage apps → Déchaîner → **Autostart: On***.
+2. On the same screen, *Battery saver* (or *Battery usage*) → **No restrictions**.
+3. In *Recent apps*, lock the app (pull its card down or long-press it and tap the lock) so it isn't cleared.
+Then open **Settings → Status** in Déchaîner: it should show no red items.
 
 ### Battery
 Nothing runs in the background and nothing watches your screen: **there's no accessibility service**. Schedules, the impulse lock and the Pomodoro all run on exact alarms, and the timer's countdown is drawn by Android itself.
