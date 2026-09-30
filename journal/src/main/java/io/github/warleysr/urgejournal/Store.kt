@@ -38,6 +38,7 @@ class JournalStore(context: Context) {
     fun clear() {
         prefs.edit(commit = true) {
             remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE)
+            remove("dismissed_hot"); remove("dismissed_heavier")
         }
     }
 

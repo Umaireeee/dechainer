@@ -1178,11 +1178,7 @@ fun SettingsScreen(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, store.exportJson())
-                }
-                context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                Share.file(context, "urge-journal-backup.txt", "text/plain", store.exportJson())
             }) { Text(stringResource(R.string.settings_export)) }
             OutlinedButton(onClick = {
                 val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)

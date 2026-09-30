@@ -56,7 +56,9 @@ fun LogScreen(
     val timeFormat = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
 
     // The range shown in the chart, in numbers.
-    val inRange = bars.sumOf { it.resisted + it.gaveIn }
+    val inRange = Insights.entriesIn(
+        entries, bars.first().date, bars.last().date.plusDays(if (weekly) 6L else 0L), zone
+    ).size
     val rangeThrough = bars.sumOf { it.resisted }
     val rangeGaveIn = bars.sumOf { it.gaveIn }
 

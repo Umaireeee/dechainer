@@ -198,7 +198,7 @@
     <string name="settings_privacy">Your data</string>
     <string name="settings_privacy_body">Entries are stored only on this phone. The AI deep dive is the only thing that leaves it, and only when you use it. Your key is kept in this app\'s private storage.</string>
     <string name="delete_title">Delete all my entries</string>
-    <string name="delete_body">This removes every entry and deep dive from this phone. It can\'t be undone.</string>
+    <string name="delete_body">This removes every entry, rule and deep dive from this phone. Your AI key and settings stay. It can\'t be undone.</string>
     <string name="delete_yes">Delete</string>
     <string name="delete_no">Cancel</string>
 

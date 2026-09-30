@@ -74,15 +74,23 @@ class AiSettings(context: Context) {
      * The API key, kept encrypted with a key that lives in the phone's Keystore and never leaves
      * it. A key saved in plain text by an earlier version is read once and moved over.
      */
+    // Decrypting takes a round trip to the Keystore, and the key is read on every redraw.
+    private var cachedKey: String? = null
+
     var key: String
         get() {
-            prefs.getString("key_enc", null)?.let { return SecretBox.open(it) ?: "" }
-            val old = prefs.getString("key", "") ?: ""
-            if (old.isNotBlank()) key = old
-            return old
+            cachedKey?.let { return it }
+            val value = prefs.getString("key_enc", null)?.let { SecretBox.open(it) ?: "" } ?: run {
+                val old = prefs.getString("key", "") ?: ""
+                if (old.isNotBlank()) key = old
+                old
+            }
+            cachedKey = value
+            return value
         }
         set(v) {
             val clean = v.trim()
+            cachedKey = clean
             val sealed = if (clean.isEmpty()) null else SecretBox.seal(clean)
             prefs.edit {
                 when {
@@ -131,8 +139,12 @@ class AiSettings(context: Context) {
 
     /** Has the person agreed to send their answers to this provider? Changing provider asks again. */
     var consent: Boolean
-        get() = prefs.getString("consent_for", null) == provider.name
-        set(v) = prefs.edit { if (v) putString("consent_for", provider.name) else remove("consent_for") }
+        get() = prefs.getString("consent_for", null) == consentKey
+        set(v) = prefs.edit { if (v) putString("consent_for", consentKey) else remove("consent_for") }
+
+    /** Consent is for one destination: for your own service address, a different address asks again. */
+    private val consentKey: String
+        get() = if (provider == Provider.CUSTOM) provider.name + "|" + customBase.trim().lowercase() else provider.name
 }
 
 const val ABOUT_LIMIT = 600
@@ -455,12 +467,15 @@ object ReportParser {
 /** A blunt check on the free-text note, so a person in crisis gets care instead of a report. */
 object Safety {
     private val markers = listOf(
-        "kill myself", "end my life", "want to die", "suicide", "suicidal", "hurt myself",
-        "harm myself", "self harm", "self-harm", "don't want to live", "dont want to live", "no reason to live"
+        "kill myself", "kill me", "end my life", "end it all", "take my own life", "want to die",
+        "wish i was dead", "wish i were dead", "better off dead", "suicide", "suicidal", "hurt myself",
+        "harm myself", "self harm", "self-harm", "don't want to live", "dont want to live",
+        "don't want to be here", "no reason to live", "can't go on", "cant go on"
     )
 
     fun needsSupport(note: String): Boolean {
-        val t = note.lowercase()
+        // Phone keyboards type a curly apostrophe; the phrases above use the plain one.
+        val t = note.lowercase().replace('\u2019', '\'').replace('\u2018', '\'').replace('`', '\'')
         return markers.any { it in t }
     }
 }

@@ -589,4 +589,27 @@ class JournalLogicTest {
         assertTrue(prompt.contains("weaker"))
         assertTrue(prompt.contains("leave room"))
     }
+
+    @Test
+    fun anOpenRideIsNeitherRiddenOutNorGivenIn() {
+        val now = ms(20, 12)
+        val open = Entry(ms(20, 9), false, emptyMap(), null)
+        val still = Entry(ms(20, 10), false, emptyMap(), After.STILL.outcome, after = After.STILL)
+        val done = Entry(ms(20, 11), false, emptyMap(), After.GONE.outcome, after = After.GONE)
+        assertFalse(open.ridden)
+        assertFalse(still.ridden)
+        assertTrue(done.ridden)
+        val bar = Insights.days(listOf(open, still, done), now, zone).last()
+        assertEquals(1, bar.resisted)
+        assertEquals(0, bar.gaveIn)
+        assertEquals(1, Insights.week(listOf(open, still, done), now, zone).resisted)
+    }
+
+    @Test
+    fun theCrisisCheckHandlesCurlyApostrophesAndCommonPhrases() {
+        assertTrue(Safety.needsSupport("I don\u2019t want to live like this"))
+        assertTrue(Safety.needsSupport("i just want to end it all"))
+        assertTrue(Safety.needsSupport("Everyone would be better off dead"))
+        assertFalse(Safety.needsSupport("I was bored and scrolled for an hour"))
+    }
 }

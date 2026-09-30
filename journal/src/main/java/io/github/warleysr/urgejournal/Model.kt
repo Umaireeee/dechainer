@@ -325,6 +325,9 @@ data class Entry(
     /** A slip, or an urge that was given in to. */
     val gaveIn: Boolean get() = slipped || outcome == Outcome.GAVE_IN
 
+    /** An urge that was ridden out. An entry still open (no answer yet) is neither ridden out nor given in to. */
+    val ridden: Boolean get() = !gaveIn && outcome == Outcome.RESISTED
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("t", time)
         put("s", slipped)
@@ -408,7 +411,7 @@ object Insights {
         }
         return Week(
             total = recent.size,
-            resisted = recent.count { !it.gaveIn && it.outcome == Outcome.RESISTED },
+            resisted = recent.count { it.ridden },
             gaveIn = recent.count { it.gaveIn },
             topFeeling = top,
             peakHour = peak,
@@ -426,7 +429,7 @@ object Insights {
         return (days - 1 downTo 0).map { back ->
             val d = today.minusDays(back.toLong())
             val list = byDay[d].orEmpty()
-            DayBar(d, list.count { !it.gaveIn }, list.count { it.gaveIn })
+            DayBar(d, list.count { it.ridden }, list.count { it.gaveIn })
         }
     }
 
@@ -518,7 +521,7 @@ object Insights {
         return (weeks - 1 downTo 0).map { back ->
             val start = thisMonday.minusWeeks(back.toLong())
             val list = entriesIn(entries, start, start.plusDays(6), zone)
-            DayBar(start, list.count { !it.gaveIn }, list.count { it.gaveIn })
+            DayBar(start, list.count { it.ridden }, list.count { it.gaveIn })
         }
     }
 

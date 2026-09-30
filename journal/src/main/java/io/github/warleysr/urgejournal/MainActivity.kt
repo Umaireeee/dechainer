@@ -35,7 +35,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pendingAction = intent?.getStringExtra(EXTRA_ACTION)
+        // Only a fresh launch carries a request; a recreated screen must not repeat it.
+        pendingAction = if (savedInstanceState == null) intent?.getStringExtra(EXTRA_ACTION) else null
         setContent {
             UrgeTheme {
                 Surface(
@@ -182,9 +183,11 @@ private fun App(activity: MainActivity) {
         val key = settings.key
         val model = settings.model
         val system = Prompt.systemFor(settings.deep)
-        val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), settings.about)
+        val about = settings.about
         thread {
             val result = try {
+                // Built here, off the main thread: reading the whole journal can take a moment.
+                val user = Prompt.user(entry, Insights.summary(store.all(), System.currentTimeMillis()), about)
                 AiClient.chat(provider, baseUrl, key, model, system, user)
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
@@ -218,10 +221,10 @@ private fun App(activity: MainActivity) {
         val baseUrl = settings.baseUrl
         val key = settings.key
         val model = settings.model
-        val user = Prompt.weeklyUser(store.all(), now, settings.about)
+        val about = settings.about
         thread {
             val result = try {
-                AiClient.chat(provider, baseUrl, key, model, WEEKLY_SYSTEM, user)
+                AiClient.chat(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about))
             } catch (e: Throwable) {
                 AiResult.Failed(AiError.SERVER, e.javaClass.simpleName)
             }
@@ -351,7 +354,10 @@ private fun App(activity: MainActivity) {
             MainActivity.ACTION_RIDE -> startRide()
             MainActivity.ACTION_CHECKIN -> startCheckIn()
         }
-        if (action != null) activity.pendingAction = null
+        if (action != null) {
+            activity.pendingAction = null
+            activity.intent?.removeExtra(MainActivity.EXTRA_ACTION)
+        }
     }
 
     when (screen) {
@@ -404,13 +410,7 @@ private fun App(activity: MainActivity) {
                     store.dismiss("heavier")
                     cardsTick++
                 },
-                onShare = {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, Insights.shareText(entries, System.currentTimeMillis()))
-                    }
-                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }
+                onShare = { Share.text(context, Insights.shareText(entries, System.currentTimeMillis())) }
             )
         }
 
@@ -423,7 +423,10 @@ private fun App(activity: MainActivity) {
                 step = Coach.rideStep(entries),
                 myPlan = MyPlan.forRide(plans, hour),
                 onDone = { screen = Screen.AFTER },
-                onLonger = { pauseApps(LONGER_BLOCK_MINUTES) },
+                onLonger = {
+                    pauseApps(LONGER_BLOCK_MINUTES)
+                    Notifier.scheduleCheckIn(context, System.currentTimeMillis() + Notifier.CHECKIN_DELAY_MS)
+                },
                 onLeave = { goHome() }
             )
         }
@@ -449,6 +452,7 @@ private fun App(activity: MainActivity) {
                     val now = System.currentTimeMillis()
                     rideClock = now
                     pauseApps(RIDE_BLOCK_MINUTES)
+                    Notifier.scheduleCheckIn(context, now + Notifier.CHECKIN_DELAY_MS)
                     screen = Screen.RIDE
                 },
                 onGaveIn = { startInterview(true) },
@@ -544,13 +548,7 @@ private fun App(activity: MainActivity) {
             LogScreen(
                 entries = entries,
                 onOpen = { detail = it; detailBack = Screen.LOG; screen = Screen.DETAIL },
-                onExport = {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, CsvExport.csv(entries))
-                    }
-                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                },
+                onExport = { Share.file(context, "urge-journal.csv", "text/csv", CsvExport.csv(entries)) },
                 onBack = { goHome() }
             )
         }
@@ -591,6 +589,7 @@ private fun App(activity: MainActivity) {
                 onDeleteAll = {
                     store.clear()
                     Notifier.cancelCheckIn(context)
+                    cardsTick++
                     plans = emptyList()
                     goHome()
                 },
