@@ -3,7 +3,8 @@
     <string name="app_name">Urge Journal</string>
 
     <string name="home_urge">I feel an urge</string>
-    <string name="home_urge_hint">One tap pauses your distraction apps for 30 minutes, and we ride it out together.</string>
+    <string name="home_urge_hint">Hold the button. It locks your other apps for ten minutes and pauses your distraction apps for 30, and we ride it out together.</string>
+    <string name="home_urge_hold">Keep holding for a moment. It starts on a hold so a bump can\'t start it.</string>
     <string name="entry_urge">Urge</string>
     <string name="home_log_only">Just log it</string>
     <string name="home_slip">I already slipped</string>
@@ -251,12 +252,13 @@
     <string name="ride_out">Breathe out slowly</string>
     <string name="ride_finished">You rode the peak.</string>
     <string name="ride_done_mark">Done</string>
-    <string name="ride_paused">Your distraction apps are paused for %1$d minutes.</string>
+    <string name="ride_locked">Every other app is locked for %1$d minutes. Calls, your alarm and this app still work.</string>
+    <string name="ride_paused">Your distraction apps stay paused for %1$d minutes.</string>
     <string name="ride_one_thing">Do one thing now</string>
     <string name="ride_your_rule">Your own rule</string>
     <string name="ride_early">I\'m through the worst of it</string>
     <string name="ride_continue">Continue</string>
-    <string name="ride_longer">Still strong: pause my apps for an hour</string>
+    <string name="ride_longer">Still strong: keep everything locked for 30 more minutes</string>
     <string name="ride_leave">Back home</string>
 
     <!-- After the ride -->
@@ -343,4 +345,19 @@
     <string name="log_all">All entries: %1$d</string>
     <string name="log_empty">Nothing here yet.</string>
     <string name="log_export">Export as a spreadsheet (CSV)</string>
+
+    <!-- One-tap focus and the evening check-in -->
+    <string name="home_focus">Start a focus block</string>
+    <string name="focus_title">Start a focus block?</string>
+    <string name="focus_body">Déchaîner locks your distraction apps in study sessions and breaks until the time is up. Leaving early takes your recovery code, so pick a length you can keep. How many minutes?</string>
+    <string name="focus_minutes">%1$d min</string>
+    <string name="focus_sent">Sent to Déchaîner. Your focus block is starting.</string>
+    <string name="day_title">Did today go the way you planned?</string>
+    <string name="day_planned">Yes, it went to plan</string>
+    <string name="day_partly">Partly</string>
+    <string name="day_not">Not really</string>
+    <string name="week_plan_days">Went to plan: %1$d of the last %2$d days you checked in.</string>
+    <string name="reminders_evening">Evening check-in: did today go to plan?</string>
+    <string name="notif_evening_title">Evening check-in</string>
+    <string name="notif_evening_text">Did today go the way you planned? Two taps.</string>
 </resources>

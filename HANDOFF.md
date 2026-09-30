@@ -69,3 +69,6 @@ Both are signed with the same key (release workflow), because the link between t
 7. Crash logging for release builds; on-device UI tests; tune the coach prompts after a week of real entries (the AI prompt now includes the ride result and what was tried).
 8. A slip-in-focus-block flow inside Déchaîner itself (today the slip is logged in the journal).
 9. Housekeeping: delete old remote branches in the GitHub UI; keep README/GUIDE in step.
+
+## Update: restored on request (after the first merge)
+The all-apps ride lock (`RIDE_LOCK`, Déchaîner's `RideLock` + enforcer source; Déchaîner has no new visible UI for it), the 0.7 s hold-to-start ember, the one-tap FOCUS_BLOCK button and the evening "did today go to plan?" check-in are back in the journal. Déchaîner's own Urge log stays removed and its unlock screen has no journal buttons.

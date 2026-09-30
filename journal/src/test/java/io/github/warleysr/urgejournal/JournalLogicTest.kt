@@ -141,6 +141,7 @@ class JournalLogicTest {
             Rule.entries.forEach { if ("rule_${it.name.lowercase()}" !in names) add("rule_${it.name.lowercase()}") }
             Reason.entries.forEach { if ("reason_${it.name.lowercase()}" !in names) add("reason_${it.name.lowercase()}") }
             Step.entries.forEach { if ("try_${it.name.lowercase()}" !in names) add("try_${it.name.lowercase()}") }
+            DayResult.entries.forEach { if ("day_${it.name.lowercase()}" !in names) add("day_${it.name.lowercase()}") }
             After.entries.forEach { if ("after_${it.name.lowercase()}" !in names) add("after_${it.name.lowercase()}") }
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
@@ -611,5 +612,25 @@ class JournalLogicTest {
         assertTrue(Safety.needsSupport("i just want to end it all"))
         assertTrue(Safety.needsSupport("Everyone would be better off dead"))
         assertFalse(Safety.needsSupport("I was bored and scrolled for an hour"))
+    }
+
+    @Test
+    fun planDaysCountDaysThatWentToPlan() {
+        val today = java.time.LocalDate.of(2026, 9, 28)
+        assertNull(Insights.planDays(emptyMap(), today))
+        val days = mapOf(
+            today to DayResult.PLANNED,
+            today.minusDays(1) to DayResult.PARTLY,
+            today.minusDays(2) to DayResult.PLANNED,
+            today.minusDays(10) to DayResult.PLANNED // outside the week
+        )
+        assertEquals(2 to 3, Insights.planDays(days, today))
+    }
+
+    @Test
+    fun theRideLockCommandIsNamedTheWayDeChainerExpectsIt() {
+        assertEquals("RIDE_LOCK", DoorAction.RIDE_LOCK)
+        assertEquals("IMPULSE_BLOCK", DoorAction.IMPULSE_BLOCK)
+        assertEquals("FOCUS_BLOCK", DoorAction.FOCUS_BLOCK)
     }
 }

@@ -28,6 +28,11 @@ class ReminderSettings(context: Context) {
         get() = prefs.getInt("nudge", -1)
         set(v) = prefs.edit { putInt("nudge", v) }
 
+    /** Minutes from midnight of the evening "did today go the way you planned?", or -1 for off. */
+    var eveningMinute: Int
+        get() = prefs.getInt("evening", -1)
+        set(v) = prefs.edit { putInt("evening", v) }
+
 }
 
 /**
@@ -38,6 +43,7 @@ object Notifier {
     const val ACTION_CHECKIN = "io.github.warleysr.urgejournal.CHECKIN"
     const val ACTION_NUDGE = "io.github.warleysr.urgejournal.NUDGE"
     const val ACTION_BLOCK = "io.github.warleysr.urgejournal.BLOCK_NOW"
+    const val ACTION_EVENING = "io.github.warleysr.urgejournal.EVENING"
 
     /** How long after a ride starts the check-in comes. */
     const val CHECKIN_DELAY_MS = 20L * 60 * 1000
@@ -45,6 +51,9 @@ object Notifier {
     private const val CHANNEL = "reminders"
     private const val ID_CHECKIN = 11
     private const val ID_NUDGE = 12
+    private const val ID_EVENING = 13
+    private const val REQ_EVENING_ALARM = 26
+    private const val REQ_OPEN_EVENING = 27
     private const val REQ_CHECKIN_ALARM = 21
     private const val REQ_NUDGE_ALARM = 22
     private const val REQ_BLOCK = 23
@@ -88,6 +97,24 @@ object Notifier {
             if (minute < 0) alarmManager(ctx).cancel(pi)
             else alarmManager(ctx).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, Times.nextDaily(minute, System.currentTimeMillis()), pi)
         }
+    }
+
+    /** Arms (or clears) the next evening check-in from the saved time. */
+    fun rearmEvening(ctx: Context) {
+        val minute = ReminderSettings(ctx).eveningMinute
+        val pi = alarmIntent(ctx, ACTION_EVENING, REQ_EVENING_ALARM)
+        runCatching {
+            if (minute < 0) alarmManager(ctx).cancel(pi)
+            else alarmManager(ctx).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, Times.nextDaily(minute, System.currentTimeMillis()), pi)
+        }
+    }
+
+    fun postEvening(ctx: Context) {
+        post(
+            ctx, ID_EVENING,
+            base(ctx, R.string.notif_evening_title, R.string.notif_evening_text)
+                .setContentIntent(openApp(ctx, MainActivity.ACTION_NONE, REQ_OPEN_EVENING))
+        )
     }
 
     private fun ensureChannel(ctx: Context) {
@@ -162,11 +189,18 @@ class ReminderReceiver : BroadcastReceiver() {
                 if (ReminderSettings(ctx).nudgeMinute >= 0) Notifier.postNudge(ctx)
                 Notifier.rearmNudge(ctx)
             }
+            Notifier.ACTION_EVENING -> {
+                if (ReminderSettings(ctx).eveningMinute >= 0) Notifier.postEvening(ctx)
+                Notifier.rearmEvening(ctx)
+            }
             Notifier.ACTION_BLOCK -> {
                 Door.send(ctx, DoorAction(DoorAction.IMPULSE_BLOCK, NUDGE_BLOCK_MINUTES))
                 Notifier.cancelNudge(ctx)
             }
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> Notifier.rearmNudge(ctx)
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                Notifier.rearmNudge(ctx)
+                Notifier.rearmEvening(ctx)
+            }
         }
     }
 

@@ -37,7 +37,7 @@ class JournalStore(context: Context) {
     @Synchronized
     fun clear() {
         prefs.edit(commit = true) {
-            remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE)
+            remove(KEY); remove(REVIEW_TEXT); remove(REVIEW_TIME); remove(PLANS); remove(PENDING_RIDE); remove(DAYS)
             remove("dismissed_hot"); remove("dismissed_heavier")
         }
     }
@@ -64,6 +64,28 @@ class JournalStore(context: Context) {
     @Synchronized
     fun removePlan(id: Long) {
         prefs.edit(commit = true) { putString(PLANS, MyPlan.listToJson(plans().filter { it.id != id })) }
+    }
+
+    // ---- The evening question: did the day go the way you planned? ----
+
+    @Synchronized
+    fun days(): Map<java.time.LocalDate, DayResult> = runCatching {
+        val o = org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}")
+        buildMap {
+            o.keys().forEach { key ->
+                val date = runCatching { java.time.LocalDate.parse(key) }.getOrNull()
+                val result = runCatching { DayResult.valueOf(o.getString(key)) }.getOrNull()
+                if (date != null && result != null) put(date, result)
+            }
+        }
+    }.getOrDefault(emptyMap())
+
+    @Synchronized
+    fun setDay(date: java.time.LocalDate, result: DayResult) {
+        val kept = (days() + (date to result)).toSortedMap().entries.toList().takeLast(120)
+        val o = org.json.JSONObject()
+        kept.forEach { o.put(it.key.toString(), it.value.name) }
+        prefs.edit(commit = true) { putString(DAYS, o.toString()) }
     }
 
     // ---- A ride that has started and not yet been checked in on ----
@@ -116,6 +138,7 @@ class JournalStore(context: Context) {
         const val REVIEW_TEXT = "review_text"
         const val REVIEW_TIME = "review_time"
         const val PLANS = "plans"
+        const val DAYS = "days"
         const val PENDING_RIDE = "pending_ride"
         const val LIMIT = 2000
         const val PLAN_LIMIT = 30
