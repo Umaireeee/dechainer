@@ -1105,5 +1105,23 @@ class JournalLogicTest {
         // A label for a forbidden thing gets repeated back to the person, so none is used.
         assertFalse("verdict" in sys)
     }
+
+    @Test
+    fun aBackupCarriesTheRulesAndOldBackupsStillRead() {
+        val e = Entry(ms(20, 23), false, mapOf(Q.FEELING to Opt.STRESSED), Outcome.RESISTED, note = "note")
+        val rule = MyPlan(1L, "If it is after 22:30, then the phone charges in the kitchen.", null, true)
+        val back = Backup.parse(Backup.compose(listOf(e), listOf(rule)))
+        assertEquals(listOf(e), back.entries)
+        assertEquals(listOf(rule), back.plans)
+        // A backup from before rules were included: a bare list of entries.
+        val old = Backup.parse(Entry.listToJson(listOf(e)))
+        assertEquals(listOf(e), old.entries)
+        assertTrue(old.plans.isEmpty())
+        assertTrue(Backup.parse("not a backup").entries.isEmpty())
+        // The same rule, by id or by the same words, is not added twice.
+        val same = MyPlan(2L, "if it is after 22:30, then the phone charges in the kitchen.", null, false)
+        val other = MyPlan(3L, "If I study at the desk, then the phone goes in the drawer.", null, false)
+        assertEquals(listOf(other), Backup.newPlans(listOf(rule), listOf(rule, same, other)))
+    }
 }
 

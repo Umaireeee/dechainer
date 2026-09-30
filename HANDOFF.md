@@ -97,3 +97,14 @@ Read in full: RecoveryGate, UnlockDelay, ConfigTab, the schedule list/editor/vie
 - **Ride lock** leaves the default SMS app open (calls were already open).
 - **Weekly review** now gets the previous 7 days' counts and what its previous review (3+ days old) suggested (`Prompt.PreviousReview`), and is told to follow up honestly.
 - The dead `"why"` key is gone from both schemas (the parser still reads it from old saved reports).
+
+## Update: final polish before the owner's subscription ended (2026-09-30)
+- Journal backup (`Backup` in Model.kt) now holds entries **and** the person's own rules (`{"version":2,"entries":[...],"plans":[...]}`); bare entry lists from older backups still import. Import opens a file picker (clipboard fallback).
+- Crisis entries reopened from the log show `SupportCard` too.
+- Forced removal: when ready, the dialog's second button only closes it; cancelling the finished wait is a separate red button.
+- Word challenge field has autocorrect off.
+
+### State at hand-off
+- Everything above is merged to `main-clean`; CI (unit tests + debug build of both apps) is green. **Nothing has been confirmed on a phone yet.** First things to check: the brick + journal tile, the impulse lock sending you out of Déchaîner, the 5-minute relock, daily limits with Usage access switched off, the crisis card's Call/Text buttons, and backup export/import of rules.
+- The coach prompt went through five rounds against a real model, and the owner's own upgrade was merged in (see git history). Lessons: never quote a banned phrase or a label for a forbidden thing (it gets echoed back); give the model the exact fact it would otherwise guess; structural rules ("leave X empty when ...") beat gentle ones.
+- To test the prompt without a phone: build `Prompt.systemFor(true)` + `Prompt.user(...)` in a scratch JVM project (Model.kt + Ai.kt + a stub for `androidx.core.content.edit`, against android.jar, using the Maven Central mirror `maven-central.storage-download.googleapis.com`) and paste the output into a chat.

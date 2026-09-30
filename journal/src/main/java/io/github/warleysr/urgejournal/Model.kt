@@ -765,6 +765,37 @@ fun composeStored(rows: List<JSONObject>, unreadable: List<Any>): String {
     return arr.toString()
 }
 
+/**
+ * The backup file: entries and the person's own if-then rules together, so a new phone gets both
+ * back. Backups made before rules were included (a bare list of entries) still read.
+ */
+object Backup {
+    data class Contents(val entries: List<Entry>, val plans: List<MyPlan>)
+
+    fun compose(entries: List<Entry>, plans: List<MyPlan>): String = JSONObject()
+        .put("version", 2)
+        .put("entries", JSONArray(entries.map { it.toJson() }))
+        .put("plans", JSONArray(plans.map { it.toJson() }))
+        .toString()
+
+    fun parse(text: String): Contents {
+        val t = text.trim()
+        if (t.startsWith("[")) return Contents(Entry.listFromJson(t), emptyList())
+        val o = runCatching { JSONObject(t) }.getOrNull() ?: return Contents(emptyList(), emptyList())
+        return Contents(
+            Entry.listFromJson(o.optJSONArray("entries")?.toString()),
+            MyPlan.listFromJson(o.optJSONArray("plans")?.toString())
+        )
+    }
+
+    /** The rules in [incoming] that are not already there, by id or by the same words. */
+    fun newPlans(existing: List<MyPlan>, incoming: List<MyPlan>): List<MyPlan> {
+        val ids = existing.map { it.id }.toMutableSet()
+        val texts = existing.map { it.text.trim().lowercase() }.toMutableSet()
+        return incoming.filter { p -> ids.add(p.id) && texts.add(p.text.trim().lowercase()) }
+    }
+}
+
 /** Which entries the log shows. */
 enum class LogFilter {
     ALL, THROUGH, GAVE_IN;
