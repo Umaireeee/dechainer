@@ -1056,4 +1056,20 @@ class JournalLogicTest {
         assertTrue("do not add up, split, re-count or estimate" in sys)
         assertTrue("never a nightly focus block" in sys)
     }
+
+    @Test
+    fun thePlaceIsAFactNotAGuessAndSectionsMustNotRepeat() {
+        val history = listOf(
+            Entry(ms(12, 23), false, mapOf(Q.PLACE to Opt.BED), Outcome.GAVE_IN),
+            Entry(ms(13, 23), false, mapOf(Q.PLACE to Opt.BED), Outcome.RESISTED),
+            Entry(ms(14, 15), false, mapOf(Q.PLACE to Opt.DESK), Outcome.RESISTED)
+        )
+        val now = Entry(ms(20, 23), false, mapOf(Q.PLACE to Opt.BED), null)
+        assertTrue("Logged at the same place (bed) 2 times before: 1 ridden out, 1 given in to." in Prompt.extras(history + now, now, emptyList(), zone).joinToString(" "))
+        val sys = Prompt.systemFor(true)
+        assertTrue("Every section adds something new" in sys)
+        // The banned verdict is described, not quoted, so it isn't planted.
+        assertFalse("not luck" in sys)
+    }
 }
+
