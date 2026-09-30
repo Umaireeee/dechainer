@@ -37,9 +37,17 @@ class RecoveryGate(private val context: Context) {
     /** Whether a recovery session is active — screens use this to enable/disable gated controls. */
     val isSessionActive: Boolean get() = SecurityManager.syncDelayedSession(context)
 
-    /** [onCancel] runs if the user dismisses the dialog instead of confirming. */
-    fun run(onCancel: (() -> Unit)? = null, action: () -> Unit) {
+    /**
+     * [onCancel] runs if the user dismisses the dialog instead of confirming. With [requireCode], an
+     * action that must never go through unguarded (removing Device Owner) is not run when no code is
+     * stored: [onCancel] runs instead, so the caller can say a code has to be set first.
+     */
+    fun run(onCancel: (() -> Unit)? = null, requireCode: Boolean = false, action: () -> Unit) {
         val storedCode = SecurityManager.getRecoveryCode(context)
+        if (storedCode == null && requireCode) {
+            onCancel?.invoke()
+            return
+        }
         if (storedCode == null || SecurityManager.syncDelayedSession(context)) {
             action()
             return

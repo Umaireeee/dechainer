@@ -13,6 +13,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
@@ -26,6 +27,7 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
     val recoveryGate = rememberRecoveryGate()
     val context = LocalContext.current
     val lockedMsg = stringResource(R.string.schedule_locked_blocks_removal)
+    val needsCodeMsg = stringResource(R.string.removal_needs_code)
 
     // Setup only: watches for Shizuku to be installed and started. Once it is, each tick is a no-op.
     RepeatWhileVisible(1000) {
@@ -43,7 +45,10 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
         when {
             viewModel.isDeviceOwner() -> DeviceOwnerRemoveContent(
                 onRemoveAction = {
-                    recoveryGate.run {
+                    recoveryGate.run(
+                        onCancel = { if (SecurityManager.getRecoveryCode(context) == null) Toast.makeText(context, needsCodeMsg, Toast.LENGTH_LONG).show() },
+                        requireCode = true
+                    ) {
                         if (!viewModel.processDeviceOwnerPrivileges(remove = true))
                             Toast.makeText(context, lockedMsg, Toast.LENGTH_LONG).show()
                     }

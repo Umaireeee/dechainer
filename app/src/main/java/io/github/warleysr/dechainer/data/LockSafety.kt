@@ -9,6 +9,25 @@ import io.github.warleysr.dechainer.models.BlockSchedule
  * would never be a moment to change them — only Forced removal would get the user out.
  */
 object LockSafety {
+    /** Apps that must always open, in an emergency: never suspended by a brick or an allow-only window. */
+    val EMERGENCY_APPS = setOf("com.android.emergency", "com.google.android.apps.safetyhub")
+
+    /** What a brick suspends, given the phone's icons: everything except the essentials, alarms, emergency apps and [allowed]. */
+    fun brickTargets(
+        launcher: Set<String>,
+        protectedPkgs: Set<String>,
+        alarms: Set<String>,
+        allowed: Set<String>
+    ): Set<String> = launcher - protectedPkgs - alarms - allowed - EMERGENCY_APPS
+
+    /**
+     * Whether Device Owner may not be removed right now: a locked schedule, a focus block (brick) or
+     * a ride lock is running. Forced removal, after its own four-day wait, is the only exit and
+     * ignores all of them ([forced]).
+     */
+    fun removalBlocked(scheduleLocked: Boolean, brick: Boolean, rideLockMillis: Long, forced: Boolean): Boolean =
+        !forced && (scheduleLocked || brick || rideLockMillis > 0L)
+
     /** Locked windows must leave at least this much free time somewhere in the week. */
     const val MIN_FREE_MINUTES = 60
 
