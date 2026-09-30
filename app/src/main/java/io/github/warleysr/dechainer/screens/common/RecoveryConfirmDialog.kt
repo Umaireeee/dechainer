@@ -90,18 +90,16 @@ fun RecoveryConfirmDialog(
 private val ALPHABET = ('A'..'Z').toList()
 
 /**
- * Builds a 4x4 grid (16 cells) where [correctChar] occupies a random position and the remaining
- * 15 cells are filled with distinct random letters (different from [correctChar]).
+ * All 26 letters in a new random order. The recovery code is stored only as a hash now, so the
+ * keyboard cannot know which letter comes next; it reshuffles after every tap instead.
  */
-private fun buildGrid(correctChar: Char): List<Char> {
-    val pool = (ALPHABET - correctChar).shuffled().take(15).toMutableList()
-    pool.add(correctChar)
-    pool.shuffle()
-    return pool
-}
+private fun buildGrid(): List<Char> = ALPHABET.shuffled()
+
+private const val GRID_COLUMNS = 6
+private const val GRID_ROWS = 5
 
 /**
- * Recovery dialog that presents a 4x4 shuffle keyboard.
+ * Recovery dialog that presents a shuffle keyboard.
  * Only one cell per row contains the character at the current code position.
  * The entire grid reshuffles after every tap.
  */
@@ -113,9 +111,7 @@ private fun ShuffleKeyboardRecoveryDialog(
     var code by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
 
-    val context = LocalContext.current
-    var recoveryCode by remember { mutableStateOf(SecurityManager.getRecoveryCode(context)) }
-    var grid by remember { mutableStateOf(buildGrid(recoveryCode?.get(code.length.coerceAtMost(15)) ?: 'X')) }
+    var grid by remember { mutableStateOf(buildGrid()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -143,22 +139,26 @@ private fun ShuffleKeyboardRecoveryDialog(
                     )
                 }
 
-                // 4 x 4 grid
+                // Every letter, reshuffled after each tap
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (row in 0 until 4) {
+                    for (row in 0 until GRID_ROWS) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            for (col in 0 until 4) {
-                                val index = row * 4 + col
+                            for (col in 0 until GRID_COLUMNS) {
+                                val index = row * GRID_COLUMNS + col
+                                if (index >= grid.size) {
+                                    Spacer(Modifier.weight(1f))
+                                    continue
+                                }
                                 val letter = grid[index]
                                 OutlinedButton(
                                     onClick = {
                                         if (code.length < 16) {
                                             code += letter
                                             isError = false
-                                            grid = buildGrid(recoveryCode?.get(code.length.coerceAtMost(15)) ?: 'X')
+                                            grid = buildGrid()
                                         }
                                     },
                                     modifier = Modifier.weight(1f).aspectRatio(1f),
@@ -185,7 +185,7 @@ private fun ShuffleKeyboardRecoveryDialog(
                         onClick = {
                             code = code.dropLast(1)
                             isError = false
-                            grid = buildGrid(recoveryCode?.get(code.length.coerceAtMost(15)) ?: 'X')
+                            grid = buildGrid()
                         }
                     ) {
                         Text(stringResource(R.string.shuffle_keyboard_backspace))

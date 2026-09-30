@@ -46,7 +46,7 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
             viewModel.isDeviceOwner() -> DeviceOwnerRemoveContent(
                 onRemoveAction = {
                     recoveryGate.run(
-                        onCancel = { if (SecurityManager.getRecoveryCode(context) == null) Toast.makeText(context, needsCodeMsg, Toast.LENGTH_LONG).show() },
+                        onCancel = { if (!SecurityManager.hasRecoveryCode(context)) Toast.makeText(context, needsCodeMsg, Toast.LENGTH_LONG).show() },
                         requireCode = true
                     ) {
                         if (!viewModel.processDeviceOwnerPrivileges(remove = true))

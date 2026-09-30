@@ -43,12 +43,12 @@ class RecoveryGate(private val context: Context) {
      * stored: [onCancel] runs instead, so the caller can say a code has to be set first.
      */
     fun run(onCancel: (() -> Unit)? = null, requireCode: Boolean = false, action: () -> Unit) {
-        val storedCode = SecurityManager.getRecoveryCode(context)
-        if (storedCode == null && requireCode) {
+        val hasCode = SecurityManager.hasRecoveryCode(context)
+        if (!hasCode && requireCode) {
             onCancel?.invoke()
             return
         }
-        if (storedCode == null || SecurityManager.syncDelayedSession(context)) {
+        if (!hasCode || SecurityManager.syncDelayedSession(context)) {
             action()
             return
         }
@@ -59,8 +59,8 @@ class RecoveryGate(private val context: Context) {
     }
 
     fun confirm(code: String): Boolean {
-        val storedCode = SecurityManager.getRecoveryCode(context) ?: return true
-        if (!SecurityManager.validateRecoveryCode(code, storedCode)) return false
+        if (!SecurityManager.hasRecoveryCode(context)) return true
+        if (!SecurityManager.validateRecoveryCode(context, code)) return false
         if (SecurityManager.beginUnlock(context)) {
             pendingAction?.invoke()
             clear()
