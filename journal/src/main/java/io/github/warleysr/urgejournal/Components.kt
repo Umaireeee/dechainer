@@ -121,8 +121,8 @@ fun Ember(text: String, onTap: () -> Unit, onStart: () -> Unit) {
 fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(
             1.dp,
             if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
@@ -132,7 +132,7 @@ fun OptionCard(text: String, selected: Boolean = false, onClick: () -> Unit) {
         Text(
             text,
             style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp)
         )
     }
 }
@@ -144,7 +144,7 @@ fun Eyebrow(text: String) {
         text.uppercase(),
         style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.4.sp),
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp)
+        modifier = Modifier.padding(top = 12.dp)
     )
 }
 
@@ -152,15 +152,16 @@ fun Eyebrow(text: String) {
 @Composable
 fun Panel(highlight: Boolean = false, content: @Composable () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (highlight) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(24.dp),
+        // Raised a step above the page, so a panel reads as a surface and not as an outline.
+        color = if (highlight) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(
             1.dp,
-            if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
+            if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.30f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
     }
 }
 

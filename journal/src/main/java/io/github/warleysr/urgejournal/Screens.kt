@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -144,6 +145,10 @@ fun HomeScreen(
     val week = Insights.week(entries, now)
     val clean = Insights.cleanDays(entries, now)
     var tapped by remember { mutableStateOf(false) }
+    // The "hold it" nudge fades back to the calm hint after a few seconds.
+    LaunchedEffect(tapped) {
+        if (tapped) { delay(3000); tapped = false }
+    }
     var askFocus by remember { mutableStateOf(false) }
     var focusResult by remember { mutableStateOf<Door.Result?>(null) }
 
@@ -308,27 +313,42 @@ fun HomeScreen(
 
         if (entries.isNotEmpty()) {
             Eyebrow(stringResource(R.string.recent_title))
-            entries.takeLast(5).reversed().forEach { e ->
-                val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
-                    .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
-                val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
-                    ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
-                val result = when {
-                    e.slipped -> stringResource(R.string.result_slipped)
-                    e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
-                    e.outcome == Outcome.GAVE_IN -> stringResource(R.string.result_gave_in)
-                    else -> stringResource(R.string.result_open)
-                }
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("$whenText · $feeling", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        result,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (e.gaveIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
+            Panel {
+                val zone = ZoneId.systemDefault()
+                val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+                val recent = entries.takeLast(5).reversed()
+                recent.forEachIndexed { i, e ->
+                    val at = Instant.ofEpochMilli(e.time).atZone(zone)
+                    val clock = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(at)
+                    val whenText = when (Times.dayKind(at.toLocalDate(), today)) {
+                        0 -> stringResource(R.string.when_today, clock)
+                        1 -> stringResource(R.string.when_yesterday, clock)
+                        else -> DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).format(at)
+                    }
+                    val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
+                        ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
+                    val result = when {
+                        e.slipped -> stringResource(R.string.result_slipped)
+                        e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
+                        e.outcome == Outcome.GAVE_IN -> stringResource(R.string.result_gave_in)
+                        else -> stringResource(R.string.result_open)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpen(e) },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(feeling, style = MaterialTheme.typography.bodyLarge)
+                            Text(whenText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(
+                            result,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (e.gaveIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (i < recent.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
             }
             OutlinedButton(onClick = onLog, modifier = Modifier.fillMaxWidth()) {

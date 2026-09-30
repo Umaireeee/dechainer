@@ -709,6 +709,13 @@ object ExportFiles {
 }
 
 object Times {
+    /** 0 for today, 1 for yesterday, 2 for any other day: lets a list say "Today" instead of a date. */
+    fun dayKind(day: java.time.LocalDate, today: java.time.LocalDate): Int = when (day) {
+        today -> 0
+        today.minusDays(1) -> 1
+        else -> 2
+    }
+
     /** The next moment after [now] that is [minuteOfDay] minutes past local midnight. */
     fun nextDaily(minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
         val nowAt = Instant.ofEpochMilli(now).atZone(zone)

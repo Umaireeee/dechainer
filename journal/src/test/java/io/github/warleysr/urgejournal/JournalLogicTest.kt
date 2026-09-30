@@ -961,4 +961,13 @@ class JournalLogicTest {
     fun aStreamingCallWithABadAddressFailsWithoutTouchingTheNetwork() {
         assertEquals(AiResult.Failed(AiError.BAD_URL), AiClient.chatStream(Provider.CUSTOM, "not a url", "k", "m", "s", "u") { })
     }
+
+    @Test
+    fun aListSaysTodayAndYesterdayInsteadOfADate() {
+        val today = java.time.LocalDate.of(2026, 3, 1)
+        assertEquals(0, Times.dayKind(today, today))
+        assertEquals(1, Times.dayKind(today.minusDays(1), today))
+        assertEquals(2, Times.dayKind(today.minusDays(2), today))
+        assertEquals(2, Times.dayKind(today.plusDays(1), today))
+    }
 }
