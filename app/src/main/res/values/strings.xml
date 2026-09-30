@@ -166,6 +166,7 @@
     <string name="impulse_lock_normal_desc">Solve 5 addition problems with 2-digit numbers</string>
     <string name="impulse_lock_hard">Hard</string>
     <string name="impulse_lock_hard_desc">Type 32 words correctly, one at a time</string>
+    <string name="ride_lock_source">Ride lock</string>
     <string name="lock_title">Take a breath.</string>
     <string name="lock_subtitle">You are one tap from a pause.</string>
     <string name="ride_with_journal">Ride it out with the Urge Journal</string>

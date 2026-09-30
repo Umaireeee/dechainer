@@ -41,6 +41,7 @@ Both are signed with the same key (release workflow), because the link between t
   - Softer slip framing: `Insights.cleanDays` ("X of the last N days without a slip") replaces the streak; `Insights.heavier` shows one dismissible care card; `Insights.shareText` is a counts-only share.
   - The AI key is encrypted with the Android Keystore (`SecretBox`); old plain keys migrate on first read. Backups are already off.
   - Déchaîner's unlock screen got a calmer heading and a "Ride it out with the Urge Journal" button while the panic block runs (launches the journal with extra `action=ride`).
+- **Ride lock:** the journal also sends `RIDE_LOCK` (10 min; 30 for "still strong"): `RideLock` + a `BlockSource` in `ScheduleEnforcer` suspend every launcher app except calls/protected packages, alarm apps, emergency apps and the journal, with its own end alarm and the clock locked meanwhile. Only lengthens, never shortens; capped at 30 min (`UrgeActions.RIDE_*`).
 - The pure logic has JVM tests (`JournalLogicTest`, 43+). A scratch JVM project (Model.kt + Ai.kt without the Android classes + the test) compiled and passed locally; Compose/Android code is only compiled by CI.
 - **Not yet confirmed by the user on a phone:** the whole ride flow, that "Pause my distraction apps" really suspends the chosen apps end to end, notification permission prompts, the new logo, and the release APK size.
 

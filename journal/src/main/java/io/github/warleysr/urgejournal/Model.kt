@@ -169,6 +169,8 @@ data class DoorAction(val kind: String, val minutes: Int) {
     companion object {
         const val IMPULSE_BLOCK = "IMPULSE_BLOCK"
         const val FOCUS_BLOCK = "FOCUS_BLOCK"
+        /** Every app but calls, emergency apps, alarms, Déchaîner and this one, for a few minutes. */
+        const val RIDE_LOCK = "RIDE_LOCK"
     }
 }
 

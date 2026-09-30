@@ -91,6 +91,12 @@ private const val RIDE_BLOCK_MINUTES = 30
 /** What "still strong" asks for. */
 private const val LONGER_BLOCK_MINUTES = 60
 
+/** The ride lock: every other app is out of reach for the ten minutes of the ride. */
+private const val RIDE_LOCK_MINUTES = 10
+
+/** "Still strong" locks everything for as long as Déchaîner allows a ride lock to run. */
+private const val LONGER_LOCK_MINUTES = 30
+
 private const val FORTNIGHT_MS = 14L * 24 * 60 * 60 * 1000
 private const val SIX_HOURS_MS = 6L * 60 * 60 * 1000
 
@@ -118,6 +124,7 @@ private fun App(activity: MainActivity) {
     var rideStart by remember { mutableLongStateOf(0L) }
     var rideClock by remember { mutableLongStateOf(0L) }
     var blockMinutes by remember { mutableIntStateOf(RIDE_BLOCK_MINUTES) }
+    var lockMinutes by remember { mutableIntStateOf(RIDE_LOCK_MINUTES) }
     var doorResult by remember { mutableStateOf<Door.Result?>(null) }
     var pendingAfter by remember { mutableStateOf<After?>(null) }
     var pendingTried by remember { mutableStateOf(emptyList<Step>()) }
@@ -255,10 +262,18 @@ private fun App(activity: MainActivity) {
         rideStart = 0L
     }
 
+    /** Asks Déchaîner for the total ride lock and for the longer pause of the apps chosen for the panic button. */
+    fun lockDown(pauseMinutes: Int, totalLockMinutes: Int) {
+        blockMinutes = pauseMinutes
+        lockMinutes = totalLockMinutes
+        val locked = Door.send(context, DoorAction(DoorAction.RIDE_LOCK, totalLockMinutes))
+        val paused = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, pauseMinutes))
+        doorResult = if (locked == Door.Result.SENT) paused else locked
+    }
+
     fun startRide() {
         val now = System.currentTimeMillis()
-        blockMinutes = RIDE_BLOCK_MINUTES
-        doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, RIDE_BLOCK_MINUTES))
+        lockDown(RIDE_BLOCK_MINUTES, RIDE_LOCK_MINUTES)
         slipped = false
         quick = true
         hour = LocalTime.now().hour
@@ -398,14 +413,12 @@ private fun App(activity: MainActivity) {
             RideScreen(
                 startedAt = rideClock,
                 blockMinutes = blockMinutes,
+                lockMinutes = lockMinutes,
                 door = doorResult,
                 step = Coach.rideStep(entries),
                 myPlan = MyPlan.forRide(plans, hour),
                 onDone = { screen = Screen.AFTER },
-                onLonger = {
-                    blockMinutes = LONGER_BLOCK_MINUTES
-                    doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, LONGER_BLOCK_MINUTES))
-                },
+                onLonger = { lockDown(LONGER_BLOCK_MINUTES, LONGER_LOCK_MINUTES) },
                 onLeave = { goHome() }
             )
         }
@@ -430,8 +443,7 @@ private fun App(activity: MainActivity) {
                 onAgain = {
                     val now = System.currentTimeMillis()
                     rideClock = now
-                    blockMinutes = RIDE_BLOCK_MINUTES
-                    doorResult = Door.send(context, DoorAction(DoorAction.IMPULSE_BLOCK, RIDE_BLOCK_MINUTES))
+                    lockDown(RIDE_BLOCK_MINUTES, RIDE_LOCK_MINUTES)
                     screen = Screen.RIDE
                 },
                 onGaveIn = { startInterview(true) },
