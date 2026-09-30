@@ -169,6 +169,7 @@
     <string name="ride_lock_source">Ride lock</string>
     <string name="lock_title">Take a breath.</string>
     <string name="lock_subtitle">You are one tap from a pause.</string>
+    <string name="open_journal">Open the Urge Journal</string>
     <string name="ride_with_journal">Ride it out with the Urge Journal</string>
     <string name="having_impulses">Having an urge?</string>
     <string name="having_impulses_subtitle">Lock it all for a while</string>

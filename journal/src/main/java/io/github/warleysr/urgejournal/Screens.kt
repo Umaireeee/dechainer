@@ -111,7 +111,11 @@ data class HomeCards(
     /** The last two weeks look heavier than the two before. */
     val heavier: Boolean,
     /** Minutes from midnight of the daily heads-up, or -1. */
-    val nudgeMinute: Int
+    val nudgeMinute: Int,
+    /** It is evening and today has not been answered yet. */
+    val askDay: Boolean,
+    /** Days that went to plan out of the days checked in over the last week, or null. */
+    val planDays: Pair<Int, Int>?
 )
 
 @Composable
@@ -131,12 +135,36 @@ fun HomeScreen(
     onNudge: (Int) -> Unit,
     onDismissHot: () -> Unit,
     onDismissHeavy: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onDay: (DayResult) -> Unit,
+    onFocus: (Int) -> Door.Result
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
     val clean = Insights.cleanDays(entries, now)
-    var shown by remember { mutableIntStateOf(8) }
+    var shown by remember { mutableIntStateOf(5) }
+    var tapped by remember { mutableStateOf(false) }
+    var askFocus by remember { mutableStateOf(false) }
+    var focusResult by remember { mutableStateOf<Door.Result?>(null) }
+
+    if (askFocus) {
+        AlertDialog(
+            onDismissRequest = { askFocus = false },
+            title = { Text(stringResource(R.string.focus_title)) },
+            text = { Text(stringResource(R.string.focus_body)) },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(25, 50, 90).forEach { minutes ->
+                        TextButton(onClick = {
+                            focusResult = onFocus(minutes)
+                            askFocus = false
+                        }) { Text(stringResource(R.string.focus_minutes, minutes)) }
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { askFocus = false }) { Text(stringResource(R.string.delete_no)) } }
+        )
+    }
     val recentCount = entries.count { it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -158,17 +186,45 @@ fun HomeScreen(
         )
         Spacer(Modifier.height(4.dp))
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Ember(stringResource(R.string.home_urge), onRide)
+            Ember(stringResource(R.string.home_urge), onTap = { tapped = true }, onStart = { tapped = false; onRide() })
             Text(
-                stringResource(R.string.home_urge_hint),
+                stringResource(if (tapped) R.string.home_urge_hold else R.string.home_urge_hint),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (tapped) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onUrge) { Text(stringResource(R.string.home_log_only)) }
                 TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
+            }
+            OutlinedButton(onClick = { askFocus = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.home_focus))
+            }
+            focusResult?.let {
+                Text(
+                    stringResource(
+                        when (it) {
+                            Door.Result.SENT -> R.string.focus_sent
+                            Door.Result.NOT_INSTALLED -> R.string.door_not_installed
+                            Door.Result.NO_PERMISSION -> R.string.door_no_permission
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        if (cards.askDay) {
+            Panel {
+                Text(stringResource(R.string.day_title), style = MaterialTheme.typography.titleLarge)
+                DayResult.entries.forEach { r ->
+                    OutlinedButton(onClick = { onDay(r) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(label("day_", r))
+                    }
+                }
             }
         }
 
@@ -198,14 +254,15 @@ fun HomeScreen(
                 Text(
                     stringResource(
                         R.string.hot_body,
-                        stringResource(windowRes(hot.window)),
+                        Times.clock(hot.startHour * 60),
+                        Times.clock(hot.endHour * 60),
                         hot.count,
                         hot.total
                     ),
                     style = MaterialTheme.typography.bodyLarge
                 )
-                Button(onClick = { onNudge(hot.window.nudgeMinute) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.hot_button, Times.clock(hot.window.nudgeMinute)))
+                Button(onClick = { onNudge(hot.nudgeMinute) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.hot_button, Times.clock(hot.nudgeMinute)))
                 }
                 TextButton(onClick = onDismissHot) { Text(stringResource(R.string.card_dismiss)) }
             }
@@ -236,6 +293,9 @@ fun HomeScreen(
             week.peakHour?.let {
                 Text(stringResource(R.string.week_peak, "%02d:00".format(it)), style = MaterialTheme.typography.bodyMedium)
             }
+            cards.planDays?.let {
+                Text(stringResource(R.string.week_plan_days, it.first, it.second), style = MaterialTheme.typography.bodyMedium)
+            }
             if (week.total > 0) {
                 TextButton(onClick = onShare) { Text(stringResource(R.string.share_week)) }
             }
@@ -252,7 +312,7 @@ fun HomeScreen(
                 val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
                     .format(Instant.ofEpochMilli(e.time).atZone(ZoneId.systemDefault()))
                 val feeling = e.answers[Q.FEELING]?.let { label("opt_", it) }
-                    ?: e.after?.let { label("after_", it) } ?: ""
+                    ?: e.after?.let { label("after_", it) } ?: stringResource(R.string.entry_urge)
                 val result = when {
                     e.slipped -> stringResource(R.string.result_slipped)
                     e.outcome == Outcome.RESISTED -> stringResource(R.string.result_through)
@@ -854,6 +914,7 @@ fun SettingsScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
+    var evening by remember { mutableIntStateOf(reminders.eveningMinute) }
     var editingPlan by remember { mutableStateOf<MyPlan?>(null) }
     var planText by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -948,6 +1009,31 @@ fun SettingsScreen(
                             nudge = minute
                             reminders.nudgeMinute = minute
                             Notifier.rearmNudge(context)
+                        }
+                    },
+                    label = { Text(Times.clock(minute)) }
+                )
+            }
+        }
+        Text(stringResource(R.string.reminders_evening), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = evening < 0,
+                onClick = {
+                    evening = -1
+                    reminders.eveningMinute = -1
+                    Notifier.rearmEvening(context)
+                },
+                label = { Text(stringResource(R.string.reminders_off)) }
+            )
+            listOf(19 * 60, 20 * 60, 21 * 60, 22 * 60).forEach { minute ->
+                FilterChip(
+                    selected = evening == minute,
+                    onClick = {
+                        onNeedNotifications {
+                            evening = minute
+                            reminders.eveningMinute = minute
+                            Notifier.rearmEvening(context)
                         }
                     },
                     label = { Text(Times.clock(minute)) }
@@ -1215,13 +1301,6 @@ fun SettingsScreen(
         TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
         Spacer(Modifier.height(16.dp))
     }
-}
-
-private fun windowRes(w: Insights.DayWindow): Int = when (w) {
-    Insights.DayWindow.NIGHT -> R.string.window_night
-    Insights.DayWindow.MORNING -> R.string.window_morning
-    Insights.DayWindow.AFTERNOON -> R.string.window_afternoon
-    Insights.DayWindow.EVENING -> R.string.window_evening
 }
 
 /** How long the guided ride lasts. Urges usually crest and fade inside it. */

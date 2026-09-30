@@ -3,7 +3,9 @@
     <string name="app_name">Urge Journal</string>
 
     <string name="home_urge">I feel an urge</string>
-    <string name="home_urge_hint">One tap locks your other apps for ten minutes and pauses your distraction apps for 30, and we ride it out together.</string>
+    <string name="home_urge_hint">Hold the button. It locks your other apps for ten minutes and pauses your distraction apps for 30, and we ride it out together.</string>
+    <string name="home_urge_hold">Keep holding for a moment. It starts on a hold so a bump can\'t start it.</string>
+    <string name="entry_urge">Urge</string>
     <string name="home_log_only">Just log it</string>
     <string name="home_slip">I already slipped</string>
     <string name="home_clean_days">%1$d of the last %2$d days without a slip</string>
@@ -309,13 +311,9 @@
 
     <!-- Patterns and care -->
     <string name="hot_title">A pattern worth acting on</string>
-    <string name="hot_body">Most of your urges come in the %1$s hours: %2$d of your last %3$d. A heads-up before then can help you get ahead of it.</string>
+    <string name="hot_body">Most of your urges come between %1$s and %2$s: %3$d of your last %4$d. A heads-up before then can help you get ahead of it.</string>
     <string name="hot_button">Remind me at %1$s each day</string>
     <string name="card_dismiss">Not now</string>
-    <string name="window_night">late night</string>
-    <string name="window_morning">morning</string>
-    <string name="window_afternoon">afternoon</string>
-    <string name="window_evening">evening</string>
     <string name="heavier_title">The last two weeks look heavier</string>
     <string name="heavier_body">That says nothing bad about you. It\'s a good moment to be kind to yourself, and to talk to someone: a friend you trust, a doctor or a counsellor. You don\'t have to sort this out alone.</string>
     <string name="share_week">Share this week\'s counts</string>
@@ -327,4 +325,22 @@
     <string name="reminders_nudge">Daily heads-up before your tough time of day</string>
     <string name="reminders_off">Off</string>
     <string name="reminders_blocked">Notifications are off for this app. Turn them on in your phone\'s settings for reminders to appear.</string>
+
+    <!-- One-tap focus, evening check-in, tile -->
+    <string name="home_focus">Start a focus block</string>
+    <string name="focus_title">Start a focus block?</string>
+    <string name="focus_body">Déchaîner locks your distraction apps in study sessions and breaks until the time is up. Leaving early takes your recovery code, so pick a length you can keep. How many minutes?</string>
+    <string name="focus_minutes">%1$d min</string>
+    <string name="focus_sent">Sent to Déchaîner. Your focus block is starting.</string>
+    <string name="day_title">Did today go the way you planned?</string>
+    <string name="day_planned">Yes, it went to plan</string>
+    <string name="day_partly">Partly</string>
+    <string name="day_not">Not really</string>
+    <string name="week_plan_days">Went to plan: %1$d of the last %2$d days you checked in.</string>
+    <string name="reminders_evening">Evening check-in: did today go to plan?</string>
+    <string name="notif_evening_title">Evening check-in</string>
+    <string name="notif_evening_text">Did today go the way you planned? Two taps.</string>
+    <string name="tile_label">I feel an urge</string>
+    <string name="shortcut_ride_short">I feel an urge</string>
+    <string name="shortcut_ride_long">I feel an urge: start a ride</string>
 </resources>

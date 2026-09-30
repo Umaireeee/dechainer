@@ -126,7 +126,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
             if (impulseRemaining > 0) {
                 ImpulseCountdown(impulseRemaining)
                 Spacer(modifier = Modifier.height(20.dp))
-                JournalLink()
+                JournalLink(ride = true)
             } else {
                 Text(
                     stringResource(R.string.lock_title),
@@ -168,6 +168,9 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                     onClick = { launchAuthentication() }
                 )
 
+                Spacer(modifier = Modifier.height(16.dp))
+                JournalLink(ride = false)
+
                 if (authError != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
@@ -190,13 +193,15 @@ private const val JOURNAL_PACKAGE = "io.github.warleysr.urgejournal"
  * journal can be found, so nothing dangles for people who don't use it.
  */
 @Composable
-private fun JournalLink() {
+private fun JournalLink(ride: Boolean) {
     val context = LocalContext.current
     val launch = remember { context.packageManager.getLaunchIntentForPackage(JOURNAL_PACKAGE) } ?: return
     OutlinedButton(
         onClick = {
             try {
-                context.startActivity(Intent(launch).putExtra("action", "ride").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                context.startActivity(
+                    Intent(launch).apply { if (ride) putExtra("action", "ride") }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
             } catch (_: Exception) {
                 // Pinned in a focus block, the journal may not be allowed to open; the timer above still runs.
             }
@@ -204,7 +209,7 @@ private fun JournalLink() {
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(stringResource(R.string.ride_with_journal), modifier = Modifier.padding(vertical = 6.dp))
+        Text(stringResource(if (ride) R.string.ride_with_journal else R.string.open_journal), modifier = Modifier.padding(vertical = 6.dp))
     }
 }
 

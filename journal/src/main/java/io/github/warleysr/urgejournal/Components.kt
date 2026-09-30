@@ -11,6 +11,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,10 +38,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.format.TextStyle as DayStyle
 import java.util.Locale
 
@@ -50,9 +55,15 @@ fun label(prefix: String, key: Enum<*>): String {
     return if (id != 0) ctx.getString(id) else key.name
 }
 
-/** The one big call to action: a slowly breathing ember. Calm on purpose; nothing flashes. */
+/** How long the ember has to be held before it starts a ride, so a bump in a pocket never does. */
+private const val HOLD_MS = 700L
+
+/**
+ * The one big call to action: a slowly breathing ember. Calm on purpose; nothing flashes. It starts
+ * on a hold, not a tap: a quick tap only calls [onTap], which the screen uses to say "hold it".
+ */
 @Composable
-fun Ember(text: String, onClick: () -> Unit) {
+fun Ember(text: String, onTap: () -> Unit, onStart: () -> Unit) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val transition = rememberInfiniteTransition(label = "ember")
     val scale by transition.animateFloat(
@@ -74,9 +85,22 @@ fun Ember(text: String, onClick: () -> Unit) {
                 .scale(scale)
                 .clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34))))
-                .clickable {
-                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    onClick()
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        var released = false
+                        withTimeoutOrNull(HOLD_MS) {
+                            waitForUpOrCancellation()
+                            released = true
+                        }
+                        if (released) {
+                            onTap()
+                        } else {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onStart()
+                            waitForUpOrCancellation()
+                        }
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {

@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlin.concurrent.thread
@@ -282,6 +283,9 @@ private fun App(activity: MainActivity) {
         pendingTried = emptyList()
         rideStart = now
         rideClock = now
+        // The urge is on record from the first second, so leaving without a check-in loses nothing.
+        store.put(Entry(now, false, emptyMap(), null))
+        refresh()
         store.setPendingRide(now)
         Notifier.scheduleCheckIn(context, now + Notifier.CHECKIN_DELAY_MS)
         runId++
@@ -303,14 +307,14 @@ private fun App(activity: MainActivity) {
     }
 
     fun finish(note: String) {
-        val time = if (rideStart != 0L && !slipped) rideStart else System.currentTimeMillis()
+        val time = if (rideStart != 0L) rideStart else System.currentTimeMillis()
         val entry = Entry(
             time, slipped, answers,
             if (slipped) null else pendingAfter?.outcome,
             note.trim(), null, pendingTried,
             if (slipped) null else pendingAfter
         )
-        store.add(entry)
+        store.put(entry)
         clearRide()
         refresh()
         current = entry
@@ -357,7 +361,9 @@ private fun App(activity: MainActivity) {
                     pendingRideAt = store.pendingRide().takeIf { it != 0L && now - it < SIX_HOURS_MS } ?: 0L,
                     hot = if (nudgeMinute < 0 && now - store.dismissedAt("hot") > FORTNIGHT_MS) Insights.hotWindow(entries, now) else null,
                     heavier = now - store.dismissedAt("heavier") > FORTNIGHT_MS && Insights.heavier(entries, now),
-                    nudgeMinute = nudgeMinute
+                    nudgeMinute = nudgeMinute,
+                    askDay = LocalTime.now().hour >= 17 && LocalDate.now() !in store.days(),
+                    planDays = Insights.planDays(store.days(), LocalDate.now())
                 )
             }
             HomeScreen(
@@ -398,6 +404,11 @@ private fun App(activity: MainActivity) {
                     store.dismiss("heavier")
                     cardsTick++
                 },
+                onDay = { result ->
+                    store.setDay(LocalDate.now(), result)
+                    cardsTick++
+                },
+                onFocus = { minutes -> Door.send(context, DoorAction(DoorAction.FOCUS_BLOCK, minutes)) },
                 onShare = {
                     val send = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -434,7 +445,7 @@ private fun App(activity: MainActivity) {
                 },
                 onSave = {
                     pendingAfter?.let { a ->
-                        store.add(Entry(rideStart, false, emptyMap(), a.outcome, "", null, pendingTried, a))
+                        store.put(Entry(rideStart, false, emptyMap(), a.outcome, "", null, pendingTried, a))
                         clearRide()
                         goHome()
                     }

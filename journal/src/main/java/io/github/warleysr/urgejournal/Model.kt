@@ -299,6 +299,9 @@ object Coach {
     }
 }
 
+/** The evening answer to "did today go the way you planned?". Text is `day_<name lowercase>`. */
+enum class DayResult { PLANNED, PARTLY, NOT }
+
 enum class Outcome { RESISTED, GAVE_IN }
 
 /** How the urge stood after riding it out. Text is `after_<name lowercase>`. */
@@ -458,34 +461,44 @@ object Insights {
     }
 
     /** A stretch of the day where urges keep landing, from the last 30 days. */
-    data class HotWindow(val window: DayWindow, val count: Int, val total: Int, val topFeeling: Opt?)
-
-    enum class DayWindow(val startHour: Int, val endHour: Int) {
-        NIGHT(22, 5), MORNING(5, 12), AFTERNOON(12, 18), EVENING(18, 22);
-
-        fun contains(hour: Int): Boolean =
-            if (startHour < endHour) hour in startHour until endHour else hour >= startHour || hour < endHour
+    data class HotWindow(val startHour: Int, val count: Int, val total: Int, val topFeeling: Opt?) {
+        val endHour: Int get() = (startHour + WINDOW_HOURS) % 24
 
         /** Half an hour before the window opens, as minutes from midnight. */
         val nudgeMinute: Int get() = ((startHour * 60 - 30) + 24 * 60) % (24 * 60)
     }
 
+    const val WINDOW_HOURS = 4
+
     /**
-     * The window that holds most urges, but only when there is enough to say so: at least six in
-     * the last 30 days, at least four of them in this window and at least 40 percent. A few entries
-     * can look like a pattern by chance, so it stays quiet until they don't.
+     * The four-hour stretch that holds most urges, but only when there is enough to say so: at
+     * least six in the last 30 days, at least four of them in the stretch and at least 40 percent.
+     * A few entries can look like a pattern by chance, so it stays quiet until they don't. When
+     * several stretches tie, the one that starts on an hour with an urge wins, so it begins where
+     * the trouble begins rather than hours earlier.
      */
     fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? {
         val recent = entries.filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
         if (recent.size < 6) return null
-        val best = DayWindow.entries.map { w ->
-            w to recent.filter { w.contains(Instant.ofEpochMilli(it.time).atZone(zone).hour) }
-        }.maxByOrNull { it.second.size } ?: return null
-        val (window, inWindow) = best
-        if (inWindow.size < 4 || inWindow.size * 10 < recent.size * 4) return null
-        val feeling = inWindow.mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
+        val hours = recent.map { Instant.ofEpochMilli(it.time).atZone(zone).hour }
+        fun inside(start: Int, hour: Int) = (hour - start + 24) % 24 < WINDOW_HOURS
+        val best = (0 until 24).map { start ->
+            val hit = hours.count { inside(start, it) }
+            Triple(start, hit, if (hours.any { it == start }) 0 else 1)
+        }.sortedWith(compareBy({ -it.second }, { it.third }, { it.first })).first()
+        val (start, count, _) = best
+        if (count < 4 || count * 10 < recent.size * 4) return null
+        val feeling = recent.filter { inside(start, Instant.ofEpochMilli(it.time).atZone(zone).hour) }
+            .mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .maxByOrNull { it.value }?.key
-        return HotWindow(window, inWindow.size, recent.size, feeling)
+        return HotWindow(start, count, recent.size, feeling)
+    }
+
+    /** How the day went against the plan, answered in the evening. */
+    fun planDays(days: Map<LocalDate, DayResult>, today: LocalDate, window: Int = 7): Pair<Int, Int>? {
+        val recent = days.filterKeys { !it.isAfter(today) && ChronoUnit.DAYS.between(it, today) < window }
+        if (recent.isEmpty()) return null
+        return recent.count { it.value == DayResult.PLANNED } to recent.size
     }
 
     /**

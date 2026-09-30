@@ -142,7 +142,7 @@ class JournalLogicTest {
             Reason.entries.forEach { if ("reason_${it.name.lowercase()}" !in names) add("reason_${it.name.lowercase()}") }
             Step.entries.forEach { if ("try_${it.name.lowercase()}" !in names) add("try_${it.name.lowercase()}") }
             After.entries.forEach { if ("after_${it.name.lowercase()}" !in names) add("after_${it.name.lowercase()}") }
-            Insights.DayWindow.entries.forEach { if ("window_${it.name.lowercase()}" !in names) add("window_${it.name.lowercase()}") }
+            DayResult.entries.forEach { if ("day_${it.name.lowercase()}" !in names) add("day_${it.name.lowercase()}") }
         }
         assertEquals("missing strings: $missing", emptyList<String>(), missing)
     }
@@ -438,19 +438,54 @@ class JournalLogicTest {
         fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, mapOf(Q.FEELING to Opt.TIRED), Outcome.RESISTED)
         // Too few entries: quiet, however tidy.
         assertNull(Insights.hotWindow(listOf(at(20, 23), at(21, 23), at(22, 23), at(23, 23)), now, zone))
-        // Six entries, five late at night: a pattern.
+        // Six entries, five inside 23:00 to 03:00: a pattern, starting where the trouble starts.
         val late = listOf(at(20, 23), at(21, 23), at(22, 0), at(23, 23), at(24, 2), at(25, 14))
         val hot = Insights.hotWindow(late, now, zone)
         assertNotNull(hot)
-        assertEquals(Insights.DayWindow.NIGHT, hot!!.window)
+        assertEquals(23, hot!!.startHour)
+        assertEquals(3, hot.endHour)
         assertEquals(5, hot.count)
         assertEquals(6, hot.total)
         assertEquals(Opt.TIRED, hot.topFeeling)
+        // The heads-up comes half an hour before the window opens.
+        assertEquals(22 * 60 + 30, hot.nudgeMinute)
         // Spread all over the day: no pattern.
         val spread = listOf(at(20, 7), at(21, 13), at(22, 19), at(23, 23), at(24, 9), at(25, 15))
         assertNull(Insights.hotWindow(spread, now, zone))
-        // The heads-up comes half an hour before the window opens.
-        assertEquals(21 * 60 + 30, Insights.DayWindow.NIGHT.nudgeMinute)
+    }
+
+    @Test
+    fun aWindowAcrossAnHourBoundaryIsNotSplit() {
+        val now = ms(28, 12)
+        fun at(day: Int, hour: Int) = Entry(ms(day, hour), false, emptyMap(), null)
+        // Urges at 21, 22 and 23 would be cut in two by fixed windows; a sliding one keeps them.
+        val evening = listOf(at(20, 21), at(21, 22), at(22, 23), at(23, 21), at(24, 22), at(25, 10))
+        val hot = Insights.hotWindow(evening, now, zone)
+        assertNotNull(hot)
+        assertEquals(21, hot!!.startHour)
+        assertEquals(5, hot.count)
+    }
+
+    @Test
+    fun planDaysCountDaysThatWentToPlan() {
+        val today = java.time.LocalDate.of(2026, 9, 28)
+        assertNull(Insights.planDays(emptyMap(), today))
+        val days = mapOf(
+            today to DayResult.PLANNED,
+            today.minusDays(1) to DayResult.PARTLY,
+            today.minusDays(2) to DayResult.PLANNED,
+            today.minusDays(10) to DayResult.PLANNED // outside the week
+        )
+        assertEquals(2 to 3, Insights.planDays(days, today))
+    }
+
+    @Test
+    fun aRideStubIsReplacedByItsFullEntry() {
+        val stub = Entry(ms(5, 23), false, emptyMap(), null)
+        val full = stub.copy(outcome = Outcome.RESISTED, after = After.GONE, tried = listOf(Step.WALK))
+        val list = listOf(stub)
+        val next = if (list.any { it.time == full.time }) list.map { if (it.time == full.time) full else it } else list + full
+        assertEquals(listOf(full), next)
     }
 
     @Test
