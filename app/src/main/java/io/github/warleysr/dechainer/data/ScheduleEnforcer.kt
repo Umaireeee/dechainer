@@ -39,7 +39,6 @@ object ScheduleEnforcer : AppBlockEngine() {
     const val ACTION_BOUNDARY = "io.github.warleysr.dechainer.SCHEDULE_BOUNDARY"
     const val ACTION_IMPULSE_END = "io.github.warleysr.dechainer.IMPULSE_END"
     private const val IMPULSE_ALARM_REQUEST_CODE = 2
-    private const val RIDE_ALARM_REQUEST_CODE = 3
 
     // Ownership and the boundary alarm live in AppBlockEngine.
     override val statePrefsName = "schedule_state"
@@ -181,17 +180,6 @@ object ScheduleEnforcer : AppBlockEngine() {
             )
         }
 
-        // The ride lock: for the few minutes of a ride, everything with an icon is suspended except
-        // calls, emergency apps, the alarm clock and the journal the ride happens in.
-        val rideRemaining = RideLock.remainingMillis(ctx)
-        if (rideRemaining > 0) {
-            sources += BlockSource(
-                ctx.getString(io.github.warleysr.dechainer.R.string.ride_lock_source),
-                System.currentTimeMillis() + rideRemaining,
-                launcherApps(ctx) - alarmApps(ctx) - RideLock.ALWAYS_OPEN
-            )
-        }
-
         // A locked focus session: only your allowed apps (and the essentials) work until it ends.
         // Its end comes from the Pomodoro's own alarm, which asks for a sync when it fires. The
         // timer's state is read on every sync (cheap after the first load) because any sync may
@@ -229,9 +217,7 @@ object ScheduleEnforcer : AppBlockEngine() {
 
         // The clock is locked while schedules are on (if you chose that), and always during a locked
         // focus session or a focus block: moving the time would end either one early.
-        if ((ScheduleRepository.isAntiTamperEnabled(ctx) && schedules.any { it.enabled }) ||
-            Pomodoro.holdsClock() || rideRemaining > 0
-        ) {
+        if ((ScheduleRepository.isAntiTamperEnabled(ctx) && schedules.any { it.enabled }) || Pomodoro.holdsClock()) {
             desiredRestrictions += UserManager.DISALLOW_CONFIG_DATE_TIME
             try {
                 // Read first: these are settings writes, and sync runs on every tick and alarm.
@@ -265,7 +251,6 @@ object ScheduleEnforcer : AppBlockEngine() {
         // An exact alarm at the moment the impulse lock ends, so its apps come back on time
         // even with the screen off.
         armImpulseEnd(ctx, impulseRemaining)
-        armRideEnd(ctx, rideRemaining)
         // And a non-wakeup alarm for the earliest moment a limit could run out (or midnight).
         TimeLimits.armCheck(ctx, limitStatus.nextCheckDelayMs)
 
@@ -317,36 +302,6 @@ object ScheduleEnforcer : AppBlockEngine() {
             else am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
         } catch (e: SecurityException) {
             am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        }
-    }
-
-    /** Same idea as [armImpulseEnd], for the ride lock: an exact alarm so its apps come back on time. */
-    @Volatile
-    private var rideAlarmAt = 0L
-
-    private fun armRideEnd(ctx: Context, remainingMillis: Long) {
-        val target = if (remainingMillis > 0) System.currentTimeMillis() + remainingMillis + 1000L else 0L
-        if (target == 0L && rideAlarmAt == 0L) return
-        if (target != 0L && kotlin.math.abs(target - rideAlarmAt) < 2000L) return
-        rideAlarmAt = target
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        val pi = android.app.PendingIntent.getBroadcast(
-            ctx,
-            RIDE_ALARM_REQUEST_CODE,
-            Intent(ctx, io.github.warleysr.dechainer.ScheduleReceiver::class.java).setAction(ACTION_IMPULSE_END),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        if (remainingMillis <= 0) {
-            am.cancel(pi)
-            return
-        }
-        try {
-            val canExact = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
-                am.canScheduleExactAlarms()
-            if (canExact) am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
-            else am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
-        } catch (e: SecurityException) {
-            am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
         }
     }
 

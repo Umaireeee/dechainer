@@ -344,7 +344,6 @@ fun HomeScreen(
 fun RideScreen(
     startedAt: Long,
     blockMinutes: Int,
-    lockMinutes: Int,
     door: Door.Result?,
     step: Step,
     myPlan: MyPlan?,
@@ -378,8 +377,7 @@ fun RideScreen(
         )
         Text(
             when (door) {
-                Door.Result.SENT -> stringResource(R.string.ride_locked, lockMinutes) + "\n" +
-                    stringResource(R.string.ride_paused, blockMinutes)
+                Door.Result.SENT -> stringResource(R.string.ride_paused, blockMinutes)
                 Door.Result.NOT_INSTALLED -> stringResource(R.string.door_not_installed)
                 Door.Result.NO_PERMISSION -> stringResource(R.string.door_no_permission)
                 null -> ""

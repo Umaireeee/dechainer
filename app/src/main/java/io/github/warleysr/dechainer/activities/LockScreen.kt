@@ -8,7 +8,6 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.compose.rememberAuthenticationLauncher
-import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,7 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -125,22 +123,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         ) {
             if (impulseRemaining > 0) {
                 ImpulseCountdown(impulseRemaining)
-                Spacer(modifier = Modifier.height(20.dp))
-                JournalLink(ride = true)
             } else {
-                Text(
-                    stringResource(R.string.lock_title),
-                    style = MaterialTheme.typography.headlineMedium.copy(fontFamily = FontFamily.Serif),
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.lock_subtitle),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(28.dp))
                 if (DeviceOwnerRepository.isDeviceOwner()) {
                     BigActionButton(
                         icon = Icons.Filled.Warning,
@@ -168,9 +151,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                     onClick = { launchAuthentication() }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
-                JournalLink(ride = false)
-
                 if (authError != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
@@ -182,34 +162,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-private const val JOURNAL_PACKAGE = "io.github.warleysr.urgejournal"
-
-/**
- * While the panic block runs, offers to ride the urge out in the companion Urge Journal, if it is
- * installed: a breathing timer for the ten minutes when urges are strongest. Shown only when the
- * journal can be found, so nothing dangles for people who don't use it.
- */
-@Composable
-private fun JournalLink(ride: Boolean) {
-    val context = LocalContext.current
-    val launch = remember { context.packageManager.getLaunchIntentForPackage(JOURNAL_PACKAGE) } ?: return
-    OutlinedButton(
-        onClick = {
-            try {
-                context.startActivity(
-                    Intent(launch).apply { if (ride) putExtra("action", "ride") }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (_: Exception) {
-                // Pinned in a focus block, the journal may not be allowed to open; the timer above still runs.
-            }
-        },
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(stringResource(if (ride) R.string.ride_with_journal else R.string.open_journal), modifier = Modifier.padding(vertical = 6.dp))
     }
 }
 

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
-import io.github.warleysr.dechainer.data.RideLock
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.UrgeActions
 import io.github.warleysr.dechainer.focus.Pomodoro
@@ -33,12 +32,6 @@ class UrgeActionReceiver : BroadcastReceiver() {
                         val remaining = SecurityManager.getImpulseBlockRemainingTime(ctx).coerceAtLeast(0L)
                         if (UrgeActions.shouldStartImpulse(remaining, minutes)) {
                             SecurityManager.startImpulseBlock(ctx, minutes)
-                        }
-                    }
-                    UrgeActions.Kind.RIDE_LOCK -> {
-                        // A request can only make a running ride lock longer, never shorter.
-                        if (UrgeActions.shouldStartImpulse(RideLock.remainingMillis(ctx), minutes)) {
-                            RideLock.start(ctx, minutes)
                         }
                     }
                     UrgeActions.Kind.FOCUS_BLOCK -> {
