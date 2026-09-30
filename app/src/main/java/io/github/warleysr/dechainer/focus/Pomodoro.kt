@@ -807,7 +807,11 @@ object Pomodoro {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(questionIntent(ctx, id))
-                .setFullScreenIntent(questionIntent(ctx, id), true)
+            // Android 14+ can refuse the full-screen alert. Without it the notification and its
+            // Yes/No buttons still work; Settings shows a one-time hint about the permission.
+            if (io.github.warleysr.dechainer.data.FullScreenAlerts.isAllowed(ctx)) {
+                b.setFullScreenIntent(questionIntent(ctx, id), true)
+            }
             if (id != null) addQuestionActions(ctx, b, id)
             // Three lecture answers already fill the notification; tapping any stops the ring too.
             if (id == null || _lectureAsk.value != id) {
