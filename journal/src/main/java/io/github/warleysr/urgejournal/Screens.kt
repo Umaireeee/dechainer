@@ -1147,7 +1147,8 @@ fun KeptScreen(items: List<Kept>, onRemove: (Kept) -> Unit, onBack: () -> Unit) 
             Panel(highlight = open == k.id) {
                 Column(Modifier.fillMaxWidth().clickable { open = if (open == k.id) null else k.id }) {
                     Text(label("kept_", k.kind) + " · " + whenText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(headline ?: stringResource(R.string.kept_untitled), style = MaterialTheme.typography.titleMedium)
+                    // Open, the deep dive shows its own headline; closed, this one stands for it.
+                    if (open != k.id) Text(headline ?: stringResource(R.string.kept_untitled), style = MaterialTheme.typography.titleMedium)
                 }
                 if (open == k.id) {
                     ReportView(k.text)
@@ -1163,7 +1164,17 @@ fun KeptScreen(items: List<Kept>, onRemove: (Kept) -> Unit, onBack: () -> Unit) 
 }
 
 @Composable
-fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit) {
+fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onDelete: () -> Unit, onBack: () -> Unit) {
+    var confirmDelete by remember(entry.time) { mutableStateOf(false) }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.entry_delete_title)) },
+            text = { Text(stringResource(R.string.entry_delete_body)) },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text(stringResource(R.string.delete_yes)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.delete_no)) } }
+        )
+    }
     val whenText = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
         .format(Instant.ofEpochMilli(entry.time).atZone(ZoneId.systemDefault()))
     Page {
@@ -1214,6 +1225,9 @@ fun DetailScreen(entry: Entry, onOutcome: (Outcome) -> Unit, onBack: () -> Unit)
             OutlinedButton(onClick = { onOutcome(Outcome.GAVE_IN) }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.plan_gave_in))
             }
+        }
+        TextButton(onClick = { confirmDelete = true }) {
+            Text(stringResource(R.string.entry_delete), color = MaterialTheme.colorScheme.error)
         }
         TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
     }

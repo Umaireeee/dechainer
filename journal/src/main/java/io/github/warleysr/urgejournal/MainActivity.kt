@@ -702,6 +702,11 @@ private fun App(activity: MainActivity) {
                         store.setOutcome(entry.time, outcome)
                         leaveDetail()
                     },
+                    onDelete = {
+                        if (store.pendingRide() == entry.time) Notifier.cancelCheckIn(context)
+                        store.delete(entry.time)
+                        leaveDetail()
+                    },
                     onBack = { leaveDetail() }
                 )
             }

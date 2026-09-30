@@ -438,4 +438,7 @@
     <string name="talk_send">Ask the coach</string>
     <string name="talk_again">Talk about something else</string>
     <string name="talk_consent_body">What you write here, your goals and counts from your journal (never your urge notes) are sent to %1$s to write the reply. OK?</string>
+    <string name="entry_delete">Delete this entry</string>
+    <string name="entry_delete_title">Delete this entry?</string>
+    <string name="entry_delete_body">It\'s removed from your journal for good, with its deep dive. Your counts and patterns update without it.</string>
 </resources>

@@ -56,6 +56,13 @@ class JournalStore(context: Context) {
         }
     }
 
+    /** Removes the entry made at [time] for good, with its deep dive. */
+    @Synchronized
+    fun delete(time: Long) {
+        mutate { list -> list.filterNot { it.time == time } }
+        if (pendingRide() == time) clearPendingRide()
+    }
+
     @Synchronized
     fun setOutcome(time: Long, outcome: Outcome) = update(time) { it.copy(outcome = outcome) }
 

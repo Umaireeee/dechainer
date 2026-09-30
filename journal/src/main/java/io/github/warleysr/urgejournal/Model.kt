@@ -565,8 +565,9 @@ object Insights {
         val n = recent.size
         fun c(a: Area) = recent.count { a in it.areas }
         return listOf(
-            "Evening check-ins in the last $window days: $n. Slept well on ${c(Area.SLEPT)} of them, studied on ${c(Area.STUDIED)}, " +
-                "moved their body on ${c(Area.MOVED)}, talked to someone on ${c(Area.CONNECTED)}.",
+            "Evening check-ins in the last $window days: $n. They marked \"slept well\" on ${c(Area.SLEPT)} of them, \"studied\" on ${c(Area.STUDIED)}, " +
+                "\"moved my body\" on ${c(Area.MOVED)}, \"talked to someone\" on ${c(Area.CONNECTED)}. " +
+                "A box left unmarked only means it wasn't marked, not that it didn't happen at all.",
             "Days against their plan: ${recent.count { it.result == DayResult.PLANNED }} went to plan, " +
                 "${recent.count { it.result == DayResult.PARTLY }} partly, ${recent.count { it.result == DayResult.NOT }} not really."
         )

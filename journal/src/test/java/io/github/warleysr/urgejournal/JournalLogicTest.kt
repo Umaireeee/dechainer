@@ -1149,7 +1149,8 @@ class JournalLogicTest {
             today.minusDays(9) to DayLog(DayResult.PLANNED, Area.entries.toSet())
         )
         val facts = Insights.lifeFacts(days, today).joinToString(" ")
-        assertTrue("Evening check-ins in the last 7 days: 2. Slept well on 1 of them, studied on 1, moved their body on 0, talked to someone on 1." in facts)
+        assertTrue("Evening check-ins in the last 7 days: 2. They marked \"slept well\" on 1 of them, \"studied\" on 1, \"moved my body\" on 0, \"talked to someone\" on 1." in facts)
+        assertTrue("not that it didn't happen at all" in facts)
         assertTrue("1 went to plan, 0 partly, 1 not really." in facts)
         assertFalse("PRIVATE LINE" in facts)
         assertTrue(Insights.lifeFacts(emptyMap(), today).isEmpty())
@@ -1181,6 +1182,17 @@ class JournalLogicTest {
         assertTrue("flagged these words as a possible crisis" in msg)
         assertTrue("Rules they wrote for themselves" in msg)
         assertFalse("possible crisis" in Prompt.talkUser("My study week was messy", "", "", emptyList(), emptyList()))
+    }
+
+    @Test
+    fun oneIdeaOnceNoJudgementNoPatternFromOneDay() {
+        for (sys in listOf(Prompt.systemFor(true), TALK_SYSTEM)) {
+            assertTrue("One idea, said once" in sys)
+            assertTrue("never about what it says about them as a person" in sys)
+            assertTrue("A pattern needs several days or entries" in sys)
+        }
+        assertTrue("one idea, said once" in WEEKLY_SYSTEM)
+        assertTrue("at most one idea" in TALK_SYSTEM)
     }
 }
 
