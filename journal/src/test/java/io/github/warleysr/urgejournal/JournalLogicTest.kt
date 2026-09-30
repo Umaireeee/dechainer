@@ -1038,5 +1038,22 @@ class JournalLogicTest {
     fun theDeadWhyFieldIsNoLongerAskedFor() {
         for (sys in listOf(Prompt.systemFor(true), WEEKLY_SYSTEM)) assertFalse("\"why\"" in sys)
     }
-}
 
+    @Test
+    fun aLateEntryGetsTheLateNightCountSoTheCoachNeedNotGuess() {
+        val history = listOf(
+            Entry(ms(12, 23), false, mapOf(Q.FEELING to Opt.STRESSED), Outcome.GAVE_IN),
+            Entry(ms(14, 23), true, mapOf(Q.FEELING to Opt.TIRED), null),
+            Entry(ms(15, 15), false, mapOf(Q.FEELING to Opt.BORED), Outcome.GAVE_IN),
+            Entry(ms(16, 22), false, mapOf(Q.FEELING to Opt.STRESSED), Outcome.RESISTED)
+        )
+        val late = Entry(ms(20, 23), false, mapOf(Q.FEELING to Opt.STRESSED), null)
+        val lines = Prompt.extras(history + late, late, emptyList(), zone).joinToString("\n")
+        assertTrue("Late at night (22:00 to 05:00) in the last 30 days: 3 other entries, 2 given in to or slipped." in lines)
+        val day = Entry(ms(20, 14), false, mapOf(Q.FEELING to Opt.STRESSED), null)
+        assertFalse("Late at night" in Prompt.extras(history + day, day, emptyList(), zone).joinToString(" "))
+        val sys = Prompt.systemFor(true)
+        assertTrue("do not add up, split, re-count or estimate" in sys)
+        assertTrue("never a nightly focus block" in sys)
+    }
+}
