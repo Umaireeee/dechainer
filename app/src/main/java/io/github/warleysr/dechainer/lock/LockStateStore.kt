@@ -41,6 +41,18 @@ object LockStateStore {
     fun setUrge(context: Context, startedAt: Long, endsAt: Long) {
         lastUrge = UrgeInput(endsAt)
         try {
+            Store.appState(context).setAll(
+                mapOf(AppStateKeys.URGE_LOCK_STARTED to startedAt.toString(), AppStateKeys.URGE_LOCK_ENDS to endsAt.toString())
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Urge lock not written; it runs from memory only")
+        }
+    }
+
+    fun clearUrge(context: Context) {
+        // Both keys removed in one transaction: if the process dies between two removes,
+        // a stale URGE_LOCK_ENDS would re-brick the phone on the next boot (BUG-01).
+        try {
             Store.appState(context).removeAll(listOf(AppStateKeys.URGE_LOCK_STARTED, AppStateKeys.URGE_LOCK_ENDS))
         } catch (e: Exception) {
             // Fall back to individual removes; at worst a reboot re-plans and drops the expired lock.
