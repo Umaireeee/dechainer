@@ -79,6 +79,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.timber)
+    // The retry for a deep dive that could not be made yet (blueprint 6.2) and, later, the weekly report job.
+    implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
     // Android has its own org.json; the real one is only needed by the unit tests on the JVM.
     testImplementation(libs.json)

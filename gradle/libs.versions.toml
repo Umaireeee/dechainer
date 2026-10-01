@@ -19,6 +19,7 @@ kotest = "5.9.1"
 mockk = "1.14.2"
 coroutinesTest = "1.9.0"
 androidxTestCore = "1.7.0"
+work = "2.10.1"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
@@ -49,6 +50,7 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 kotest-assertions-core = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutinesTest" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 androidx-test-core-ktx = { module = "androidx.test:core-ktx", version.ref = "androidxTestCore" }
 
 [plugins]
