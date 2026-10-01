@@ -156,6 +156,8 @@ class DataToolsTest {
         days.savePlan(LocalDate.of(2026, 10, 8), List(3) { NewGoal("old") }, ms(10, 7, 21))
         days.saveEvaluation(LocalDate.of(2026, 10, 8), DayVerdict(DayKind.PUNISHMENT, Violation.UNDER_HALF))
         days.setRest(LocalDate.of(2026, 10, 9), true)
+        // The day after the goals' day has been judged: only then may the goals' text go.
+        days.saveEvaluation(LocalDate.of(2026, 10, 9), DayVerdict(DayKind.REST, null))
         days.savePlan(LocalDate.of(2026, 10, 21), List(3) { NewGoal("open") }, ms(10, 20, 21))
         Store.reports(ctx).insert(0, ms(10, 5, 0), ms(10, 12, 0), ms(10, 12, 1), "## r", "{}")
         val old = entry(ms(10, 8, 9)); val slipToday = entry(ms(10, 20, 9), UrgeKind.SLIP); val urgeToday = entry(ms(10, 20, 9))
@@ -270,5 +272,31 @@ class DataToolsTest {
         assertEquals(UrgeStatus.SKIPPED, all[0].status); assertNull(all[0].rawText)
         assertEquals(UrgeStatus.PENDING_DEEPDIVE, all[1].status); assertEquals("note", all[1].rawText)
         assertEquals(1, r.skipped)
+    }
+
+    @Test fun goalTextCannotGoBeforeTheDayAfterItWasJudged() {
+        val state = Store.appState(ctx)
+        state.set(AppStateKeys.ACTIVATED_ON, "2026-10-01")
+        val days = Store.days(ctx)
+        val d = LocalDate.of(2026, 10, 8)
+        days.savePlan(d, List(3) { NewGoal("old") }, ms(10, 7, 21))
+        Store.reports(ctx).insert(0, ms(10, 5, 0), ms(10, 12, 0), ms(10, 12, 1), "## r", "{}")
+        val t = tools()
+        assertFalse("the next day has not been judged yet", t.canDeleteGoals(d))
+        days.saveEvaluation(d.plusDays(1), DayVerdict(DayKind.NORMAL, null))
+        assertTrue(t.canDeleteGoals(d))
+    }
+
+    @Test fun anImportCannotPlantFocusSessionsForToday() {
+        val state = Store.appState(ctx)
+        state.set(AppStateKeys.ACTIVATED_ON, "2026-10-20")
+        val today = ms(10, 20, 12)
+        val file = """{"format":"dechainer-export","version":1,"focus_session":[
+            {"id":1,"source":"MANUAL","flavor":"USUAL","purpose":"x","started_at":$today,"planned_end_at":${today + 1000},"ended_at":${today + 1000},"focused_minutes":600,"outcome":"COMPLETED"},
+            {"id":2,"source":"MANUAL","flavor":"USUAL","purpose":"y","started_at":${ms(10, 8, 12)},"planned_end_at":${ms(10, 8, 13)},"ended_at":${ms(10, 8, 13)},"focused_minutes":30,"outcome":"COMPLETED"}]}"""
+        val r = tools().import(file)
+        assertTrue(r.ok)
+        assertNull("today's session is refused", Store.focus(ctx).session(1))
+        assertNotNull("an old one is welcome", Store.focus(ctx).session(2))
     }
 }
