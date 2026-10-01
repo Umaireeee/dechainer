@@ -14,8 +14,10 @@ android {
         applicationId = "io.github.warleysr.dechainer"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes -PversionCode=<run number> (and -PversionNameSuffix) so every build installs
+        // as an upgrade over the last; a plain local build keeps the defaults.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = "1.0" + ((project.findProperty("versionNameSuffix") as String?) ?: "")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
