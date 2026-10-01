@@ -520,7 +520,8 @@ private fun App(activity: MainActivity) {
                     canReachDechainer = Door.hasPermission(context),
                     aiReady = settings.configured,
                     reasonWritten = store.reason().isNotBlank(),
-                    contactSet = supportContact.number.isNotBlank()
+                    contactSet = supportContact.number.isNotBlank(),
+                    eveningOn = reminders.eveningMinute >= 0
                 ),
                 cards = cards,
                 onRide = { startRide() },

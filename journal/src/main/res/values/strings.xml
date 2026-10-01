@@ -445,6 +445,7 @@
     <string name="slip_why_note">A slip is one event. This didn\'t stop being true.</string>
     <string name="setup_reason">Write why you\'re doing this (Settings). It shows up when you ride an urge.</string>
     <string name="setup_contact">Save someone to call (Settings), so a hard moment is one tap from a person.</string>
+    <string name="setup_evening">Turn on the evening reminder (Settings), so the day gets closed and tomorrow\'s first move gets written.</string>
     <string name="setup_open_settings">Open settings</string>
     <string name="setup_hide">Hide this</string>
     <string name="day_next_label">Tomorrow\'s first move</string>

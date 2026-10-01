@@ -93,10 +93,12 @@ data class SetupState(
     /** They have written why they are doing this. */
     val reasonWritten: Boolean,
     /** They have saved someone to call. */
-    val contactSet: Boolean
+    val contactSet: Boolean,
+    /** The evening reminder is on: the habit that closes the day and writes tomorrow's first move. */
+    val eveningOn: Boolean
 ) {
     val complete: Boolean
-        get() = dechainerInstalled && canReachDechainer && aiReady && reasonWritten && contactSet
+        get() = dechainerInstalled && canReachDechainer && aiReady && reasonWritten && contactSet && eveningOn
 }
 
 @Composable
@@ -365,6 +367,7 @@ fun HomeScreen(
                 }
                 SetupRow(setup.reasonWritten, stringResource(R.string.setup_reason))
                 SetupRow(setup.contactSet, stringResource(R.string.setup_contact))
+                SetupRow(setup.eveningOn, stringResource(R.string.setup_evening))
                 SetupRow(setup.aiReady, stringResource(R.string.setup_ai))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.setup_open_settings)) }

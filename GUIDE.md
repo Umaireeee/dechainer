@@ -96,7 +96,7 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Why you're doing this:** the first section of Settings. Write it on a calm day, for the version of you at 23:00, in your own words: it is shown during every ride and after a slip ("A slip is one event. This didn't stop being true."), and the coach brings it back once, in your words, never as a stick. It is sent to the AI with your deep dives, like the text about you. "Delete all my entries" leaves it, like your other settings.
 
-**Getting set up:** until the app is ready (Déchaîner installed and reachable, a reason written, someone to call, an AI key), Home shows a short checklist with **Open settings**. **Hide this** puts it away for good.
+**Getting set up:** until the app is ready (Déchaîner installed and reachable, a reason written, someone to call, the evening reminder on, an AI key), Home shows a short checklist with **Open settings**. **Hide this** puts it away for good.
 
 **If you already slipped:** tap **I already slipped**. No judgement. It asks what was in place and what would have stopped it, blocks your phone for the next stretch to stop the spiral, and suggests one change so it's less likely next time. Home counts **days without a slip out of the last 30** instead of a streak, so one slip costs one day, not everything.
 
