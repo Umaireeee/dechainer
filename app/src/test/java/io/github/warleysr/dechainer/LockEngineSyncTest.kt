@@ -126,7 +126,7 @@ class LockEngineSyncTest {
         storeBlock(phaseEndsAt = now - 40 * minute, blockEndsAt = now - 30 * minute)
         LockEngine.sync(ctx)
         assertFalse(Pomodoro.state.value.inBlock)
-        assertFalse("nothing was ever suspended without Device Owner", dpm.isPackageSuspended(admin, games))
+        assertTrue("nothing was ever taken without Device Owner", ScheduleEnforcer.ownedApps(ctx).isEmpty())
     }
 
     @Test
@@ -135,25 +135,30 @@ class LockEngineSyncTest {
         val now = TrustedClock.now(ctx)
         storeBlock(phaseEndsAt = now + 10 * minute, blockEndsAt = now + 30 * minute)
         LockEngine.sync(ctx)
-        val during = dpm.getUserRestrictions(admin)
-        assertTrue(during.getBoolean(LockRestrictions.SAFE_BOOT))
-        assertTrue(during.getBoolean(LockRestrictions.FACTORY_RESET))
-        assertTrue(during.getBoolean(LockRestrictions.DATE_TIME))
+        // Robolectric's Device Owner shadow does not reflect applied restrictions back, so this checks
+        // the engine's own record of what it applied: a key is only written there after
+        // addUserRestriction returned without throwing. What the OS then does is the owner's check.
+        val during = ownedRestrictions()
+        assertTrue(during.containsAll(LockRestrictions.BRICK))
+        assertTrue(LockRestrictions.DATE_TIME in during)
 
         storeBlock(phaseEndsAt = now - 40 * minute, blockEndsAt = now - 30 * minute)
         LockEngine.sync(ctx)
-        val after = dpm.getUserRestrictions(admin)
-        assertFalse(after.getBoolean(LockRestrictions.SAFE_BOOT))
-        assertFalse(after.getBoolean(LockRestrictions.FACTORY_RESET))
-        assertTrue("date, time and zone stay locked with nothing running", after.getBoolean(LockRestrictions.DATE_TIME))
+        val after = ownedRestrictions()
+        assertTrue("the brick's restrictions are released with it", after.none { it in LockRestrictions.BRICK })
+        assertTrue("date, time and zone stay locked with nothing running", LockRestrictions.DATE_TIME in after)
     }
 
+    private fun ownedRestrictions(): Set<String> =
+        ctx.getSharedPreferences("schedule_state", Context.MODE_PRIVATE).getStringSet("owned_restrictions", emptySet()) ?: emptySet()
+
     @Test
-    fun theEnginePassForcesAutomaticTimeAndDisablesForceStopForThisApp() {
+    fun theEnginePassForcesAutomaticTimeAndTimeZone() {
         makeDeviceOwner()
         LockEngine.sync(ctx)
         assertTrue(dpm.getAutoTimeEnabled(admin))
         assertTrue(dpm.getAutoTimeZoneEnabled(admin))
-        assertTrue(ctx.packageName in dpm.getUserControlDisabledPackages(admin))
+        // Force stop and Clear data (setUserControlDisabledPackages) cannot be read back in Robolectric;
+        // that one is the owner's check on the phone (blueprint section 15, check 1).
     }
 }

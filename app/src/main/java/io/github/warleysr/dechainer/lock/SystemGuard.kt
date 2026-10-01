@@ -26,7 +26,7 @@ object SystemGuard {
         step("automatic time") { if (!dpm.getAutoTimeEnabled(admin)) dpm.setAutoTimeEnabled(admin, true) }
         step("automatic time zone") { if (!dpm.getAutoTimeZoneEnabled(admin)) dpm.setAutoTimeZoneEnabled(admin, true) }
         step("force stop and clear data") {
-            val disabled = dpm.getUserControlDisabledPackages(admin)
+            val disabled = dpm.getUserControlDisabledPackages(admin) ?: emptyList()
             // The list is replaced as a whole: keep whatever else was on it.
             if (ctx.packageName !in disabled) dpm.setUserControlDisabledPackages(admin, disabled + ctx.packageName)
         }
