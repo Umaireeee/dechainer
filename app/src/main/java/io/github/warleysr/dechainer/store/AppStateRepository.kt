@@ -40,6 +40,12 @@ class AppStateRepository(private val database: DechainerDatabase) {
         }
     }
 
+    /** Deletes every key in one transaction: all of them go, or none do. */
+    fun removeAll(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        inTransaction { db -> keys.forEach { db.delete(TABLE, "$COL_KEY = ?", arrayOf(it)) } }
+    }
+
     fun remove(key: String) {
         inTransaction { it.delete(TABLE, "$COL_KEY = ?", arrayOf(key)) }
     }

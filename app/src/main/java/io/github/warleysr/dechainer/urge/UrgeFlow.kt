@@ -29,7 +29,16 @@ import timber.log.Timber
 import java.time.Instant
 
 /** The questions the owner is shown, where they came from, and whether the crisis card goes with them. */
-data class QuestionSet(val questions: List<Question>, val fromAi: Boolean, val support: Boolean)
+data class QuestionSet(
+    val questions: List<Question>,
+    val fromAi: Boolean,
+    val support: Boolean,
+    /** Why the standard questions were shown instead of questions written from the note; [QuestionFallback.NONE] when the AI wrote them. */
+    val fallback: QuestionFallback = QuestionFallback.NONE
+)
+
+/** Why the owner got the standard questions. Shown on the questions screen, so a silent fallback is never mistaken for the AI. */
+enum class QuestionFallback { NONE, NO_KEY, NO_CONSENT, OFFLINE, TOO_SLOW, AI_ERROR, UNUSABLE_REPLY }
 
 /** What came of asking for a deep dive. */
 sealed interface DeepDiveResult {
@@ -204,13 +213,24 @@ class UrgeFlow(
     fun fetchQuestions(entry: UrgeEntry, note: String): QuestionSet {
         val keywordHit = Safety.needsSupport(note)
         val fixed = fixedQuestions()
-        if (gate() != AiGateResult.OPEN) return QuestionSet(fixed, fromAi = false, support = keywordHit)
+        val gate = gate()
+        if (gate != AiGateResult.OPEN) {
+            val why = when (gate) {
+                AiGateResult.NO_KEY -> QuestionFallback.NO_KEY
+                AiGateResult.NO_CONSENT -> QuestionFallback.NO_CONSENT
+                else -> QuestionFallback.OFFLINE
+            }
+            return QuestionSet(fixed, fromAi = false, support = keywordHit, fallback = why)
+        }
         val at = Instant.ofEpochMilli(entry.createdAt).atZone(TrustedClock.zone())
         return when (val out = calls.generateQuestions(ai.config(), entry.kind, note, at, recentHistory(entry), language(), goalLines())) {
-            is QuestionsOutcome.Failed -> QuestionSet(fixed, false, keywordHit)
+            is QuestionsOutcome.Failed -> {
+                Timber.w("Questions call failed: %s", out.error)
+                QuestionSet(fixed, false, keywordHit, if (out.error == io.github.warleysr.dechainer.ai.AiError.NETWORK) QuestionFallback.TOO_SLOW else QuestionFallback.AI_ERROR)
+            }
             is QuestionsOutcome.Reply -> when (val r = out.reply) {
-                QuestionsReply.Support -> QuestionSet(fixed, false, support = true)
-                QuestionsReply.Unusable -> QuestionSet(fixed, false, keywordHit)
+                QuestionsReply.Support -> QuestionSet(fixed, false, support = true, fallback = QuestionFallback.NONE)
+                QuestionsReply.Unusable -> QuestionSet(fixed, false, keywordHit, QuestionFallback.UNUSABLE_REPLY)
                 is QuestionsReply.Questions -> QuestionSet(r.list, true, keywordHit)
             }
         }

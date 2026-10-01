@@ -458,9 +458,16 @@
     <string name="urge_write_continue">Continue</string>
     <string name="urge_write_skip">Not now</string>
     <string name="urge_questions_title">A few questions</string>
-    <string name="urge_questions_loading">Reading what you wrote…</string>
+    <string name="urge_questions_loading">Reading what you wrote and writing your questions. This can take up to 45 seconds…</string>
     <string name="urge_questions_submit">Get my deep dive</string>
     <string name="urge_questions_skip">Skip the questions</string>
+    <string name="urge_q_from_ai">These questions were written from what you wrote.</string>
+    <string name="urge_q_why_no_key">Standard questions: no AI key is set. Add one under Settings, Urge and AI.</string>
+    <string name="urge_q_why_no_consent">Standard questions: you have not agreed yet to send your note to the AI. You can agree under Settings, Urge and AI.</string>
+    <string name="urge_q_why_offline">Standard questions: there is no connection right now.</string>
+    <string name="urge_q_why_slow">Standard questions: the AI did not answer in time. Check the model in Settings, Urge and AI; a faster one helps.</string>
+    <string name="urge_q_why_error">Standard questions: the AI refused the request. Check the key and the model in Settings, Urge and AI.</string>
+    <string name="urge_q_why_unusable">Standard questions: the AI answered, but not in a form the app could read. Try another model in Settings, Urge and AI.</string>
     <string name="urge_answer_label">Your answer</string>
     <string name="urge_scale_low">Barely</string>
     <string name="urge_scale_high">Very strong</string>

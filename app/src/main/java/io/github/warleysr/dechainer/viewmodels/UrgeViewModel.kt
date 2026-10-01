@@ -13,6 +13,7 @@ import io.github.warleysr.dechainer.ai.AiGateResult
 import io.github.warleysr.dechainer.urge.Answer
 import io.github.warleysr.dechainer.urge.DeepDiveResult
 import io.github.warleysr.dechainer.urge.Question
+import io.github.warleysr.dechainer.urge.QuestionFallback
 import io.github.warleysr.dechainer.urge.QuestionSet
 import io.github.warleysr.dechainer.urge.Safety
 import io.github.warleysr.dechainer.urge.UrgeEntry
@@ -37,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 sealed interface QuestionsUi {
     data object None : QuestionsUi
     data object Loading : QuestionsUi
-    data class Ready(val questions: List<Question>) : QuestionsUi
+    data class Ready(val questions: List<Question>, val fallback: QuestionFallback = QuestionFallback.NONE) : QuestionsUi
 }
 
 /** The deep dive step of the flow, as the screen sees it. */
@@ -196,10 +197,10 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
             // The call runs on its own, so the 20 second limit can give up on it without waiting for it to return.
             val call = viewModelScope.async(Dispatchers.IO) { flow.fetchQuestions(entry, note) }
             withTimeoutOrNull(Rules.AI_QUESTIONS_TIMEOUT_MS) { call.await() }
-                ?: QuestionSet(flow.fixedQuestions(), fromAi = false, support = Safety.needsSupport(note))
+                ?: QuestionSet(flow.fixedQuestions(), fromAi = false, support = Safety.needsSupport(note), fallback = QuestionFallback.TOO_SLOW)
         }
         val saved = if (stored == null) flow.saveQuestions(entry, set.questions) else entry
-        _state.update { it.copy(entry = saved, questions = QuestionsUi.Ready(set.questions), support = it.support || set.support) }
+        _state.update { it.copy(entry = saved, questions = QuestionsUi.Ready(set.questions, set.fallback), support = it.support || set.support) }
     }
 
     /** The answers are in: stored first (the deep dive is owed from here), then the deep dive is made. */

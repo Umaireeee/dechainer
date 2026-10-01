@@ -80,6 +80,7 @@ import io.github.warleysr.dechainer.ui.theme.Motion
 import io.github.warleysr.dechainer.urge.Breathing
 import io.github.warleysr.dechainer.urge.Question
 import io.github.warleysr.dechainer.urge.QuestionType
+import io.github.warleysr.dechainer.urge.QuestionFallback
 import io.github.warleysr.dechainer.urge.UrgeFlowRules
 import io.github.warleysr.dechainer.urge.UrgeScreen
 import io.github.warleysr.dechainer.urge.UrgeSettings
@@ -312,6 +313,21 @@ private fun QuestionsScreen(vm: UrgeViewModel, ui: QuestionsUi, support: Boolean
                 Text(stringResource(R.string.urge_questions_loading), style = MaterialTheme.typography.bodyLarge)
             }
             is QuestionsUi.Ready -> {
+                // Say which kind these are: questions written from the note, or the standard three, and why.
+                Text(
+                    stringResource(when (ui.fallback) {
+                        QuestionFallback.NONE -> R.string.urge_q_from_ai
+                        QuestionFallback.NO_KEY -> R.string.urge_q_why_no_key
+                        QuestionFallback.NO_CONSENT -> R.string.urge_q_why_no_consent
+                        QuestionFallback.OFFLINE -> R.string.urge_q_why_offline
+                        QuestionFallback.TOO_SLOW -> R.string.urge_q_why_slow
+                        QuestionFallback.AI_ERROR -> R.string.urge_q_why_error
+                        QuestionFallback.UNUSABLE_REPLY -> R.string.urge_q_why_unusable
+                    }),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
                 ui.questions.forEach { q ->
                     QuestionField(q, vm)
                     Spacer(Modifier.height(24.dp))

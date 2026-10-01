@@ -36,7 +36,7 @@ object Rules {
     const val BREATH_PROMPT_MS = 60_000L
 
     /** Section 6.2. After this long without an answer the AI's questions give way to the three fixed ones. */
-    const val AI_QUESTIONS_TIMEOUT_MS = 20_000L
+    const val AI_QUESTIONS_TIMEOUT_MS = 45_000L
 
     /** Section 6.2. The AI is asked for 3 to 5 questions; a reply outside that range is not used. */
     const val MIN_AI_QUESTIONS = 3

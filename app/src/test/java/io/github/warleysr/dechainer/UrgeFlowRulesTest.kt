@@ -184,7 +184,7 @@ class UrgeFlowRulesTest {
         assertTrue(UrgeFlowRules.useFixedQuestions(aiAnswered = false, waitedMs = 0))
         assertTrue(UrgeFlowRules.useFixedQuestions(aiAnswered = true, waitedMs = Rules.AI_QUESTIONS_TIMEOUT_MS + 1))
         assertFalse(UrgeFlowRules.useFixedQuestions(aiAnswered = true, waitedMs = Rules.AI_QUESTIONS_TIMEOUT_MS))
-        assertEquals(20_000L, Rules.AI_QUESTIONS_TIMEOUT_MS)
+        assertEquals(45_000L, Rules.AI_QUESTIONS_TIMEOUT_MS)
     }
 
     @Test

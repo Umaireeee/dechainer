@@ -147,7 +147,7 @@ class AiClientTest {
 
     @Test
     fun theQuestionsCallIsCutOffAtTwentySeconds() {
-        assertEquals(20_000, AiLimits.QUESTIONS.readTimeoutMs)
+        assertEquals(45_000, AiLimits.QUESTIONS.readTimeoutMs)
         assertTrue(AiLimits.QUESTIONS.connectTimeoutMs < AiLimits.QUESTIONS.readTimeoutMs)
     }
 
