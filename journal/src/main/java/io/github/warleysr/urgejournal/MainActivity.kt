@@ -497,15 +497,17 @@ private fun App(activity: MainActivity) {
                 val days = store.days()
                 val today = LocalDate.now()
                 val startOfToday = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val hourNow = LocalTime.now().hour
                 HomeCards(
                     pendingRideAt = store.pendingRide().takeIf { it != 0L && now - it < SIX_HOURS_MS } ?: 0L,
                     hot = if (nudgeMinute < 0 && now - store.dismissedAt("hot") > FORTNIGHT_MS) Insights.hotWindow(entries, now) else null,
                     heavier = now - store.dismissedAt("heavier") > FORTNIGHT_MS && Insights.heavier(entries, now),
                     nudgeMinute = nudgeMinute,
-                    askDay = LocalTime.now().hour >= 17 && today !in days,
+                    askDay = hourNow >= 17 && today !in days,
                     planDays = Insights.planDays(days, today),
-                    // Last night's first move stays until it is ticked off, and goes with the day.
-                    firstMove = days[today.minusDays(1)]?.next?.takeIf { it.isNotBlank() && store.dismissedAt("move") < startOfToday },
+                    // Last night's first move stays until it is ticked off, and goes when the evening check-in opens.
+                    firstMove = days[today.minusDays(1)]?.next
+                        ?.takeIf { it.isNotBlank() && hourNow < 17 && store.dismissedAt("move") < startOfToday },
                     setupHidden = store.dismissedAt("setup") > 0L,
                     reviewReady = Insights.reviewReady(entries, now)
                 )

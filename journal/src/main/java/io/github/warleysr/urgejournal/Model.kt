@@ -974,15 +974,21 @@ object Backup {
         val entries: List<Entry>,
         val plans: List<MyPlan>,
         val kept: List<Kept> = emptyList(),
-        val reason: String = ""
+        val reason: String = "",
+        /** The evening check-ins, by day, with each day's first move. */
+        val days: Map<LocalDate, DayLog> = emptyMap()
     )
 
-    fun compose(entries: List<Entry>, plans: List<MyPlan>, kept: List<Kept> = emptyList(), reason: String = ""): String = JSONObject()
+    fun compose(
+        entries: List<Entry>, plans: List<MyPlan>, kept: List<Kept> = emptyList(), reason: String = "",
+        days: Map<LocalDate, DayLog> = emptyMap()
+    ): String = JSONObject()
         .put("version", 2)
         .put("entries", JSONArray(entries.map { it.toJson() }))
         .put("plans", JSONArray(plans.map { it.toJson() }))
         .put("kept", JSONArray(kept.map { it.toJson() }))
         .put("reason", reason)
+        .put("days", JSONObject().also { o -> days.forEach { (date, log) -> o.put(date.toString(), log.toJson()) } })
         .toString()
 
     fun parse(text: String): Contents {
@@ -993,7 +999,16 @@ object Backup {
             Entry.listFromJson(o.optJSONArray("entries")?.toString()),
             MyPlan.listFromJson(o.optJSONArray("plans")?.toString()),
             Kept.parseList(o.optJSONArray("kept")?.toString()).items,
-            o.optString("reason", "").trim().take(REASON_LIMIT)
+            o.optString("reason", "").trim().take(REASON_LIMIT),
+            o.optJSONObject("days")?.let { stored ->
+                buildMap {
+                    stored.keys().forEach { key ->
+                        val date = runCatching { LocalDate.parse(key) }.getOrNull()
+                        val log = DayLog.fromStored(stored.opt(key))
+                        if (date != null && log != null) put(date, log)
+                    }
+                }
+            }.orEmpty()
         )
     }
 

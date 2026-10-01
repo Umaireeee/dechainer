@@ -311,7 +311,7 @@ fun HomeScreen(
         }
 
         // Last night's plan, one tap from a locked focus block that already knows what it is for.
-        if (cards.firstMove != null && !cards.askDay) {
+        if (cards.firstMove != null) {
             Panel(highlight = true) {
                 Text(stringResource(R.string.first_move_title), style = MaterialTheme.typography.titleLarge)
                 Text(

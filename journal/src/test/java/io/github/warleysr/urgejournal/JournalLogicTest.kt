@@ -1301,6 +1301,23 @@ class JournalLogicTest {
     }
 
     @Test
+    fun eveningCheckInsAndFirstMovesTravelInTheBackup() {
+        val d1 = java.time.LocalDate.of(2026, 9, 29)
+        val d2 = java.time.LocalDate.of(2026, 9, 30)
+        val days = mapOf(
+            d1 to DayLog(DayResult.PLANNED, setOf(Area.SLEPT, Area.STUDIED), "Good lecture", "FAR ch. 6"),
+            d2 to DayLog(DayResult.NOT)
+        )
+        assertEquals(days, Backup.parse(Backup.compose(emptyList(), emptyList(), emptyList(), "", days)).days)
+        // A backup from before days were included has none.
+        assertTrue(Backup.parse(Backup.compose(emptyList(), emptyList())).days.isEmpty())
+        assertTrue(Backup.parse(Entry.listToJson(emptyList())).days.isEmpty())
+        // A day that cannot be read does not cost the others.
+        val broken = Backup.parse("""{"version":2,"entries":[],"plans":[],"days":{"2026-09-29":"PLANNED","not a date":"PLANNED","2026-09-30":{"r":"NONSENSE"}}}""")
+        assertEquals(mapOf(d1 to DayLog(DayResult.PLANNED)), broken.days)
+    }
+
+    @Test
     fun theWeeklyLookBackWaitsForSomethingToLookAt() {
         val now = ms(30, 20)
         val e = { day: Int -> Entry(ms(day, 12), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED) }
