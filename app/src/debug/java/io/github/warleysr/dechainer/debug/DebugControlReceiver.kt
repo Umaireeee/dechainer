@@ -18,6 +18,8 @@ import timber.log.Timber
  * - DEBUG_DROP_ALARMS: forgets the alarms that would end the block, so the next wake-up (unlock,
  *   opening the app) has to end it from the time alone.
  * - DEBUG_ABORT_BRICK: runs the crash-loop breaker's abort at once.
+ * - DEBUG_CRASH: crashes the app on purpose, through the real uncaught-exception handler. Send it
+ *   twice within 5 minutes while a block runs and the second crash must abort the block.
  */
 class DebugControlReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -31,6 +33,10 @@ class DebugControlReceiver : BroadcastReceiver() {
                         Timber.i("Debug: focus block of %d min, started=%s", minutes, Pomodoro.debugStartBlock(ctx, minutes))
                     }
                     ACTION_DROP_ALARMS -> LockEngine.debugDropAlarms(ctx)
+                    ACTION_CRASH -> {
+                        // On a thread of its own, so it is an uncaught exception like any real crash.
+                        Thread { throw IllegalStateException("Debug crash on purpose (DEBUG_CRASH)") }.start()
+                    }
                     ACTION_ABORT_BRICK -> {
                         LockEngine.abortBrick(ctx)
                         // Not a crash: the process lives on, so re-apply anything that should still hold.
@@ -47,6 +53,7 @@ class DebugControlReceiver : BroadcastReceiver() {
         const val ACTION_FOCUS_BLOCK = "io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK"
         const val ACTION_DROP_ALARMS = "io.github.warleysr.dechainer.DEBUG_DROP_ALARMS"
         const val ACTION_ABORT_BRICK = "io.github.warleysr.dechainer.DEBUG_ABORT_BRICK"
+        const val ACTION_CRASH = "io.github.warleysr.dechainer.DEBUG_CRASH"
         const val EXTRA_MINUTES = "minutes"
     }
 }

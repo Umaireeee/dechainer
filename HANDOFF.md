@@ -164,6 +164,7 @@ Debug controls (debug builds only; the receiver is in the debug source set and C
 - `adb shell am broadcast -n io.github.warleysr.dechainer/.debug.DebugControlReceiver -a io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK --ei minutes 1` starts a 1 minute block (no 10 minute minimum).
 - `... -a io.github.warleysr.dechainer.DEBUG_DROP_ALARMS` forgets the alarms that would end the block; then unlock or open the app: the block must end from the time alone.
 - `... -a io.github.warleysr.dechainer.DEBUG_ABORT_BRICK` runs the abort.
+- `... -a io.github.warleysr.dechainer.DEBUG_CRASH` crashes the app on purpose through the real handler. With a block running, send it twice within 5 minutes: the second crash must abort the block (apps released, home screen back).
 
 Testing here: the sandbox has no Android SDK (`dl.google.com` is denied), so CI is the compiler. Pure logic runs in a scratch Kotlin/JVM project (Gradle 8.14 with the Maven Central mirror `maven-central.storage-download.googleapis.com`, source files picked from `app/src` by a list, `RideLock` stubbed because `LockSafety` reads one constant from it, working dir set to `app/`): 120 tests pass there. CI also runs the 14 Robolectric tests (first use of Robolectric in this repo: `@Config(sdk = [34], application = Application::class)` so the real Application does not start the engine). The CI log now lists every test result.
 

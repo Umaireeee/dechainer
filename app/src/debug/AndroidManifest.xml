@@ -13,6 +13,7 @@
                 <action android:name="io.github.warleysr.dechainer.DEBUG_ABORT_BRICK" />
                 <action android:name="io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK" />
                 <action android:name="io.github.warleysr.dechainer.DEBUG_DROP_ALARMS" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_CRASH" />
             </intent-filter>
         </receiver>
     </application>
