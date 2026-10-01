@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
@@ -25,6 +26,7 @@ fun TodayScreen(modifier: Modifier = Modifier) {
     val zone = TrustedClock.zone()
     var now by remember { mutableLongStateOf(TrustedClock.now(ctx)) }
     var version by remember { mutableIntStateOf(0) }
+    var saveStatus by remember { mutableStateOf(SaveStatus.NONE) }
     RepeatWhileVisible(1000) { now = TrustedClock.now(ctx) }
 
     val today = DayWindow.dateOf(now, zone)
@@ -65,20 +67,40 @@ fun TodayScreen(modifier: Modifier = Modifier) {
             item { Text(stringResource(R.string.today_tomorrow_locked), style = MaterialTheme.typography.bodySmall) }
         } else {
             items(drafts.size) { i ->
-                OutlinedTextField(drafts[i], { drafts[i] = it.take(120) }, Modifier.fillMaxWidth(), singleLine = true,
+                OutlinedTextField(drafts[i], { drafts[i] = it.take(120); saveStatus = SaveStatus.NONE }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text(stringResource(R.string.today_goal_hint, i + 1)) })
             }
             item {
-                Row {
+                val written = drafts.map { it.trim() }.filter { it.isNotEmpty() }
+                val enough = written.size in DayRules.MIN_GOALS..DayRules.MAX_GOALS
+                val changed = written != plan.map { it.text }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     if (drafts.size < DayRules.MAX_GOALS) TextButton({ drafts.add("") }) { Text(stringResource(R.string.today_add_goal)) }
-                    Button({
-                        // Re-checked at the moment of saving: the window may have closed while typing.
-                        if (DayWindow.canEditPlan(TrustedClock.now(ctx), tomorrow, zone) &&
-                            repo.savePlan(tomorrow, drafts.map { NewGoal(it) }, TrustedClock.now(ctx))) {
-                            LockEngine.requestSync(ctx); version++
-                        }
-                    }) { Text(stringResource(R.string.today_save_plan)) }
+                    Button(
+                        {
+                            // Re-checked at the moment of saving: the window may have closed while typing.
+                            val at = TrustedClock.now(ctx)
+                            saveStatus = when {
+                                !DayWindow.canEditPlan(at, tomorrow, zone) -> SaveStatus.CLOSED
+                                repo.savePlan(tomorrow, drafts.map { NewGoal(it) }, at) -> {
+                                    LockEngine.requestSync(ctx); version++; SaveStatus.SAVED
+                                }
+                                else -> SaveStatus.TOO_FEW
+                            }
+                        },
+                        enabled = enough && changed
+                    ) { Text(stringResource(R.string.today_save_plan)) }
                 }
+                // The save used to look like nothing happened: say what is saved, or what is missing.
+                val (msg, color) = when {
+                    saveStatus == SaveStatus.CLOSED -> stringResource(R.string.today_save_closed) to MaterialTheme.colorScheme.error
+                    saveStatus == SaveStatus.TOO_FEW -> stringResource(R.string.today_save_too_few) to MaterialTheme.colorScheme.error
+                    saveStatus == SaveStatus.SAVED || (!changed && plan.isNotEmpty()) ->
+                        pluralStringResource(R.plurals.today_plan_saved, plan.size, plan.size) to MaterialTheme.colorScheme.primary
+                    !enough -> stringResource(R.string.today_save_need, DayRules.MIN_GOALS, written.size) to MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> stringResource(R.string.today_save_unsaved) to MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(msg, style = MaterialTheme.typography.bodyMedium, color = color)
             }
             item {
                 val isRest = tomorrowRow?.kind == DayKind.REST
@@ -90,3 +112,5 @@ fun TodayScreen(modifier: Modifier = Modifier) {
         }
     }
 }
+
+private enum class SaveStatus { NONE, SAVED, TOO_FEW, CLOSED }
