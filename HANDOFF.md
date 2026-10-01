@@ -1,6 +1,6 @@
 # Project handoff (read this first in a new session)
 
-Last updated: 2026-09-29. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
+Last updated: 2026-10-01. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
 The journal, the door and the guided-ride upgrade are all on `main-clean` (PR #3 merged; the ride upgrade follows it, see "State").
 
 ## What this project is
@@ -69,6 +69,8 @@ Both are signed with the same key (release workflow), because the link between t
 7. Crash logging for release builds; on-device UI tests; tune the coach prompts after a week of real entries (the AI prompt now includes the ride result and what was tried).
 8. A slip-in-focus-block flow inside Déchaîner itself (today the slip is logged in the journal).
 9. Housekeeping: delete old remote branches in the GitHub UI; keep README/GUIDE in step.
+10. Evening check-in filled in from Déchaîner's focus log ("2 h 10 min of focus today" next to "Studied"): needs a `focus_minutes_today` column on `RideStatusProvider` and a background read in the journal.
+11. Move the AI reports out of the entries string (see "Known limit" in the 2026-10-01 update).
 
 ## Update: restored on request (after the first merge)
 The all-apps ride lock (`RIDE_LOCK`, Déchaîner's `RideLock` + enforcer source; Déchaîner has no new visible UI for it), the 0.7 s hold-to-start ember, the one-tap FOCUS_BLOCK button and the evening "did today go to plan?" check-in are back in the journal. Déchaîner's own Urge log stays removed and its unlock screen has no journal buttons.
@@ -120,3 +122,24 @@ Read in full: RecoveryGate, UnlockDelay, ConfigTab, the schedule list/editor/vie
 - The weekly review is now the **weekly deep dive**: `Prompt.weeklyUser` lists every real entry of the last 7 days via `Prompt.entryLine` (day, time, urge/slip, every answer including what came before, ride result, what was tried, result, the note trimmed to 300 chars), and `WEEKLY_SYSTEM` asks for chains (before -> feeling -> place -> hour -> ending), what worked vs failed, and strategies aimed at the earliest link. Notes are now sent for the weekly deep dive; the consent text says so. Evening lines are still never sent.
 - Also in this round: delete an entry (Detail > Delete this entry), kept headline shown once, check-in facts say "marked" (an unmarked box is not a zero), and every prompt says one idea once, no judging the person, patterns need several days.
 
+## Update: audit pass and effectiveness features (2026-10-01, on the owner's request to "find things to improve, correct and optimize, and better features")
+Both apps were read again screen by screen. Fixed:
+- **The journal can never be suspended by any block of Déchaîner.** An allow-only bedtime window (all presets are allow-only) suspended every app not on its list, the journal included, at night, which is exactly when the safety net is needed. `LockSafety.neverBlocked` (Déchaîner, system UI, the phone, the journal) now seeds `ScheduleEnforcer.readProtectedPackages`, so no schedule, daily limit, focus lock or impulse lock can suspend it (it is also hidden from the Apps tab and the schedule picker). The brick and the ride lock already left it open.
+- **Slow paths:** the app picker decoded every icon on every recomposition (now once per row, lazily: `AppItem.iconLoader`); the Apps tab list was loaded once and went stale (it now reloads on resume); each package event reloaded every icon (the receiver now only invalidates caches); the ember and the breathing circle recomposed every frame (now `graphicsLayer` lambdas); `label()` did a resource-name lookup on every recomposition (now remembered).
+- **Ember:** a scroll that takes over the gesture is no longer counted as a tap (the "hold it" hint used to appear while scrolling past it).
+- **Journal Home goes stale after hours in the background** (greeting, evening card, counts): it now refreshes whenever the app comes to the front (`MainActivity.resumeTick`).
+
+New (all counted or typed on the phone; the only new thing sent to the AI is the reason, and the consent texts say so):
+- **Why you're doing this** (`JournalStore.reason`, in its own small `why` prefs file because it is saved as it is typed; part of the backup; first section of Settings). Shown on every ride and after a slip (not on a crisis screen), and passed to both prompts as "Their reason ... (their own words)"; the prompts say to bring it back once, in their words, never as a stick. "Delete all my entries" leaves it, like the AI key and the about text.
+- **Proof on the ride** (`Insights.proof`): "In 7 of your last 10 rides the urge passed or got weaker" when at least three rides exist and at least half worked, else "Urges you've ridden out so far: N", else nothing. Never opens a hard moment with a poor ratio.
+- **Patterns** (`Patterns.summary`, `LogScreen` > "What your entries show"): the usual run-up (`Q.BEFORE` + feeling), the usual place, the busiest four hours (`Insights.busiestWindow`, shared with the Home heads-up), where and when slips happen, and the steps that helped, all from the entries on the phone. Needs 5 entries and 3 repeats, shows its counts, ignores "nothing in particular".
+- **First move** (`DayLog.next`, 80 characters, JSON key `x`): a line on the evening card; next morning Home shows it with "Start a focus block with this", which opens the usual length question (25/50/90; a block bricks the phone, so it is never a silent one-tap) and passes the text as the intention. The text travels to Déchaîner as the new optional `intention` extra of `FOCUS_BLOCK` (`DoorAction.intention`, `UrgeActions.EXTRA_INTENTION`); the receiver sets it only if that request really started the block. Never sent to the AI.
+- **Weekly look back reminder** (`ReminderSettings.weeklyMinute`, `Notifier.rearmWeekly`, `MainActivity.ACTION_REVIEW`): Sundays at the chosen time, only if `Insights.reviewReady` (3 real entries in 30 days), opens the weekly deep dive unless the person is in a ride, a question or a plan.
+- **Setup card** also asks for a reason and someone to call, offers Open settings, and can be hidden for good.
+- **Déchaîner's brick screen** has "Urge hit? Ride it out": launches the journal with `action=ride` (its five-second countdown still applies). The journal's tile already worked during a brick; this is the visible path.
+
+Tests: 158 pure-logic tests pass in a scratch Kotlin/JVM project (journal Model/Ai/tests plus Déchaîner's PomodoroCore, UsageMath, BlockSchedule, LockSafety, RideLock, UrgeActions and their tests). The Compose/Android parts are only compiled by CI and nothing has run on a phone.
+
+Known limit, not fixed: **all entries, with their AI reports, live in one JSON string in SharedPreferences** (`JournalStore`, up to 2,000 entries). Every change rewrites the whole string with a synchronous commit and every `all()` parses it. Fine for a year of normal use; a journal approaching the limit would feel slow on save. The fix is to keep reports (the bulk) under their own keys or files, with a migration; do that before it hurts, not after.
+
+First things to check on a phone: Settings > Why you're doing this, then a ride (the panel should appear between "Do one thing now" and "Your own rule"); the evening card's first move and the next morning's card (does the focus block's question say "You planned: ..."?); the Sunday reminder; the log's patterns after five or more entries with "What came just before?" answered; the brick screen's ride button while a block runs; a bedtime window with the journal's tile.

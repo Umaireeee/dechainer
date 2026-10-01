@@ -72,9 +72,6 @@ internal fun Page(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** The first move's focus block: as short as Déchaîner allows, so starting is easy. */
-private const val FIRST_MOVE_MINUTES = 25
-
 private fun focusResultRes(r: Door.Result): Int = when (r) {
     Door.Result.SENT -> R.string.focus_sent
     Door.Result.NOT_INSTALLED -> R.string.door_not_installed
@@ -176,18 +173,30 @@ fun HomeScreen(
         if (tapped) { delay(3000); tapped = false }
     }
     var askFocus by remember { mutableStateOf(false) }
+    // What the block's first session is for, when it was started from the first-move card.
+    var focusIntention by remember { mutableStateOf("") }
     var focusResult by remember { mutableStateOf<Door.Result?>(null) }
 
     if (askFocus) {
         AlertDialog(
             onDismissRequest = { askFocus = false },
             title = { Text(stringResource(R.string.focus_title)) },
-            text = { Text(stringResource(R.string.focus_body)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.focus_body))
+                    if (focusIntention.isNotBlank()) {
+                        Text(
+                            stringResource(R.string.first_move_for, focusIntention),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic)
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(25, 50, 90).forEach { minutes ->
                         TextButton(onClick = {
-                            focusResult = onFocus(minutes, "")
+                            focusResult = onFocus(minutes, focusIntention)
                             askFocus = false
                         }) { Text(stringResource(R.string.focus_minutes, minutes)) }
                     }
@@ -228,7 +237,7 @@ fun HomeScreen(
                 TextButton(onClick = onUrge) { Text(stringResource(R.string.home_log_only)) }
                 TextButton(onClick = onSlip) { Text(stringResource(R.string.home_slip)) }
             }
-            OutlinedButton(onClick = { askFocus = true }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { focusIntention = ""; askFocus = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.home_focus))
             }
             focusResult?.let {
@@ -309,10 +318,11 @@ fun HomeScreen(
                     "\u201C${cards.firstMove}\u201D",
                     style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
                 )
+                // Through the same question as any block: it bricks the phone, so the length is chosen knowingly.
                 Button(
-                    onClick = { focusResult = onFocus(FIRST_MOVE_MINUTES, cards.firstMove) },
+                    onClick = { focusIntention = cards.firstMove; askFocus = true },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.first_move_start, FIRST_MOVE_MINUTES)) }
+                ) { Text(stringResource(R.string.first_move_start)) }
                 focusResult?.let { Text(stringResource(focusResultRes(it)), style = MaterialTheme.typography.bodyMedium) }
                 TextButton(onClick = onDismissMove) { Text(stringResource(R.string.first_move_done)) }
             }

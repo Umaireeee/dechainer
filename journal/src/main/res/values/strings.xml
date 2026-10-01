@@ -450,7 +450,8 @@
     <string name="day_next_label">Tomorrow\'s first move</string>
     <string name="day_next_hint">One small, specific thing (optional)</string>
     <string name="first_move_title">Your first move for today</string>
-    <string name="first_move_start">Start a %1$d-minute focus block with this</string>
+    <string name="first_move_start">Start a focus block with this</string>
+    <string name="first_move_for">The first session will be about: “%1$s”</string>
     <string name="first_move_done">Done, or not today</string>
     <!-- What the entries show -->
     <string name="patterns_title">What your entries show</string>

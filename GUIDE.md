@@ -43,7 +43,7 @@ Tips: the clock is locked while schedules are on, so you can't skip a window by 
 3. In the timer settings (the sliders icon), set your focus length (for example 60 minutes), a daily goal, and the **allowed apps** you need for study (lecture app, PDF reader). Keep browsers off that list.
 4. Write one line for your **intention** ("IAS 16, questions 1 to 10").
 5. Press **Start focus block**, pick the end time and commit.
-6. The phone is **bricked until that time**, breaks included: only Déchaîner, calls, your alarm clock, the Urge Journal, Quick Settings and your allowed apps work. Sessions and breaks run by themselves. **Nothing ends a block early, not even your recovery code**, so start with a short one.
+6. The phone is **bricked until that time**, breaks included: only Déchaîner, calls, your alarm clock, the Urge Journal, Quick Settings and your allowed apps work. Sessions and breaks run by themselves. **Nothing ends a block early, not even your recovery code**, so start with a short one. If an urge hits during a block, the Focus screen has **Urge hit? Ride it out**: it opens the Urge Journal's ten-minute ride (after a five-second countdown you can cancel), and the Home button brings you back.
 7. Between phases a short chime asks **"Did you do the work?"** on the notification, about exactly what you wrote. Answer honestly. It goes in your log.
 
 ## Step 6: Read your log weekly
@@ -73,7 +73,7 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 **One-time setup in Déchaîner:** *Settings → Impulse lock*, set the panic button to "timer and suspend" and pick the apps to pause. The journal's "Block my phone" button uses that.
 
 **When an urge hits:**
-1. **Hold** the glowing button in the journal (about a second, so a bump in your pocket can't start it), or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately **locks every other app for ten minutes** (calls, your alarm, emergency apps and the journal still work), pauses your distraction apps for 30 (the ones chosen in Déchaîner's Impulse lock), and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), and your own rule if you've written one. Nothing to answer.
+1. **Hold** the glowing button in the journal (about a second, so a bump in your pocket can't start it), or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately **locks every other app for ten minutes** (calls, your alarm, emergency apps and the journal still work), pauses your distraction apps for 30 (the ones chosen in Déchaîner's Impulse lock), and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), what you wrote for this moment (see **Why you're doing this** below), your own record if it is good news ("In 7 of your last 10 rides, the urge passed or got weaker"), and your own rule if you've written one. Nothing to answer.
 2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes or keep everything locked for 30 more minutes.
 3. Then choose **Save it and finish** (two taps) or **Add a few details** (three short questions and a plan). If you leave the app, a plain "Quick check-in" notification about 20 minutes later brings you back (you can turn it off in Settings), and a card on Home waits for you.
 4. The coach learns from your check-ins: once a step has worked for you a few times, it moves to the top of your plans.
@@ -84,11 +84,19 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Evening check-in:** in Settings turn on the evening reminder. Each evening Home asks "How was today?": tap what happened (slept well, studied, moved your body, talked to someone), add one line if you like, then say how the day went against your plan. Thirty seconds. The weekly review and the coach use these counts (never your line) to see how your sleep, study, body and people connect to your urges.
 
+**Tomorrow's first move:** the evening card also has one optional line, **Tomorrow's first move** ("FAR ch. 6, questions 1 to 10"). Make it small and specific. Next morning Home shows it as **Your first move for today**, with **Start a focus block with this**: pick how long (the same question as any block, because a block bricks the phone), and Déchaîner starts a focus block whose first session is already about exactly that. The question at its end asks whether you did it. Tap **Done, or not today** to clear the card. Like your evening line, the first move is never sent to the AI.
+
 **What came just before?** The interview now asks what you were doing just before the urge (scrolling, putting off a task, lying awake, alone after a hard moment, tired or hungry). That's usually where an urge really starts, and the coach names it.
 
 **Make it your own:** after an urge, the plan screen has **Make it your own**. Write an "If ..., then ..." rule in your own words (the coach suggests wording you can tap in). Your rules are shown on later rides and plans, and you can edit or remove them in Settings. Rules you write yourself work better than ones handed to you.
 
 **Patterns:** once you have at least six entries in a month, and most of them land in the same part of the day, Home offers a daily heads-up before that time, with a one-tap "pause my apps for an hour". It stays quiet until there is enough data to say something honest.
+
+**What your entries show:** open **Every entry and your patterns** on Home. With at least five entries, the log counts what repeats, on your phone, with no AI: your usual run-up (what came just before, and the feeling it came with), where urges land, when they land, where and when slips happen, and which step helped. A line appears only once it has happened at least three times, and each says how many entries it is counted from. It is information, not a verdict.
+
+**Why you're doing this:** the first section of Settings. Write it on a calm day, for the version of you at 23:00, in your own words: it is shown during every ride and after a slip ("A slip is one event. This didn't stop being true."), and the coach brings it back once, in your words, never as a stick. It is sent to the AI with your deep dives, like the text about you. "Delete all my entries" leaves it, like your other settings.
+
+**Getting set up:** until the app is ready (Déchaîner installed and reachable, a reason written, someone to call, an AI key), Home shows a short checklist with **Open settings**. **Hide this** puts it away for good.
 
 **If you already slipped:** tap **I already slipped**. No judgement. It asks what was in place and what would have stopped it, blocks your phone for the next stretch to stop the spiral, and suggests one change so it's less likely next time. Home counts **days without a slip out of the last 30** instead of a streak, so one slip costs one day, not everything.
 
@@ -96,11 +104,11 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **The AI deep dive:** in the journal's **Settings**, pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key, and press **Test connection**. Use **Load models from my account** if a model name is rejected. Fill in **About you** with your goals and how blunt you want the coach to be; it is added to every deep dive.
 
-**Weekly deep dive:** once you have a few entries, a **Weekly deep dive** button appears on Home. It reads every entry of your last seven days (with your notes), your evening check-ins and what it suggested last time, finds the chains behind your urges (what came before, feeling, place, hour, how it ended), and gives strategies aimed at the earliest link. Do it once a week, for example on Sunday evening.
+**Weekly deep dive:** once you have a few entries, a **Weekly deep dive** button appears on Home. It reads every entry of your last seven days (with your notes), your evening check-ins and what it suggested last time, finds the chains behind your urges (what came before, feeling, place, hour, how it ended), and gives strategies aimed at the earliest link. Do it once a week: in Settings, **Weekly look back, on Sundays** sends a plain reminder at the time you pick (17:00 to 21:00) that opens it, and only when there is a week to look at.
 
 **Kept deep dives:** under any deep dive, tap **Keep this deep dive**. Home shows **Kept deep dives**: your own collection to reread on a hard day. Backups include them, with your rules.
 
-**Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** shares them as text you can keep, and **Import from clipboard** restores them.
+**Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** saves them as a file you can keep (entries, your rules, kept deep dives and your reason), and **Import** reads that file back without duplicating anything.
 
 Everything you write stays on your phone, except what you send for a deep dive or the weekly deep dive. The journal can only ask Déchaîner to block more, never to unblock.
 
