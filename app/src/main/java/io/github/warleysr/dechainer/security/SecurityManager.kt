@@ -4,10 +4,7 @@ import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.data.DeviceAdmin
 import java.security.SecureRandom
@@ -26,19 +23,25 @@ class SecurityManager {
         private const val DEBUG_RESTORE_UNKNOWN_SOURCES_KEY = "debug_restore_unknown_sources_restriction"
 
         private val isRecoveryKeySet = mutableStateOf(false)
-        
-        var sessionEndTime by mutableLongStateOf(0L)
-            private set
 
-        fun isSessionActive(): Boolean = System.currentTimeMillis() < sessionEndTime
+        // BUG-02 fix: use elapsedRealtime (monotonic, cannot be moved by the user) instead of
+        // System.currentTimeMillis(). BUG-10 fix: AtomicLong instead of mutableLongStateOf so
+        // writes from the lock-engine background thread are safe.
+        private val sessionEndElapsed = java.util.concurrent.atomic.AtomicLong(0L)
+
+        fun isSessionActive(): Boolean = SystemClock.elapsedRealtime() < sessionEndElapsed.get()
 
         private fun startSession() {
-            sessionEndTime = System.currentTimeMillis() + (10 * 60 * 1000) // 10 minutes
+            sessionEndElapsed.set(SystemClock.elapsedRealtime() + (10 * 60 * 1000))
         }
 
         fun endSession() {
-            sessionEndTime = 0L
+            sessionEndElapsed.set(0L)
         }
+
+        /** Milliseconds left in the current recovery session, from [nowElapsed] (SystemClock.elapsedRealtime()). */
+        fun sessionRemainingMs(nowElapsed: Long): Long =
+            (sessionEndElapsed.get() - nowElapsed).coerceAtLeast(0L)
 
         fun consumeDebugAutoStartSession(context: Context) {
             if (!BuildConfig.DEBUG) return
@@ -207,7 +210,7 @@ class SecurityManager {
             val now = android.os.SystemClock.elapsedRealtime()
             return when {
                 UnlockDelay.isOpen(pending, now) -> {
-                    sessionEndTime = System.currentTimeMillis() + UnlockDelay.remainingOpenMs(pending, now)
+                    sessionEndElapsed.set(now + UnlockDelay.remainingOpenMs(pending, now))
                     // Handed to the in-memory session, so ending the session really ends it.
                     cancelUnlock(context)
                     true

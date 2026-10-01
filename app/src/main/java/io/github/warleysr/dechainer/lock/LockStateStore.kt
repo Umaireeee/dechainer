@@ -50,9 +50,21 @@ object LockStateStore {
     }
 
     fun clearUrge(context: Context) {
-        val state = Store.appState(context)
-        state.remove(AppStateKeys.URGE_LOCK_STARTED)
-        state.remove(AppStateKeys.URGE_LOCK_ENDS)
+        // Both keys removed in one transaction: if the process dies between two removes,
+        // a stale URGE_LOCK_ENDS would re-brick the phone on the next boot (BUG-01).
+        try {
+            Store.appState(context).setAll(
+                mapOf(
+                    AppStateKeys.URGE_LOCK_STARTED to "",
+                    AppStateKeys.URGE_LOCK_ENDS to ""
+                )
+            )
+        } catch (e: Exception) {
+            // Fall back to individual removes; at worst a reboot re-plans and drops the expired lock.
+            Timber.w(e, "Urge lock clear not atomic; falling back to individual removes")
+            try { Store.appState(context).remove(AppStateKeys.URGE_LOCK_STARTED) } catch (_: Exception) {}
+            try { Store.appState(context).remove(AppStateKeys.URGE_LOCK_ENDS) } catch (_: Exception) {}
+        }
         lastUrge = UrgeInput()
     }
 

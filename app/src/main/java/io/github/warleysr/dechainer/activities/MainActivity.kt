@@ -244,11 +244,11 @@ class MainActivity : ComponentActivity() {
                     if (lockedHome != null) SecurityManager.endSession()
                 }
 
-                var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                var currentTime by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
                 // Only while a timed session shows its countdown, and only while on screen.
                 val sessionActive = SecurityManager.isSessionActive()
                 if (sessionActive) {
-                    RepeatWhileVisible(1000, key = sessionActive) { currentTime = System.currentTimeMillis() }
+                    RepeatWhileVisible(1000, key = sessionActive) { currentTime = android.os.SystemClock.elapsedRealtime() }
                 }
 
                 val context = LocalContext.current
@@ -297,7 +297,7 @@ class MainActivity : ComponentActivity() {
                                 if (!brick) {
                                     ScreenInfoButton(route)
                                     if (SecurityManager.isSessionActive()) {
-                                        val remaining = SecurityManager.sessionEndTime - currentTime
+                                        val remaining = SecurityManager.sessionRemainingMs(currentTime)
                                         val minutes = (remaining / 1000) / 60
                                         val seconds = (remaining / 1000) % 60
 
