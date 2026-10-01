@@ -131,13 +131,19 @@ object LockEngine {
             // The focus session's own clock first (prompt and check-in timeouts, the reset, a FOCUS
             // timetable entry that is due): it can start or end a block, which the plan below must see.
             try {
-                FocusRunner.advance(ctx, now)
+                // Closing out only: a FOCUS entry is started below, after the day has been judged.
+                FocusRunner.advance(ctx, now, startEntries = false)
             } catch (e: Throwable) {
                 Timber.e(e, "Focus flow not advanced; the lock is planned without it")
             }
             // The daily checklist: close yesterday, judge the new day, record a punishment day, arm the evening
             // wake-ups. Before the plan, so a punishment day that begins now is in it. It never throws.
             io.github.warleysr.dechainer.day.DayEngine.runPass(ctx, now)
+            try {
+                FocusRunner.startDue(ctx, now)
+            } catch (e: Throwable) {
+                Timber.e(e, "Due focus entry not started; the lock is planned without it")
+            }
             var gathered = gather(ctx, now)
             var plan = plan(now, zone, gathered.state)
             if (plan.expiredFocusBlock) {

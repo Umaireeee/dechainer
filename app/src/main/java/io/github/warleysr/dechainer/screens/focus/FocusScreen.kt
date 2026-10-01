@@ -142,10 +142,15 @@ fun FocusScreen(onOpenLog: () -> Unit) {
     var confirmStop by remember { mutableStateOf(false) }
 
     // The phase's own planned length: a block may shorten its last session below the setting.
-    val total = (state.plannedMinutes.takeIf { it > 0 } ?: settings.minutesFor(state.phase)) * 60_000L
-    val remaining = state.remaining(now, settings)
+    // The tail of a block (too short for another session) and a special session run as one stretch with no
+    // phase clock: what is left is the time to the block's end, not a phase length that never starts.
+    val oneStretch = state.inBlock && state.isIdle
+    val remaining = if (oneStretch) (state.blockEndsAt - now).coerceAtLeast(0L) else state.remaining(now, settings)
+    val total = if (oneStretch) remaining.coerceAtLeast(1L)
+    else (state.plannedMinutes.takeIf { it > 0 } ?: settings.minutesFor(state.phase)) * 60_000L
     val progress = if (total > 0) (1f - remaining.toFloat() / total).coerceIn(0f, 1f) else 0f
-    val todayDate = LocalDate.now()
+    // The trusted clock's day, so moving the date cannot change what "today" shows.
+    val todayDate = java.time.Instant.ofEpochMilli(now).atZone(TrustedClock.zone()).toLocalDate()
     val today = remember(log, todayDate) {
         FocusLogMath.byDay(log).firstOrNull { it.date == todayDate }
     }
@@ -158,7 +163,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = { showSettings = true }, enabled = state.isIdle) {
+            IconButton(onClick = { showSettings = true }, enabled = state.isIdle && !state.inBlock) {
                 Icon(Icons.Outlined.Tune, contentDescription = stringResource(R.string.focus_settings))
             }
         }
@@ -219,7 +224,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             Text(
                 stringResource(
                     R.string.focus_block_until,
-                    java.time.Instant.ofEpochMilli(state.blockEndsAt).atZone(java.time.ZoneId.systemDefault())
+                    java.time.Instant.ofEpochMilli(state.blockEndsAt).atZone(TrustedClock.zone())
                         .format(java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT))
                 ),
                 style = MaterialTheme.typography.labelLarge,
@@ -227,14 +232,6 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             )
         }
         Spacer(Modifier.height(12.dp))
-        if (state.inBlock && state.phase != Phase.FOCUS) {
-            Text(
-                stringResource(R.string.focus_next_subject),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-        }
         // What a session is for is asked when it starts (the start dialog, or the prompt of a scheduled one).
         Spacer(Modifier.height(8.dp))
 
@@ -295,8 +292,10 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 Text(stringResource(R.string.focus_block_start), style = MaterialTheme.typography.titleMedium)
             }
         } else if (state.inBlock) {
-            // Pause: for physical work (an errand, someone calling you over). The timer stops so
-            // that time isn't logged as study; the phone stays bricked and the end time holds.
+            // Pause: for physical work (an errand, someone calling you over), in a plain timer only. In a
+            // block with check-ins a paused phase would never end, so no chime and no "Did you do the work?"
+            // would ever come: the flow pauses the clock itself during the reset, and nothing else may.
+            if (!FocusRunner.hasFlow()) {
             FilledIconButton(
                 onClick = {
                     if (state.isRunning) Pomodoro.pause(context)
@@ -313,6 +312,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(16.dp))
+            }
             // Committed: nothing on this screen ends it early. Not even the recovery code.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Lock, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -382,7 +382,8 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             apps = apps,
             isLoading = loading,
             isSelected = { it in allowedApps },
-            onToggle = { Pomodoro.toggleAllowedApp(context, it) },
+            // Taking an app off the list tightens and is one tap; adding one loosens, so it asks for the recovery code.
+            onToggle = { pkg -> if (pkg in allowedApps) Pomodoro.toggleAllowedApp(context, pkg) else gate.run { Pomodoro.toggleAllowedApp(context, pkg) } },
             onDismiss = { showAppPicker = false }
         )
     }
@@ -503,13 +504,16 @@ private fun Stepper(label: String, value: Int, range: IntRange, step: Int, unit:
 private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
     val context = LocalContext.current
     // Kept current while the dialog is open, so the preview always matches what you'd commit.
-    var now by remember { mutableStateOf(java.time.LocalDateTime.now()) }
-    RepeatWhileVisible(15_000) { now = java.time.LocalDateTime.now() }
+    // On the trusted clock, like the block itself, so the preview never disagrees with what is committed.
+    fun trustedNow() = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(TrustedClock.now(context)), TrustedClock.zone())
+    var now by remember { mutableStateOf(trustedNow()) }
+    RepeatWhileVisible(5_000) { now = trustedNow() }
+    var startFailed by remember { mutableStateOf(false) }
     val allowed by Pomodoro.allowedApps.collectAsState()
 
     // The chosen end, as a time of day. Starts two hours out, on a quarter hour.
     var endTime by remember {
-        val t = java.time.LocalTime.now().plusHours(2)
+        val t = trustedNow().toLocalTime().plusHours(2)
         mutableStateOf(t.withMinute((t.minute / 15) * 15).withSecond(0).withNano(0))
     }
     var showClock by remember { mutableStateOf(false) }
@@ -569,6 +573,10 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
+                if (startFailed) {
+                    Text(stringResource(R.string.focus_block_start_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(8.dp))
+                }
                 Text(
                     when {
                         tooLong -> stringResource(R.string.focus_block_too_long)
@@ -610,10 +618,14 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
                 enabled = !tooLong && !tooShort && FocusFlow.cleanPurpose(purpose) != null &&
                     (flavor == Flavor.SPECIAL || plan.isNotEmpty()),
                 onClick = {
-                    val endMillis = end.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    val endMillis = end.atZone(TrustedClock.zone()).toInstant().toEpochMilli()
                     if (FocusRunner.startManual(context, endMillis, flavor, purpose)) {
                         blockHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onDismiss()
+                    } else {
+                        // The time moved on while the dialog was open, a punishment day or a block is running, or the length fell outside 10 minutes to 8 hours.
+                        startFailed = true
+                        now = trustedNow()
                     }
                 }
             ) { Text(stringResource(R.string.focus_block_confirm)) }

@@ -368,6 +368,7 @@
     <string name="focus_block_next_break">Time for a %1$s: %2$d min</string>
     <string name="focus_chime_sound">Chime sound (focus blocks)</string>
     <string name="focus_block_tap_to_change">Tap the time to change it</string>
+    <string name="focus_block_start_failed">The block did not start. It must end between 10 minutes and 8 hours from now, and no other block or punishment day can be running. Check the time and try again.</string>
     <string name="focus_block_too_long">A block can last up to 8 hours</string>
     <string name="focus_breaks_none">no breaks</string>
     <string name="focus_breaks_one">1 break</string>
@@ -394,7 +395,6 @@
     <string name="locked_until">Locked until %1$s</string>
     <string name="locked_punishment_body">Today is locked. Calls, the alarm clock and anything you chose for study stay open. It ends at midnight, and settings cannot be changed until then.</string>
     <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge Journal (from its Quick Settings tile) and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
-    <string name="focus_next_subject">Next session is for:</string>
     <string name="focus_block_start">Start focus block</string>
     <string name="focus_block_no_way_out">Bricked until the end. No way out.</string>
     <string name="focus_block_irreversible">Once you commit, nothing ends this block early. Not Stop, not your recovery code. Only the end time.</string>

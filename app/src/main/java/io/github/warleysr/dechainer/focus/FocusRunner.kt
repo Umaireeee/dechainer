@@ -108,6 +108,8 @@ object FocusRunner {
         if (previous != null && previous.stage == FlowStage.FINAL_ASK) {
             apply(ctx, previous, listOf(FlowEffect.RecordCheckin(first.state.startedAt, CheckinAnswer.UNANSWERED, ResetResult.NONE)))
         }
+        // Its notification goes too: left behind, its Yes and No would answer the new flow's check-in.
+        if (previous != null) Pomodoro.cancelFlowQuestion(ctx)
         val id = try {
             Store.focus(ctx).insert(
                 StoredSession(
@@ -162,7 +164,7 @@ object FocusRunner {
      * every lock-engine pass, before the plan is read. True if anything changed, so the pass should
      * read its inputs again.
      */
-    fun advance(context: Context, now: Long): Boolean {
+    fun advance(context: Context, now: Long, startEntries: Boolean = true): Boolean {
         val ctx = context.applicationContext
         ensureLoaded(ctx)
         Pomodoro.ensureLoaded(ctx)
@@ -178,8 +180,19 @@ object FocusRunner {
             }
         }
         if (transition(ctx, at = now) { s, t -> FocusFlow.tick(s, t) }) changed = true
-        if (startDueEntry(ctx, now)) changed = true
+        if (startEntries && startDueEntry(ctx, now)) changed = true
         return changed
+    }
+
+    /**
+     * Starts the FOCUS entry that is due. Run after the day's evaluation, so a punishment day that begins at
+     * midnight is already on record and the entry is skipped (5.3) instead of starting and then being covered.
+     */
+    fun startDue(context: Context, now: Long): Boolean {
+        val ctx = context.applicationContext
+        ensureLoaded(ctx)
+        Pomodoro.ensureLoaded(ctx)
+        return startDueEntry(ctx, now)
     }
 
     /** The system ended the block early (the crash-loop breaker). Never throws, and holds no lock another thread could be stuck behind for long. */
@@ -193,6 +206,13 @@ object FocusRunner {
         }
     }
 
+    /** Whether today is a declared REST day, which skips scheduled FOCUS entries (D18). A store that cannot be read means no. */
+    private fun isRestDay(ctx: Context, now: Long): Boolean = try {
+        val zone = TrustedClock.zone()
+        io.github.warleysr.dechainer.store.Store.days(ctx).day(io.github.warleysr.dechainer.day.DayWindow.dateOf(now, zone))?.kind ==
+            io.github.warleysr.dechainer.day.DayKind.REST
+    } catch (e: Exception) { false }
+
     /** The FOCUS entry whose window is open and not yet acted on starts its block (6.3, 5.3). */
     private fun startDueEntry(ctx: Context, now: Long): Boolean {
         if (Pomodoro.state.value.inBlock) return false
@@ -205,7 +225,7 @@ object FocusRunner {
         // The rest day is Phase 5's; until it exists no day is one.
         val due = FocusTimetable.due(
             now = now, zone = TrustedClock.zone(), schedules = schedules, settledKeys = settled,
-            punishmentActive = LockStateStore.punishment(ctx).activeAt(now), restDay = false,
+            punishmentActive = LockStateStore.punishment(ctx).activeAt(now), restDay = isRestDay(ctx, now),
             urgeEndsAt = LockStateStore.urge(ctx).endsAt
         ) ?: return false
         return when (val decision = due.decision) {

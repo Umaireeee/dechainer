@@ -208,7 +208,9 @@ object Pomodoro {
     fun startPhases(context: Context) {
         ensureLoaded(context)
         change(context) { current ->
-            val left = ((current.blockEndsAt - now()) / 60_000L).toInt()
+            // Rounded up: a block committed for 10 minutes has a little under 10 left a moment later, and that must
+            // still get its phases (the first session is cut to the block's end anyway).
+            val left = ((current.blockEndsAt - now() + 59_999L) / 60_000L).toInt()
             val first = BlockPlanner.plan(left, _settings.value, current.focusDoneInCycle).firstOrNull()
                 ?: return@change current
             PomodoroCore.startPhasesInBlock(current, now(), first.second)
@@ -254,6 +256,8 @@ object Pomodoro {
 
     fun updateSettings(context: Context, new: PomodoroSettings) {
         if (!SettingsFreeze.allowWrite(context, "focus settings")) return
+        // A running block cannot be changed by anything (blueprint 9.1): lengths, "lock apps" and "brick" wait for it to end.
+        if (brickActive()) return
         ensureLoaded(context)
         val s = new.clamped()
         synchronized(lock) {
@@ -272,14 +276,24 @@ object Pomodoro {
         LockEngine.requestSync(context.applicationContext)
     }
 
-    fun toggleAllowedApp(context: Context, pkg: String) {
-        if (!SettingsFreeze.allowWrite(context, "focus allow list")) return
+    /**
+     * Adds an app to the focus allow list, or takes it off. Taking one off tightens and is always allowed.
+     * Adding one loosens (blueprint 9.1): it is refused while a focus block runs (a running block cannot be
+     * loosened by anything), and the screen asks for the recovery code first. Returns whether it changed.
+     */
+    fun toggleAllowedApp(context: Context, pkg: String): Boolean {
+        if (!SettingsFreeze.allowWrite(context, "focus allow list")) return false
         ensureLoaded(context)
+        var changed = false
         synchronized(lock) {
-            _allowed.value = if (pkg in _allowed.value) _allowed.value - pkg else _allowed.value + pkg
+            val adding = pkg !in _allowed.value
+            if (adding && brickActive()) return@synchronized
+            _allowed.value = if (adding) _allowed.value + pkg else _allowed.value - pkg
             prefs(context).edit { putStringSet(K_ALLOWED, _allowed.value) }
+            changed = true
         }
-        LockEngine.requestSync(context.applicationContext)
+        if (changed) LockEngine.requestSync(context.applicationContext)
+        return changed
     }
 
     /** Your answer to "Did you do the work?" for session [id]. */
@@ -473,6 +487,10 @@ object Pomodoro {
         } else if (finished.inBlock && flowedMinutes != null) {
             // The flow rings the check-in itself, with its own buttons.
             Unit
+        } else if (finished.inBlock && FocusRunner.hasFlow()) {
+            // A block with check-ins rings only at the end of a focus phase (blueprint 10), and the flow does
+            // that itself; the end of a break is silent, the timer on the screen already says what is next.
+            Unit
         } else if (finished.inBlock) {
             // Inside a block nothing waits for you: a soft chime, and the question on the
             // notification to answer when convenient. No full-screen interruption.
@@ -560,7 +578,8 @@ object Pomodoro {
         ensureLoaded(context)
         val s = _state.value
         when {
-            s.isRunning && s.endsAt <= now() -> onPhaseAlarm(context)
+            // Caught up late (after a reboot or an update): the end is long past, so no chime and no full-screen question.
+            s.isRunning && s.endsAt <= now() -> onPhaseAlarm(context, silent = now() - s.endsAt > Rules.LATE_BLOCK_END_MS)
             s.isRunning -> { armAlarm(context, s.endsAt); showTimer(context, s) }
             s.isPaused && s.inBlock && s.blockEndsAt <= now() -> onPhaseAlarm(context)
             s.isPaused && s.inBlock -> { armAlarm(context, s.blockEndsAt); showTimer(context, s) }
