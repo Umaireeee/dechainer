@@ -15,6 +15,9 @@ object Rules {
     /** How often the trusted clock writes its checkpoint when called from the UI; wake-ups write every time. */
     const val CLOCK_CHECKPOINT_INTERVAL_MS = 10_000L
 
+    /** Section 5.2. How long an urge lock lasts. Fixed: nothing extends it and nothing ends it early. */
+    const val URGE_LOCK_MS = 10 * 60_000L
+
     /** Section 5.4. Two crashes within this window, while a brick runs, abort the brick. */
     const val CRASH_WINDOW_MS = 5 * 60_000L
 

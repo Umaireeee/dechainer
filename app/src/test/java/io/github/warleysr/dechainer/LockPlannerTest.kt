@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer
 
 import io.github.warleysr.dechainer.lock.FocusInput
-import io.github.warleysr.dechainer.lock.Hold
 import io.github.warleysr.dechainer.lock.LimitInput
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.lock.LockPlanner
@@ -28,7 +27,9 @@ class LockPlannerTest {
         launcherApps = setOf("chrome", "games", "clock", "notes", "settings", "sms", "home", "dechainer", "com.android.emergency"),
         protectedApps = setOf("home", "dechainer"),
         alarmApps = setOf("clock"),
-        alwaysAllowed = setOf("settings", "sms")
+        alwaysAllowed = setOf("settings", "sms"),
+        emergencyApps = setOf("com.android.emergency"),
+        smsApps = setOf("sms")
     )
 
     private fun at(h: Int, m: Int = 0, day: Int = 1, zone: ZoneId = utc): Long =
@@ -45,8 +46,8 @@ class LockPlannerTest {
 
     private fun state(
         schedules: List<BlockSchedule> = emptyList(), focus: FocusInput = FocusInput(), limits: LimitInput = LimitInput(),
-        extra: List<Hold> = emptyList(), deviceOwner: Boolean = true
-    ) = LockState(deviceOwner, schedules, phone, focus, limits, extra)
+        deviceOwner: Boolean = true
+    ) = LockState(deviceOwner, schedules, phone, focus, limits)
 
     private fun plan(now: Long, s: LockState, zone: ZoneId = utc) = LockPlanner.plan(now, zone, s)
 
@@ -321,16 +322,5 @@ class LockPlannerTest {
     fun aBlockTakesTheBrickPathNotTheSessionPath() {
         val p = plan(at(10), state(focus = FocusInput(brickEndsAt = at(11), sessionLockEndsAt = at(10, 20))))
         assertEquals(listOf(LockMode.FOCUS_BLOCK), p.holds.map { it.mode })
-    }
-
-    @Test
-    fun carriedHoldsApplyUntilTheirEndAndThenDrop() {
-        val extra = listOf(
-            Hold(LockMode.IMPULSE_LOCK, "impulse", at(10, 30), setOf("games")),
-            Hold(LockMode.RIDE_LOCK, "ride", at(9, 59), setOf("chrome"))
-        )
-        val p = plan(at(10), state(extra = extra))
-        assertEquals(setOf("games"), p.desiredApps)
-        assertEquals(at(10, 30), p.nextWakeAt)
     }
 }
