@@ -1,106 +1,96 @@
-# Déchaîner — Focus edition
+# Déchaîner 2.0
 
-A calm, minimal Android app for studying without your phone getting in the way: block apps on a schedule, and run a Pomodoro timer that keeps an honest log of your work.
+A calm, minimal Android app that locks your phone when you need it locked, and shows you the truth about yourself. It runs as Device Owner and does two jobs:
+
+1. **Lock the phone when it is needed:** a ten-minute urge lock, scheduled focus sessions, a punishment day, recurring app-block schedules and daily time limits, all on one lock engine.
+2. **Show you the truth about yourself:** it records urges, slips, focus check-ins and a daily checklist, and an AI you choose turns that data into a deep dive after every urge and a weekly report.
 
 > An unofficial fork of [Déchaîner](https://github.com/warleysr/dechainer) by **@warleysr**. All credit for the original app and its blocking engine goes to him. This build is not an official release and is not supported by him.
+
+The design rule: **tightening is easy, loosening is hard.** Anything that makes the lock stricter is one tap. Anything that weakens it needs your recovery code and the unlock delay. The lock never waits on the network or the AI.
 
 ---
 
 ## What it does
 
-### Focus: committed blocks that keep you honest
-- **Focus block:** pick an end time and commit. Sessions and breaks (a long one every few sessions) run by themselves until then. All lengths are adjustable.
-- **The phone is bricked for the whole block**, breaks included: only Déchaîner, incoming calls, your alarm clock, the Urge Journal, Quick Settings and any apps you allowed work. The clock is locked. **Nothing ends a block early**, not even your recovery code, so choose a length you can keep. Pause is there for physical work; the end time never moves.
-- A short **chime** between phases, with **"Did you do the work?"** right on the notification. Your answer is logged.
-- **Intention:** optionally write one line for the next session ("IAS 16, questions 1–10"). The question asks about exactly that.
-- **Subjects and lectures:** tag each session (e.g. FAR, Tax, CAF 4), with an optional daily target per subject. From two-thirds of a lecture's length on, it asks how the lecture is going.
-- **Daily goal:** a quiet progress bar for how many lectures you aim to finish each day.
-- **Changeable chime sound:** any ringtone or your own file.
+### Home and the Urge button
+Home is a large clock and one button, **Urge**. Tap the clock or swipe up for the menu: Urge, Today, Focus, Schedules, Apps and limits, Reports, Settings. The same screen is shown during any lock, with the end time under the clock.
 
-### Focus log
-- A smooth line chart of your study time for the **last 14 days** or **last 12 weeks**, with your average marked.
-- **Tap any point** to see that day's sessions: time, subject, intention, and whether you did the work.
-- Hours **by subject**, so a neglected subject is obvious.
-- **Export / import** as CSV (opens in Excel or Sheets), so your history survives a reinstall or a new phone.
+- **Ongoing:** the phone locks at once for ten minutes (calls, the dialer and the alarm clock stay open; nothing ends it early and a second tap never extends it). A breathing screen runs for the full ten minutes, then you may write what happened, answer three to five questions (from the AI, or three fixed ones when it is offline), and get a short deep dive. The raw text is deleted once its deep dive is saved.
+- **I slipped:** straight to writing, then questions and a deep dive. No shaming.
+- The Quick Settings tile and the icon shortcut start the ongoing path without a question.
+- If a note shows risk, a card offers to call or text one person you saved. That number never leaves the phone.
+
+### Focus sessions
+A focus block is a committed lock until an end time you pick (10 minutes to 8 hours), or a **FOCUS** entry in the weekly timetable that starts it by itself. A usual session runs Pomodoro phases with a check-in, "Did you do the work?", after each focus phase; answering No starts a ten-minute reset (meditation, then something physical) inside the block. A special session is one continuous lock with a single question at the end. The end time never moves.
+
+### The daily checklist and the punishment day
+Each evening, 20:00 to 23:59, you write tomorrow's 3 to 7 goals and close today. A missing plan, an unresolved goal, or fewer than half of the goals done makes the next day a **punishment day**: the phone is locked all day except calls and the alarm clock, and settings are frozen. A punishment day never follows a punishment day, and a declared rest day (one per week) never cancels one. Enforcement starts when you confirm the rules at the end of setup.
+
+### Weekly report
+When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** also shows a progress line of your daily checklist results. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
 
 ### Blocking
-- **Apps:** suspend any app with one switch. Suspended apps are greyed out, can't open, and their notifications are hidden.
-- **Daily limits (Apps tab):** open an app's row to set how long it can be used each day. Once the time is used up, the app is suspended until midnight, and it stays suspended even if Usage access is switched off. Lowering a limit is free; raising or removing it takes your recovery code. Usage is read from Android's own usage log, so Déchaîner needs **Usage access** once (Settings → Status shows a Fix button). Nothing runs in the background to measure it.
-- **Schedules:** block chosen apps, system features and websites at set times each week. "Allow only" mode flips it: only the apps you list work.
-  - **Duplicate** a schedule, or **copy apps** from another, so you never pick the same apps twice.
-  - The clock is locked while schedules are on, so a window can't be skipped by changing the time.
-- **Urge lock:** a panic button on the unlock screen that pauses every app except calls and the alarm clock for ten minutes. Nothing ends it early.
-- **Entry challenge:** a maths or typing problem before the app opens.
-- **Private DNS:** blocks adult sites across the whole phone. Choose from CleanBrowsing Family (strictest), CleanBrowsing Adult, AdGuard Family or Cloudflare Family.
-- **Protections:** system rules, like blocking factory reset.
-- **Recovery code and unlock delay:** anything that loosens a rule asks for your code, and optionally a waiting period.
-- **Forced removal:** the escape hatch. It lifts everything after 4 days, without the code.
-- **Quick-start presets:** Bedtime, Study hours, Exam week and Night detox open a pre-filled schedule for you to adjust.
+- **Apps:** suspend any app with one switch; suspended apps are greyed out and cannot open.
+- **Daily limits:** set how long an app may be used each day; it is suspended until midnight when the time is used up. Lowering a limit is free; raising or removing it needs your recovery code.
+- **Schedules:** block chosen apps, system features and websites at set times each week, or allow only the apps you list.
+- **Private DNS:** blocks adult sites across the whole phone.
+- **Protections:** system rules, such as blocking factory reset.
+- **Recovery code and unlock delay**, and **forced removal** (the escape hatch: it lifts everything after 4 days, without the code).
+- Date, time and time zone are locked, and Force stop and Clear data are blocked for the app.
 
-### Urge Journal (companion app)
-A second app in this repository, signed with the same key, for the moment an urge hits. One tap pauses your distraction apps and starts a ten-minute guided ride (breathing, one step, your own rule); a short check-in afterwards teaches the coach what actually works for you. A full log of every entry (chart, filters, CSV export) sits one tap away. It also offers an optional AI deep dive (bring your own key), a weekly deep dive with a Sunday reminder, your own "If ..., then ..." rules, a reason you write on a calm day that comes back during a ride and after a slip, your own record at the moment you need it, patterns counted from your entries on the phone, an evening check-in whose "first move for tomorrow" starts a focus block next morning, and a daily heads-up before the time of day your urges cluster. During a focus block, the Focus screen has an **Urge hit? Ride it out** button. Install Déchaîner first, then the journal. See the **[GUIDE](GUIDE.md)** (Step 11) and `URGE_ACTIONS.md`.
-
-New here? Read the step-by-step **[GUIDE](GUIDE.md)**.
+New here? Read the step-by-step **[GUIDE](GUIDE.md)**. The rules the app is built to are in [BLUEPRINT.md](BLUEPRINT.md).
 
 ### Xiaomi, Redmi and POCO phones (MIUI / HyperOS)
-These phones stop apps in the background unless told otherwise, which can delay alarms and the moment a block ends. For Déchaîner (and the Urge Journal):
+These phones stop apps in the background unless told otherwise, which can delay alarms and the moment a lock ends:
 1. *Settings → Apps → Manage apps → Déchaîner → **Autostart: On***.
 2. On the same screen, *Battery saver* (or *Battery usage*) → **No restrictions**.
-3. In *Recent apps*, lock the app (pull its card down or long-press it and tap the lock) so it isn't cleared.
-Then open **Settings → Status** in Déchaîner: it should show no red items.
+3. In *Recent apps*, lock the app so it isn't cleared.
+Then open **Settings**: the Setup status card should show no Fix buttons.
 
 ### Battery
-Nothing runs in the background and nothing watches your screen: **there's no accessibility service**. Schedules, the urge lock and the Pomodoro all run on exact alarms, and the timer's countdown is drawn by Android itself.
+There is no accessibility service and nothing watches your screen. Locks run on exact alarms, and every wake-up (boot, unlock, app open, alarm) recomputes the whole lock from stored data.
 
 ---
 
 ## Requirements
 - Android 11 or newer.
-- **Device owner permission.** This is what lets the app suspend apps and apply system rules. It's granted once, over ADB or Shizuku.
+- **Device owner permission.** This is what lets the app suspend apps and apply system rules. It is granted once, over ADB or Shizuku.
 
 ---
 
 ## Installation
 
 1. **Install the APK** from the [Releases](../../releases) page.
-2. **Remove all accounts** (Google and others) temporarily: *Settings → Passwords & accounts*. Android only allows a device owner to be set when no accounts are signed in.
+2. **Remove all accounts** (Google and others) temporarily: *Settings → Passwords & accounts*. Android only allows a device owner when no accounts are signed in.
 3. **Grant device owner**, in one of two ways:
-   - **Shizuku:** open the app, go to *Settings → Owner privileges*, and follow the steps.
+   - **Shizuku:** open the app, go to *Settings → Device Owner*, and follow the steps.
    - **ADB, from a computer:**
      ```
      adb shell dpm set-device-owner io.github.warleysr.dechainer/.DechainerDeviceAdminReceiver
      ```
 4. **Add your accounts back.**
-5. **Allow notifications** when asked. The Pomodoro rings through them.
+5. Follow the first-run steps: notifications, usage access, the recovery code, an optional AI key, and the checklist rules.
 
-> ⚠️ **Don't uninstall to update.** Install new versions over the old one. Uninstalling removes device owner and wipes your settings. Export your focus log regularly, just in case.
+> ⚠️ **Don't uninstall to update.** Install new versions over the old one. Uninstalling removes device owner and wipes your data. Keep a backup file from **Reports → Your data**. If you are moving from the old two-app version, install this build over Déchaîner first, then uninstall the old Urge Journal; its entries are not migrated, so export them from the old journal first if you want a copy.
+
+> Test a new build on an emulator or a spare phone before your daily phone (see BLUEPRINT.md section 14A). A bug in a lock can keep the phone locked for hours.
 
 ### Updating
-If the installer says *"You can't install the app"*, a restriction is blocking installs. Temporarily turn off "unknown sources" or "installing apps" in *Settings → Protections*, or wait for any schedule that blocks installs to end. Then install the update, and turn the restriction back on afterwards.
-
----
-
-## A simple daily setup
-
-1. **Subjects:** on the Focus screen, tap *Add subject* and create your subjects. Give each one a daily target.
-2. **Timer:** in the timer settings, set focus to your lecture length (e.g. 60 min) and set a daily goal (e.g. 4).
-3. **Study schedule:** create one schedule for your study hours with *Allow only* on. List just your lecture app, notes app, PDF reader and one AI chat app. Everything else is suspended automatically.
-4. **DNS:** in *Settings → Private DNS*, choose **CleanBrowsing Family**.
-5. **Each block:** pick the subject, write your intention, and start a focus block for your study hours. When it chimes, answer honestly.
-6. **Weekly:** check the log, see which subject is behind, and export a backup.
+If the installer says *"You can't install the app"*, a restriction is blocking installs. Turn off "unknown sources" or "installing apps" in *Settings → Protections*, or wait for any schedule that blocks installs to end. Then install the update.
 
 ---
 
 ## Building
 
-The source is committed directly (no patch files). The **CI** workflow runs the unit tests and builds a debug APK on every push. The **Release build** workflow additionally runs an emulator test and produces a signed APK; run it from the *Actions* tab and download the APK from the run's artifacts, or from the release it creates.
+The source is committed directly (no patch files). The **CI** workflow runs the unit tests and builds the debug and release APKs on every push. The **Release build** workflow additionally runs emulator tests and produces a signed APK; run it from the *Actions* tab and download the APK from the run's artifacts, or from the release it creates.
 
 Locally: open the project in Android Studio, or run `./gradlew assembleDebug`.
 
 ---
 
 ## Privacy
-Everything stays on your phone: no accounts, no analytics, no servers. The only network-related feature is the Private DNS setting, which hands your DNS lookups to the provider you choose.
+Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), and the weekly report gets numbers, answers, deep dives, sessions and checklist goals, never raw notes. Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
 
 ---
 
