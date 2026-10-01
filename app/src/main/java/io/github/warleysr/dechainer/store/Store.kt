@@ -24,6 +24,9 @@ object Store {
             focus ?: FocusSessionRepository(database(context)).also { focus = it }
         }
 
+    fun days(context: Context): io.github.warleysr.dechainer.day.DayRepository =
+        io.github.warleysr.dechainer.day.DayRepository(database(context))
+
     private fun database(context: Context): DechainerDatabase =
         database ?: synchronized(this) {
             database ?: DechainerDatabase(context).also { database = it }

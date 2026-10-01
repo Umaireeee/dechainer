@@ -124,10 +124,21 @@ class MainActivity : ComponentActivity() {
         urgeVm.startOngoing(source)
     }
 
+    private val openTodayRequest = mutableStateOf(false)
+
+    /** A notification or an unlock in the evening window brings the checklist forward. */
+    private fun handleTodayIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(io.github.warleysr.dechainer.day.DayEngine.EXTRA_OPEN_TODAY, false) != true) return
+        intent.removeExtra(io.github.warleysr.dechainer.day.DayEngine.EXTRA_OPEN_TODAY)
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        openTodayRequest.value = true
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleUrgeIntent(intent)
+        handleTodayIntent(intent)
     }
 
 
@@ -165,7 +176,7 @@ class MainActivity : ComponentActivity() {
         Pomodoro.ensureLoaded(this)
         // The first frame already knows whether something holds the phone.
         LockEngine.refreshStatus(this)
-        if (savedInstanceState == null) handleUrgeIntent(intent)
+        if (savedInstanceState == null) { handleUrgeIntent(intent); handleTodayIntent(intent) }
         // A deep dive that could not be made earlier gets another try (a job already waiting is left alone).
         thread { DeepDiveScheduler.enqueueIfPending(applicationContext) }
         setContent {
@@ -197,7 +208,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 // A brick shows its own screen, whatever was open before it started.
-                val route = if (lockedHome != null) Route.HOME else navViewModel.current()
+                val route = if (lockedHome != null && navViewModel.current() != Route.TODAY) Route.HOME else navViewModel.current()
                 val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
 
                 BackHandler(enabled = route != Route.HOME) {
@@ -208,6 +219,12 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = brick || urge.active) { }
                 LaunchedEffect(brick) {
                     if (brick) navViewModel.navigateTo(Route.HOME)
+                }
+                LaunchedEffect(openTodayRequest.value) {
+                    if (openTodayRequest.value) {
+                        openTodayRequest.value = false
+                        if (!focusBrick && !urge.active) navViewModel.navigateTo(Route.TODAY)
+                    }
                 }
 
                 // An urge lock or a punishment day locks Déchaîner itself, also when you are already
@@ -339,6 +356,7 @@ class MainActivity : ComponentActivity() {
                                 when (screen) {
                                     Route.FOCUS -> FocusScreen(onOpenLog = { navViewModel.navigateTo(Route.FOCUS_LOG) })
                                     Route.FOCUS_LOG -> FocusLogScreen()
+                                    Route.TODAY -> io.github.warleysr.dechainer.screens.TodayScreen()
                                     Route.APPS -> AppsScreen()
                                     Route.SCHEDULES -> SchedulesScreen()
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()

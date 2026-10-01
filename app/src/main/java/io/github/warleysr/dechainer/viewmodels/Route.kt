@@ -3,6 +3,7 @@ package io.github.warleysr.dechainer.viewmodels
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
@@ -25,6 +26,8 @@ enum class Route(
 ) {
     HOME("home", R.string.app_name, null, isRoot = true, needsUnlock = false),
     FOCUS("focus", R.string.focus_tab, Icons.Outlined.Timer, isRoot = true),
+    // Today stays reachable on a punishment day (6.4), so it is not behind the entry gate.
+    TODAY("today", R.string.today_tab, Icons.Outlined.Checklist, isRoot = true, needsUnlock = false),
     SCHEDULES("schedules", R.string.schedules, Icons.Outlined.Schedule, isRoot = true),
     APPS("apps", R.string.apps, Icons.Outlined.Block, isRoot = true, menuTitle = R.string.menu_apps_limits),
     SETTINGS("config", R.string.settings, Icons.Outlined.Settings, isRoot = true),
@@ -37,12 +40,12 @@ enum class Route(
 
     companion object {
         /** What the menu offers after "Urge", in order. Today and Reports join when their phases are built. */
-        val MENU = listOf(FOCUS, SCHEDULES, APPS, SETTINGS)
+        val MENU = listOf(TODAY, FOCUS, SCHEDULES, APPS, SETTINGS)
 
         /**
          * The menu while a brick holds the phone: nothing here changes settings, so nothing here is
          * offered. (The Urge button stays on every screen of a brick.)
          */
-        fun menuFor(brick: Boolean): List<Route> = if (brick) emptyList() else MENU
+        fun menuFor(brick: Boolean): List<Route> = if (brick) listOf(TODAY) else MENU
     }
 }

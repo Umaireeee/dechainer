@@ -73,6 +73,7 @@ class DechainerApplication : Application() {
     private val userPresentReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             LockEngine.requestSync(this@DechainerApplication)
+            io.github.warleysr.dechainer.day.DayEngine.showOnUnlock(this@DechainerApplication)
         }
     }
 

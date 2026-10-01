@@ -120,6 +120,10 @@
         </receiver>
 
         <receiver
+            android:name=".day.DayEngine$DayReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".ScheduleReceiver"
             android:exported="false">
             <intent-filter>

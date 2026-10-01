@@ -42,6 +42,9 @@ object AppStateKeys {
      */
     const val FOCUS_SETTLED = "focusSettled"
 
+    /** The local date (YYYY-MM-DD) enforcement of the daily checklist began. Not deletable (blueprint 7). */
+    const val ACTIVATED_ON = "activatedOn"
+
     /** Prefix of the flags that mark a one-off migration as done: `migrated:<name>`. */
     const val MIGRATED_PREFIX = "migrated:"
 }

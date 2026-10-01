@@ -66,6 +66,19 @@ object Migrations {
                 "CREATE INDEX focus_checkin_session ON focus_checkin (session_id)",
                 "CREATE INDEX focus_session_started ON focus_session (started_at)"
             )
+        ),
+        // Phase 5: the daily checklist (blueprint sections 6.4 and 7).
+        Migration(
+            from = 3, to = 4,
+            statements = listOf(
+                "CREATE TABLE day (date TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL DEFAULT 'NORMAL', " +
+                    "plan_written_at INTEGER, resolved_at INTEGER, done_count INTEGER NOT NULL DEFAULT 0, " +
+                    "total_count INTEGER NOT NULL DEFAULT 0, evaluated INTEGER NOT NULL DEFAULT 0, violation TEXT)",
+                "CREATE TABLE goal (id INTEGER PRIMARY KEY AUTOINCREMENT, day_date TEXT NOT NULL, position INTEGER NOT NULL, " +
+                    "text TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'MANUAL', target_minutes INTEGER, " +
+                    "state TEXT NOT NULL DEFAULT 'OPEN', resolved_by TEXT)",
+                "CREATE INDEX goal_day ON goal (day_date)"
+            )
         )
     )
 
