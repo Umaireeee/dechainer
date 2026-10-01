@@ -59,7 +59,14 @@ object ScheduleRepository {
     }
 
     /** True while [schedule]'s window is open and it was set to lock itself during that time. */
-    fun isLockedNow(schedule: BlockSchedule, now: LocalDateTime = LocalDateTime.now()): Boolean =
+    fun isLockedNow(
+        schedule: BlockSchedule,
+        // The trusted clock, like the lock planner: the gate that refuses an edit must agree with the lock itself.
+        now: LocalDateTime = LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(io.github.warleysr.dechainer.clock.TrustedClock.now()),
+            io.github.warleysr.dechainer.clock.TrustedClock.zone()
+        )
+    ): Boolean =
         schedule.lockWhileActive && schedule.isActiveAt(now)
 }
 

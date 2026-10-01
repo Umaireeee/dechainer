@@ -22,7 +22,7 @@ data class ClockReading(val trustedMs: Long, val checkpoint: ClockCheckpoint, va
  * started again from zero, so only the time since boot is added: a lower bound, which can only make
  * a lock last longer than needed, never end it early.
  *
- * Moving the clock forward is caught only when it is certain to be a hand: automatic time is off
+ * Moving the clock forward is caught when it cannot be real: automatic time is off
  * ([autoTimeOn] false) and, within one boot, the wall clock gained more than the phone really ran. Then the
  * jump is ignored and the time goes on from the last reading plus the running time. With automatic time
  * on, a jump forward is a network correction and is followed, so a clock that was honestly wrong and got
@@ -30,6 +30,13 @@ data class ClockReading(val trustedMs: Long, val checkpoint: ClockCheckpoint, va
  * Owner's date and time lock covers that.)
  */
 object TrustedClockMath {
+    /**
+     * With automatic time on, a single jump of the wall clock this far beyond the phone's running time (same
+     * boot) is not believed, whatever its source: one bogus network value (the year 2099) would otherwise carry
+     * the trusted clock, the day keys and a punishment day with it for good.
+     */
+    const val MAX_FORWARD_JUMP_MS = 36L * 60 * 60 * 1000
+
     fun read(
         wallNow: Long,
         elapsedNow: Long,
@@ -51,7 +58,7 @@ object TrustedClockMath {
                 nowElapsed = elapsedNow,
                 nowBootCount = bootCountNow
             )
-        } else if (!autoTimeOn && jumpedForward(wallNow, elapsedNow, bootCountNow, last, toleranceMs)) {
+        } else if (jumpedForward(wallNow, elapsedNow, bootCountNow, last, if (autoTimeOn) MAX_FORWARD_JUMP_MS else toleranceMs)) {
             distrusted = true
             trusted = last.trustedMs + (elapsedNow - last.elapsedMs)
         } else {

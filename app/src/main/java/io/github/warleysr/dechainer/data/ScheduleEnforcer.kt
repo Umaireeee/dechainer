@@ -174,8 +174,13 @@ object ScheduleEnforcer : AppBlockEngine() {
             // service clearing DISALLOW_INSTALL_APPS on connect) may have lifted it mid-window.
             if (!current.getBoolean(key)) {
                 try {
+                    // Ownership is written before the restriction is set (as for apps): a process that dies in between
+                    // would otherwise leave a restriction on that this app no longer knows it must lift.
+                    if (key !in owned) {
+                        owned += key
+                        prefs.edit(commit = true) { putStringSet(KEY_OWNED_RESTRICTIONS, owned.toSet()) }
+                    }
                     dpm.addUserRestriction(admin, key)
-                    owned += key
                 } catch (e: Exception) {
                     Timber.w(e, "Schedule: could not add restriction $key")
                 }
@@ -185,10 +190,11 @@ object ScheduleEnforcer : AppBlockEngine() {
         (owned - desired).forEach { key ->
             try {
                 dpm.clearUserRestriction(admin, key)
+                // Only a restriction that really came off is let go: a refused clear stays owned and is tried again.
+                owned -= key
             } catch (e: Exception) {
                 Timber.w(e, "Schedule: could not clear restriction $key")
             }
-            owned -= key
         }
 
         if (owned != initiallyOwned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_RESTRICTIONS, owned) }
@@ -203,6 +209,9 @@ object ScheduleEnforcer : AppBlockEngine() {
             BrowserRestrictionsManager(ctx).applyRestrictions()
         } catch (e: Exception) {
             Timber.w(e, "Schedule: could not update browser blocklist")
+            // Put the old value back so the next pass sees a difference and tries again; left as it was, a failed
+            // start of a window would stay unblocked for the whole window.
+            prefs.edit(commit = true) { putStringSet(KEY_ACTIVE_SITES, previous) }
         }
     }
 
@@ -379,18 +388,19 @@ object ScheduleEnforcer : AppBlockEngine() {
         val pm = ctx.packageManager
         return try {
             val enabled = pm.getComponentEnabledSetting(alias) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            if (on && !enabled) {
-                pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+            if (on) {
+                if (!enabled) pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
                 val home = IntentFilter(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     addCategory(Intent.CATEGORY_DEFAULT)
                 }
                 try {
+                    // Every pass, not only when the alias was just enabled: a process killed between the two steps
+                    // would otherwise leave the alias on with no preference, looking finished for good. Idempotent.
                     dpm.addPersistentPreferredActivity(admin, home, alias)
                 } catch (e: Exception) {
-                    // Half done is worse than not done: an enabled alias with no preference set would
-                    // look finished on the next sync and never be retried. Undo it so it is.
-                    pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
+                    // Half done is worse than not done: undo the alias so the next pass starts over.
+                    if (!enabled) pm.setComponentEnabledSetting(alias, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
                     throw e
                 }
             } else if (!on && enabled) {

@@ -62,6 +62,9 @@ class DechainerApplication : Application() {
                 } catch (e: Exception) {
                     Timber.w(e, "Browser policies not refreshed after an install")
                 }
+                // A reinstalled or newly installed app that a running schedule or limit covers must be suspended now,
+                // not at some later wake-up.
+                LockEngine.requestSync(this@DechainerApplication)
             }
         }
     }

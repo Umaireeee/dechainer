@@ -152,11 +152,13 @@ object LockRestrictions {
     const val FACTORY_RESET = "no_factory_reset"
     const val ADD_USER = "no_add_user"
     const val USER_SWITCH = "no_user_switch"
+    const val APPS_CONTROL = "no_control_apps"
 
     /**
      * A brick closes every way around it for exactly as long as the block runs: safe mode (boots
      * without this app), USB debugging (ADB can lift the pin), a factory reset, and other users (a
-     * guest user has no brick).
+     * guest user has no brick), and Force stop and Clear data (the second layer next to the protected-package list,
+     * which some phones' Settings screens ignore).
      */
-    val BRICK = setOf(SAFE_BOOT, DEBUGGING, FACTORY_RESET, ADD_USER, USER_SWITCH)
+    val BRICK = setOf(SAFE_BOOT, DEBUGGING, FACTORY_RESET, ADD_USER, USER_SWITCH, APPS_CONTROL)
 }

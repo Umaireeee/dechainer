@@ -159,9 +159,10 @@ object LockEngine {
                 plan = plan(now, zone, gathered.state)
             }
             _status.value = plan.brickStatus
-            ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
-            SystemGuard.apply(ctx)
-            DnsGuard.enforce(ctx)
+            try { ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras) } catch (e: Throwable) { Timber.e(e, "Plan not applied") }
+            // Each guard on its own: one failing must not skip the others.
+            try { SystemGuard.apply(ctx) } catch (e: Throwable) { Timber.e(e, "System guard failed") }
+            try { DnsGuard.enforce(ctx) } catch (e: Throwable) { Timber.e(e, "DNS guard failed") }
         } finally {
             inPass.set(false)
         }

@@ -26,13 +26,14 @@ class ScheduleReceiver : BroadcastReceiver() {
                 // is harmless. First, so the sync below plans from a settled state.
                 val fresh = intent.action == Intent.ACTION_BOOT_COMPLETED ||
                     intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
-                Pomodoro.rearm(ctx)
+                // Each step on its own: one that throws must never stop the sync, which is what re-applies the lock.
+                try { Pomodoro.rearm(ctx) } catch (e: Throwable) { Timber.e(e, "Pomodoro not re-armed") }
                 LockEngine.sync(ctx)
                 // The pin does not survive a reboot or an update: if any brick runs, open Déchaîner so
                 // it pins again. Only then; on any other wake-up it would drag you out of an allowed app.
-                if (fresh) LockEngine.reopenIfBrick(ctx)
+                if (fresh) try { LockEngine.reopenIfBrick(ctx) } catch (e: Throwable) { Timber.e(e, "Brick screen not reopened") }
                 // A weekly report that came due while the phone was off is queued again (blueprint 6.5).
-                if (fresh) io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(ctx)
+                if (fresh) try { io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(ctx) } catch (e: Throwable) { Timber.e(e, "Report not queued") }
             } finally {
                 pending.finish()
             }

@@ -188,4 +188,16 @@ class TrustedClockMathTest {
         assertFalse(r.wallDistrusted)
         assertEquals(t0 + 24 * hour, r.trustedMs)
     }
+
+    @Test
+    fun aBogusHugeJumpIsNotBelievedEvenWithAutomaticTimeOn_andTheClockRecoversWhenTheWallComesBack() {
+        val first = read(t0, 1_000, 7, null)
+        val bogus = TrustedClockMath.read(t0 + 800 * 24 * hour, 1_000 + 10 * minute, 7, first.checkpoint, autoTimeOn = true)
+        assertTrue(bogus.wallDistrusted)
+        assertEquals(t0 + 10 * minute, bogus.trustedMs)
+        // The wall is honest again: it agrees with the running time, so it is followed.
+        val back = TrustedClockMath.read(t0 + 20 * minute, 1_000 + 20 * minute, 7, bogus.checkpoint, autoTimeOn = true)
+        assertFalse(back.wallDistrusted)
+        assertEquals(t0 + 20 * minute, back.trustedMs)
+    }
 }
