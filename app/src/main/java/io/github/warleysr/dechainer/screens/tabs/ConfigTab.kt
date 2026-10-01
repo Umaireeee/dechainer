@@ -156,11 +156,11 @@ fun ConfigTab(
             item {
                 GroupedRow(GroupPos.Bottom) { ListItem(
                     colors = groupedRowColors(),
-                    headlineContent = { Text(stringResource(R.string.impulse_lock)) },
-                    supportingContent = { Text(stringResource(R.string.impulse_lock_desc)) },
+                    headlineContent = { Text(stringResource(R.string.entry_challenge)) },
+                    supportingContent = { Text(stringResource(R.string.entry_challenge_desc)) },
                     leadingContent = { IconTile(Icons.Outlined.LockClock) },
                     trailingContent = { Chevron() },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("impulse_lock") }
+                    modifier = Modifier.clickable { navViewModel.navigateTo("entry_challenge") }
                 ) }
             }
             item { SectionHeader(stringResource(R.string.config_section_security)) }

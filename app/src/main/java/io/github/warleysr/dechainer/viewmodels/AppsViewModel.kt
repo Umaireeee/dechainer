@@ -83,7 +83,7 @@ class AppsViewModel : ViewModel() {
                 (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true))
         }.sortedWith(compareByDescending<AppItem> { it.isSuspended }.thenBy { it.name.lowercase() })
 
-    /** The schedule or impulse lock holding [pkg] right now, if any. Those can't be lifted by hand. */
+    /** The schedule or brick holding [pkg] right now, if any. Those can't be lifted by hand. */
     // Fresh, not cached: a focus lock starts and ends many times a day, and a stale answer here
     // would let a tap lift an app that a schedule or session still holds. A fresh answer can mean
     // a full sync, so it's only ever asked off the main thread (see requestUnsuspend).

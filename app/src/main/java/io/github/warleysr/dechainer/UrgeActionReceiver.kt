@@ -6,12 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
-import io.github.warleysr.dechainer.data.RideLock
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.UrgeActions
 import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Pomodoro
-import io.github.warleysr.dechainer.security.SecurityManager
 import timber.log.Timber
 
 /**
@@ -33,18 +31,9 @@ class UrgeActionReceiver : BroadcastReceiver() {
         Thread {
             try {
                 when (kind) {
-                    UrgeActions.Kind.IMPULSE_BLOCK -> {
-                        val remaining = SecurityManager.getImpulseBlockRemainingTime(ctx).coerceAtLeast(0L)
-                        if (UrgeActions.shouldStartImpulse(remaining, minutes)) {
-                            SecurityManager.startImpulseBlock(ctx, minutes)
-                        }
-                    }
-                    UrgeActions.Kind.RIDE_LOCK -> {
-                        // A request can only make a running ride lock longer, never shorter.
-                        if (UrgeActions.shouldStartImpulse(RideLock.remainingMillis(ctx), minutes)) {
-                            RideLock.start(ctx, minutes)
-                        }
-                    }
+                    // Both ask for the urge lock; the rule decides (never extended, not inside a focus
+                    // block or a punishment day, not without Device Owner).
+                    UrgeActions.Kind.IMPULSE_BLOCK, UrgeActions.Kind.RIDE_LOCK -> LockEngine.startUrgeLock(ctx)
                     UrgeActions.Kind.FOCUS_BLOCK -> {
                         Pomodoro.ensureLoaded(ctx)
                         val started = Pomodoro.startBlock(ctx, TrustedClock.now(ctx) + minutes * 60_000L)

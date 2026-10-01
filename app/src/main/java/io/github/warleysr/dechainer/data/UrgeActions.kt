@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.Rules
+
 /**
  * The commands a companion app (the urge journal) may send to Déchaîner, and the rules that keep
  * them safe. They only ever *tighten*: nothing here can end a block, edit a schedule or touch the
@@ -18,44 +20,31 @@ object UrgeActions {
     const val EXTRA_INTENTION = "intention"
 
     enum class Kind {
-        /** The panic button, remotely: locks Déchaîner and suspends the apps the panic button is set to. */
+        /** The panic button, remotely: starts the urge lock. The length is fixed, so the minutes are ignored. */
         IMPULSE_BLOCK,
 
         /** A committed focus block: apps lock during sessions, and leaving early takes the recovery code. */
         FOCUS_BLOCK,
 
         /**
-         * The ride lock: every app with an icon is suspended except calls, emergency apps, the alarm
-         * clock, Déchaîner and the journal itself, for a few minutes. It is what makes "ride it out
-         * with nowhere to go" true, instead of only pausing the apps chosen for the panic button.
+         * The journal's ride: the same urge lock as [IMPULSE_BLOCK] (every app with an icon is
+         * suspended except calls, the alarm clock, Déchaîner and the journal itself). Both names are
+         * kept so the journal keeps working unchanged.
          */
         RIDE_LOCK
     }
 
-    // Kept equal to SecurityManager's impulse bounds (15 min to 6 h).
-    const val IMPULSE_MIN_MINUTES = 15
-    const val IMPULSE_MAX_MINUTES = 360
-
     const val FOCUS_MIN_MINUTES = 25
     const val FOCUS_MAX_MINUTES = 120
 
-    // Short on purpose: nothing can end a ride lock early, so it is capped at half an hour.
-    const val RIDE_MIN_MINUTES = 10
-    const val RIDE_MAX_MINUTES = 30
-
     fun parseKind(raw: String?): Kind? = Kind.entries.firstOrNull { it.name == raw }
 
-    /** Pulls a requested duration into the allowed range; a missing or bad value becomes the minimum. */
-    fun clampMinutes(kind: Kind, minutes: Int): Int = when (kind) {
-        Kind.IMPULSE_BLOCK -> minutes.coerceIn(IMPULSE_MIN_MINUTES, IMPULSE_MAX_MINUTES)
-        Kind.FOCUS_BLOCK -> minutes.coerceIn(FOCUS_MIN_MINUTES, FOCUS_MAX_MINUTES)
-        Kind.RIDE_LOCK -> minutes.coerceIn(RIDE_MIN_MINUTES, RIDE_MAX_MINUTES)
-    }
-
     /**
-     * Whether a new impulse block should replace the running one. Only if it would last longer:
-     * a request must never shorten a block that is already running.
+     * Pulls a requested duration into the allowed range; a missing or bad value becomes the minimum.
+     * An urge lock has one length, [Rules.URGE_LOCK_MS], whatever was asked.
      */
-    fun shouldStartImpulse(remainingMillis: Long, requestedMinutes: Int): Boolean =
-        remainingMillis < requestedMinutes * 60_000L
+    fun clampMinutes(kind: Kind, minutes: Int): Int = when (kind) {
+        Kind.FOCUS_BLOCK -> minutes.coerceIn(FOCUS_MIN_MINUTES, FOCUS_MAX_MINUTES)
+        Kind.IMPULSE_BLOCK, Kind.RIDE_LOCK -> (Rules.URGE_LOCK_MS / 60_000L).toInt()
+    }
 }

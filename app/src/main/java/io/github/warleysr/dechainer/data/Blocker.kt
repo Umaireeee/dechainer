@@ -9,7 +9,7 @@ import timber.log.Timber
 
 /**
  * How Déchaîner's own blocks — schedules, time windows, daily and group limits, reopening
- * cooldowns, impulse lock — take an app away: by suspending it. The icon stays, greyed out, and
+ * cooldowns, the urge lock — take an app away: by suspending it. The icon stays, greyed out, and
  * everything about the app (permissions, settings, notifications, widgets) is kept.
  *
  * Earlier builds could hide apps instead. Android treats a hidden app as uninstalled, and on many

@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.activities
 
-import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import androidx.biometric.AuthenticationRequest
 import androidx.biometric.AuthenticationResult
 import androidx.biometric.AuthenticationResultCallback
@@ -13,7 +12,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,11 +26,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
+import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.screens.challenges.MathChallenge
 import io.github.warleysr.dechainer.screens.challenges.WordChallenge
 import io.github.warleysr.dechainer.security.SecurityManager
-import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Entry gate of the app. Authentication is deliberately *not* triggered on open: the panic button
@@ -41,16 +38,14 @@ import kotlin.time.Duration.Companion.seconds
  */
 @Composable
 fun LockScreen(onAuthenticated: () -> Unit) {
-    var challengeMode by remember { mutableStateOf<SecurityManager.ImpulseLockMode?>(null) }
+    var challengeMode by remember { mutableStateOf<SecurityManager.EntryChallenge?>(null) }
     var authError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    // Read at once, so a running impulse lock never shows the way in, even for one frame.
-    var impulseRemaining by remember { mutableLongStateOf(SecurityManager.getImpulseBlockRemainingTime(context)) }
 
     fun proceedAfterAuthentication() {
         authError = null
-        val mode = SecurityManager.getImpulseLockMode(context)
-        if (mode == SecurityManager.ImpulseLockMode.OFF) onAuthenticated() else challengeMode = mode
+        val mode = SecurityManager.getEntryChallenge(context)
+        if (mode == SecurityManager.EntryChallenge.OFF) onAuthenticated() else challengeMode = mode
     }
 
     val launcher = rememberAuthenticationLauncher(
@@ -100,16 +95,11 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         }
     }
 
-    RepeatWhileVisible(1000) {
-        impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-    }
-
     Surface(modifier = Modifier.fillMaxSize()) {
-        // A running impulse lock wins over a challenge that was already on screen.
-        if (challengeMode != null && impulseRemaining <= 0) {
+        if (challengeMode != null) {
             when (challengeMode) {
-                SecurityManager.ImpulseLockMode.NORMAL -> MathChallenge(onSuccess = onAuthenticated)
-                SecurityManager.ImpulseLockMode.HARD -> WordChallenge(onSuccess = onAuthenticated)
+                SecurityManager.EntryChallenge.NORMAL -> MathChallenge(onSuccess = onAuthenticated)
+                SecurityManager.EntryChallenge.HARD -> WordChallenge(onSuccess = onAuthenticated)
                 else -> onAuthenticated()
             }
             return@Surface
@@ -122,45 +112,40 @@ fun LockScreen(onAuthenticated: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            if (impulseRemaining > 0) {
-                ImpulseCountdown(impulseRemaining)
-            } else {
-                if (DeviceOwnerRepository.isDeviceOwner()) {
-                    BigActionButton(
-                        icon = Icons.Filled.Warning,
-                        title = stringResource(R.string.having_impulses),
-                        subtitle = stringResource(R.string.having_impulses_subtitle),
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        height = 96.dp,
-                        onClick = {
-                            SecurityManager.startImpulseBlock(context)
-                            impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
+            if (DeviceOwnerRepository.isDeviceOwner()) {
+                // The urge lock: ten minutes, only the alarm clock works. The rule lives in the engine;
+                // the main screen takes over as soon as it is stored.
                 BigActionButton(
-                    icon = Icons.Outlined.LockOpen,
-                    title = stringResource(R.string.access_app),
-                    subtitle = stringResource(R.string.access_app_subtitle),
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    height = 88.dp,
-                    onClick = { launchAuthentication() }
+                    icon = Icons.Filled.Warning,
+                    title = stringResource(R.string.having_impulses),
+                    subtitle = stringResource(R.string.having_impulses_subtitle),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    height = 96.dp,
+                    onClick = { Thread { LockEngine.startUrgeLock(context) }.start() }
                 )
 
-                if (authError != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        authError!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            BigActionButton(
+                icon = Icons.Outlined.LockOpen,
+                title = stringResource(R.string.access_app),
+                subtitle = stringResource(R.string.access_app_subtitle),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                height = 88.dp,
+                onClick = { launchAuthentication() }
+            )
+
+            if (authError != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    authError!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -202,47 +187,6 @@ private fun BigActionButton(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun ImpulseCountdown(remainingMillis: Long) {
-    val totalSeconds = remainingMillis / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    // The block can now be configured up to 6 hours, so the hour part is only shown when there is one.
-    val countdown = if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
-    else "%02d:%02d".format(minutes, seconds)
-
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(48.dp))
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                stringResource(R.string.impulse_timer_active),
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = countdown,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }

@@ -15,6 +15,10 @@ import timber.log.Timber
  *         -a io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK --ei minutes 1
  *
  * - DEBUG_FOCUS_BLOCK: a focus block of `minutes` (default 1), with no 10 minute minimum.
+ * - DEBUG_URGE_LOCK: an urge lock of `minutes` (default 1 instead of the real ten), through the real rule:
+ *   a second one while it runs changes nothing, and it is refused inside a focus block or a punishment day.
+ * - DEBUG_PUNISHMENT_DAY: a punishment day of `minutes` (default 5) starting now. Settings are frozen
+ *   for it and every phone-side effect is the real one; it ends by the time like the real day.
  * - DEBUG_DROP_ALARMS: forgets the alarms that would end the block, so the next wake-up (unlock,
  *   opening the app) has to end it from the time alone.
  * - DEBUG_ABORT_BRICK: runs the crash-loop breaker's abort at once.
@@ -31,6 +35,15 @@ class DebugControlReceiver : BroadcastReceiver() {
                     ACTION_FOCUS_BLOCK -> {
                         val minutes = intent.getIntExtra(EXTRA_MINUTES, 1).coerceIn(1, 60)
                         Timber.i("Debug: focus block of %d min, started=%s", minutes, Pomodoro.debugStartBlock(ctx, minutes))
+                    }
+                    ACTION_URGE_LOCK -> {
+                        val minutes = intent.getIntExtra(EXTRA_MINUTES, 1).coerceIn(1, 30)
+                        Timber.i("Debug: urge lock of %d min, result=%s", minutes, LockEngine.debugStartUrgeLock(ctx, minutes))
+                    }
+                    ACTION_PUNISHMENT_DAY -> {
+                        val minutes = intent.getIntExtra(EXTRA_MINUTES, 5).coerceIn(1, 120)
+                        LockEngine.debugStartPunishment(ctx, minutes)
+                        Timber.i("Debug: punishment day of %d min", minutes)
                     }
                     ACTION_DROP_ALARMS -> LockEngine.debugDropAlarms(ctx)
                     ACTION_CRASH -> {
@@ -51,6 +64,8 @@ class DebugControlReceiver : BroadcastReceiver() {
 
     private companion object {
         const val ACTION_FOCUS_BLOCK = "io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK"
+        const val ACTION_URGE_LOCK = "io.github.warleysr.dechainer.DEBUG_URGE_LOCK"
+        const val ACTION_PUNISHMENT_DAY = "io.github.warleysr.dechainer.DEBUG_PUNISHMENT_DAY"
         const val ACTION_DROP_ALARMS = "io.github.warleysr.dechainer.DEBUG_DROP_ALARMS"
         const val ACTION_ABORT_BRICK = "io.github.warleysr.dechainer.DEBUG_ABORT_BRICK"
         const val ACTION_CRASH = "io.github.warleysr.dechainer.DEBUG_CRASH"

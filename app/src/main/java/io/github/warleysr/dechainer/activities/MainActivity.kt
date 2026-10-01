@@ -1,6 +1,9 @@
 package io.github.warleysr.dechainer.activities
 
 import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockMode
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.screens.LockedHomeScreen
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -64,12 +67,13 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     /**
-     * Pins the phone to Déchaîner while a brick block runs, and releases it when it ends (or is
-     * stopped with the recovery code). Only as device owner: without it, Android would show its
+     * Pins the phone to Déchaîner while any brick runs (an urge lock, a focus block, a punishment
+     * day), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
+     * let through ([io.github.warleysr.dechainer.lock.BrickStatus.ownerApps]). Only as device owner: without it, Android would show its
      * own "pin this app?" prompt instead. If the app crashes, Android drops the pin by itself:
      * the phone is never trapped, and suspension keeps blocking underneath.
      */
-    private fun syncBrickPin(brick: Boolean) {
+    private fun syncBrickPin(brick: Boolean, ownerApps: Set<String> = emptySet()) {
         try {
             val dpm = getSystemService(android.app.admin.DevicePolicyManager::class.java)
             if (!dpm.isDeviceOwnerApp(packageName)) return
@@ -79,7 +83,7 @@ class MainActivity : ComponentActivity() {
                 // Setting up the pin can't stop the pin itself: a refused setting is logged and
                 // the phone is pinned anyway.
                 try {
-                    io.github.warleysr.dechainer.data.DeviceOwnerRepository.prepareBrick(this, Pomodoro.allowedApps.value)
+                    io.github.warleysr.dechainer.data.DeviceOwnerRepository.prepareBrick(this, ownerApps)
                 } catch (e: Exception) {
                     timber.log.Timber.w(e, "Brick setup partly refused")
                 }
@@ -97,8 +101,10 @@ class MainActivity : ComponentActivity() {
         // Coming back to the app is a wake-up: the lock is recomputed from stored data, so a block
         // that outlived a lost alarm ends now (blueprint 5.4, R1).
         LockEngine.requestSync(this)
-        // Coming back mid-block (say, after answering a call): pin again.
-        if (Pomodoro.brickActive()) syncBrickPin(true)
+        // Coming back mid-brick (say, after answering a call): pin again.
+        val status = LockEngine.refreshStatus(this)
+        if (status != null) syncBrickPin(true, status.ownerApps)
+        else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
     }
 
 
@@ -115,7 +121,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         // Unlocking once must not keep the app open for days: after a real absence the unlock
-        // (and the impulse challenge) is asked again. A short trip to Settings keeps you in.
+        // (and the entry challenge) is asked again. A short trip to Settings keeps you in.
         if (authenticated.value && leftAt > 0L &&
             android.os.SystemClock.elapsedRealtime() - leftAt > RELOCK_AFTER_MS
         ) {
@@ -134,11 +140,26 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         Pomodoro.ensureLoaded(this)
+        // The first frame already knows whether something holds the phone.
+        LockEngine.refreshStatus(this)
         setContent {
-            // The brick: pinned to this screen for the whole of a focus block.
+            // The brick: pinned to this screen for as long as anything holds the phone.
             val focusState by Pomodoro.state.collectAsState()
-            val brick = focusState.inBlock
-            LaunchedEffect(brick) { syncBrickPin(brick) }
+            val lockStatus by LockEngine.status.collectAsState()
+            // An urge lock or a punishment day shows the locked screen; a focus block shows Focus.
+            // When they overlap, the one that ends last is the one named.
+            val lockedHome = lockStatus?.takeIf { it.primary != LockMode.FOCUS_BLOCK }
+            val brick = focusState.inBlock || lockStatus != null
+            val pinApps = lockStatus?.ownerApps ?: Pomodoro.allowedApps.value
+            LaunchedEffect(brick, pinApps) { syncBrickPin(brick, pinApps) }
+            // The status ends with the clock: when the end time has passed, ask for the plan again.
+            RepeatWhileVisible(1000) {
+                val ends = LockEngine.status.value?.endsAt ?: return@RepeatWhileVisible
+                if (TrustedClock.now(this@MainActivity) >= ends) {
+                    LockEngine.refreshStatus(this@MainActivity)
+                    LockEngine.requestSync(this@MainActivity)
+                }
+            }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
                 viewModel.addShizukuListener()
@@ -153,20 +174,16 @@ class MainActivity : ComponentActivity() {
                 // In a block, Back does nothing: on the main screen it would close the app, and
                 // closing the pinned screen ends the pin. Registered last, so it wins.
                 BackHandler(enabled = brick) { }
-                // And a block always shows the Focus page, wherever you were.
-                LaunchedEffect(brick) {
-                    if (brick && currentScreen != "focus") navViewModel.navigateTo("focus")
+                // And a focus block always shows the Focus page, wherever you were.
+                LaunchedEffect(brick, lockedHome) {
+                    if (brick && lockedHome == null && currentScreen != "focus") navViewModel.navigateTo("focus")
                 }
 
-                // An impulse lock locks Déchaîner itself, also when you are already inside (the
-                // journal can start one from outside): back to the countdown, and any open recovery
-                // session ends, so the code can't be used until the lock runs out.
-                var impulseOn by remember { mutableStateOf(SecurityManager.getImpulseBlockRemainingTime(this) > 0) }
-                RepeatWhileVisible(1000) {
-                    impulseOn = SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) > 0
-                }
-                LaunchedEffect(impulseOn) {
-                    if (impulseOn) {
+                // An urge lock or a punishment day locks Déchaîner itself, also when you are already
+                // inside (the journal can start one from outside): the way in closes, and any open
+                // recovery session ends, so the code can't be used until the lock runs out.
+                LaunchedEffect(lockedHome != null) {
+                    if (lockedHome != null) {
                         authenticated.value = false
                         SecurityManager.endSession()
                     }
@@ -205,7 +222,8 @@ class MainActivity : ComponentActivity() {
                             title = {
                                 Text(
                                     stringResource(
-                                        if (brick) R.string.focus_tab
+                                        if (lockedHome != null) R.string.locked_title
+                                        else if (brick) R.string.focus_tab
                                         else if (!authenticated.value) R.string.app_name else when (currentScreen) {
                                             "focus" -> R.string.focus_tab
                                             "focus_log" -> R.string.focus_log
@@ -213,7 +231,7 @@ class MainActivity : ComponentActivity() {
                                             "config" -> R.string.settings
                                             "restrictions" -> R.string.protections
                                             "schedules", "schedule_editor" -> R.string.schedules
-                                            "impulse_lock" -> R.string.impulse_lock
+                                            "entry_challenge" -> R.string.entry_challenge
                                             else -> R.string.app_name
                                         }
                                     )
@@ -296,7 +314,10 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
 
-                    if (brick)
+                    if (lockedHome != null)
+                        // An urge lock or a punishment day: when it ends and why, nothing to tap.
+                        LockedHomeScreen(lockedHome, Modifier.padding(innerPadding))
+                    else if (brick)
                         // The brick: only this page. It has nothing to protect (no settings, no
                         // way out), so it doesn't wait behind the unlock screen either.
                         Box(modifier = Modifier.padding(innerPadding)) {
@@ -306,12 +327,7 @@ class MainActivity : ComponentActivity() {
                         SetupRecovery(innerPadding)
                     else {
                         if (!authenticated.value)
-                            LockScreen(
-                                // A challenge finished after an impulse lock started doesn't let you in.
-                                onAuthenticated = {
-                                    if (SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) <= 0) authenticated.value = true
-                                }
-                            )
+                            LockScreen(onAuthenticated = { authenticated.value = true })
                         else
                             Box(modifier = Modifier.padding(innerPadding)) {
                                 // A soft cross-fade between screens: it answers the tap without
@@ -331,7 +347,7 @@ class MainActivity : ComponentActivity() {
                                     "schedule_editor" -> ScheduleEditorScreen()
                                     "config" -> ConfigTab()
                                     "restrictions" -> RestrictionsTab()
-                                    "impulse_lock" -> ImpulseLockScreen()
+                                    "entry_challenge" -> EntryChallengeScreen()
                                     "setup_device_owner" -> SetupDeviceOwnerPrivileges()
                                 }
                                 }

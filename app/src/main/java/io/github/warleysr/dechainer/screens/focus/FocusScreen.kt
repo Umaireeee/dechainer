@@ -96,7 +96,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.data.RideLock
+import io.github.warleysr.dechainer.data.JournalLink
 import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Phase
 import io.github.warleysr.dechainer.focus.Pomodoro
@@ -779,15 +779,15 @@ private fun DialogSection(text: String) {
 private fun RideItOutButton() {
     val context = LocalContext.current
     val installed = remember {
-        runCatching { context.packageManager.getPackageInfo(RideLock.JOURNAL_PACKAGE, 0) }.isSuccess
+        runCatching { context.packageManager.getPackageInfo(JournalLink.PACKAGE, 0) }.isSuccess
     }
     if (!installed) return
     Spacer(Modifier.height(24.dp))
     OutlinedButton(
         onClick = {
             runCatching {
-                context.packageManager.getLaunchIntentForPackage(RideLock.JOURNAL_PACKAGE)?.let {
-                    context.startActivity(it.putExtra(RideLock.JOURNAL_RIDE_EXTRA, RideLock.JOURNAL_RIDE_VALUE))
+                context.packageManager.getLaunchIntentForPackage(JournalLink.PACKAGE)?.let {
+                    context.startActivity(it.putExtra(JournalLink.RIDE_EXTRA, JournalLink.RIDE_VALUE))
                 }
             }
         },

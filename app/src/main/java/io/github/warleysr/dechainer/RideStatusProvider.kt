@@ -5,9 +5,10 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
-import io.github.warleysr.dechainer.data.RideLock
-import io.github.warleysr.dechainer.security.SecurityManager
+import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockStateStore
 
 /**
  * Lets the urge journal ask what is really in force, instead of trusting that its request worked.
@@ -22,17 +23,12 @@ class RideStatusProvider : ContentProvider() {
         selectionArgs: Array<out String>?, sortOrder: String?
     ): Cursor? {
         val ctx = context ?: return null
-        val now = System.currentTimeMillis()
+        val now = TrustedClock.now(ctx)
         val owner = try { DeviceOwnerRepository.isDeviceOwner() } catch (_: Exception) { false }
+        val urgeEndsAt = if (owner) LockStateStore.urge(ctx).endsAt else 0L
+        val brickEndsAt = LockEngine.refreshStatus(ctx)?.endsAt ?: 0L
         val cursor = MatrixCursor(COLUMNS)
-        cursor.addRow(
-            statusRow(
-                deviceOwner = owner,
-                rideLockMillis = RideLock.remainingMillis(ctx, now),
-                impulseMillis = SecurityManager.getImpulseBlockRemainingTime(ctx),
-                now = now
-            )
-        )
+        cursor.addRow(statusRow(owner, urgeEndsAt, brickEndsAt, now))
         return cursor
     }
 
@@ -44,13 +40,18 @@ class RideStatusProvider : ContentProvider() {
         throw UnsupportedOperationException("Read only")
 
     companion object {
-        val COLUMNS = arrayOf("device_owner", "ride_lock_until", "impulse_until")
+        /** `ride_lock_until` is the journal's old name for the urge lock's end, kept so it keeps working. */
+        val COLUMNS = arrayOf("device_owner", "urge_lock_until", "brick_until", "ride_lock_until")
 
-        /** One row: 1 or 0 for Device Owner, and when each lock ends (0 when it is not running). */
-        internal fun statusRow(deviceOwner: Boolean, rideLockMillis: Long, impulseMillis: Long, now: Long): Array<Any> = arrayOf(
-            if (deviceOwner) 1 else 0,
-            if (rideLockMillis > 0L) now + rideLockMillis else 0L,
-            if (impulseMillis > 0L) now + impulseMillis else 0L
-        )
+        /**
+         * One row: 1 or 0 for Device Owner, when the urge lock ends, when the phone unlocks (any
+         * brick: urge lock, focus block, punishment day), and the urge lock's end again under its old
+         * name. A lock that is not running is 0.
+         */
+        internal fun statusRow(deviceOwner: Boolean, urgeEndsAt: Long, brickEndsAt: Long, now: Long): Array<Any> {
+            val urge = if (urgeEndsAt > now) urgeEndsAt else 0L
+            val brick = if (brickEndsAt > now) brickEndsAt else 0L
+            return arrayOf(if (deviceOwner) 1 else 0, urge, brick, urge)
+        }
     }
 }
