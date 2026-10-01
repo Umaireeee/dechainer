@@ -131,7 +131,7 @@ Say honestly whether this week's data shows last week's advice helped, did not h
 ## Next week
 Exactly three specific actions, each aimed at a link you named.
 
-Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about three minutes. Write the whole reply in the language the data is in, headings included."""
+Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about three minutes. Write the whole reply in English, headings included."""
 
     /** Wraps [text] in `<tag>` ... `</tag>`, after removing any such tag the text itself carries, so it cannot close its own box. */
     fun delimit(tag: String, text: String): String {

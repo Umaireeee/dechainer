@@ -52,7 +52,10 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
 
     /** Entries waiting for a deep dive, oldest first: the retry job's list. */
     fun pendingDeepDives(): List<UrgeEntry> =
-        list("status = ?", arrayOf(UrgeStatus.PENDING_DEEPDIVE.name)).sortedBy { it.createdAt }
+        database.readableDatabase.query(
+            TABLE, COLUMNS, "status = ?", arrayOf(UrgeStatus.PENDING_DEEPDIVE.name),
+            null, null, "created_at ASC"
+        ).use { c -> buildList { while (c.moveToNext()) read(c)?.let { add(it) } } }
 
     /** Entries created in [from, to), oldest first (the weekly report's read). */
     fun between(from: Long, to: Long): List<UrgeEntry> =
