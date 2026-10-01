@@ -729,4 +729,7 @@
     <string name="data_wipe_confirm_title">Wipe all data?</string>
     <string name="data_wipe_confirm">This cannot be undone. Nothing that sets a punishment is touched.</string>
     <string name="data_wipe_done">Wiped: %1$d removed, %2$d kept because the rules say so.</string>
+    <string name="info_reports_what">Your weekly reports and the daily checklist results.</string>
+    <string name="info_reports_does">When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, sessions and goals. It never sees your raw urge notes.</string>
+    <string name="info_reports_how">It needs a key, your consent and a connection. If the phone was off, the report is made the next time it is on and online. Deleting and backup are under Your data.</string>
 </resources>
