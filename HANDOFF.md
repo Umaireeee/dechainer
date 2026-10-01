@@ -27,8 +27,8 @@ Both are signed with the same key (release workflow), because the link between t
 
 ## Build and release
 - `.github/workflows/build.yml` = **CI** (unit tests + debug APK) on every push.
-- `.github/workflows/release.yml` = **Release build (tested)**, run by hand from the Actions tab on the wanted branch. Runs unit tests, builds and signs both apps, runs emulator tests for Déchaîner, uploads artifacts **DECHAINER-SCHEDULES-RELEASE-TESTED** and **URGE-JOURNAL-RELEASE**. Needs repo secrets `SIGNING_PASSWORD` and `SIGNING_KEY_B64` (already set; never re-run `make-key.yml`, and never lose the key: updates must use the same one).
-- Version codes are stamped from the run number in the release workflow (both apps).
+- `.github/workflows/release.yml` = **Release build (tested)**, run by hand from the Actions tab on the wanted branch. Runs unit tests, builds and signs both apps, runs emulator tests for Déchaîner, uploads artifacts **DECHAINER-SCHEDULES-RELEASE-TESTED** and **URGE-JOURNAL-RELEASE**. Needs repo secrets `SIGNING_PASSWORD` and `SIGNING_KEY_B64` (already set; `make-key.yml` is gone, and never lose the key: updates must use the same one).
+- Version codes come from the run number, passed as `-PversionCode` (and `-PversionNameSuffix`) to Gradle; both apps read them in their `build.gradle.kts` (no more `sed`). `build.yml` also builds the release APK and checks that no debug control is in the merged release manifest. Every action is pinned to a commit SHA.
 - The journal release build has R8 minify on (`isShrinkResources=false` on purpose: labels are looked up by name).
 
 ## State
@@ -144,3 +144,28 @@ Tests: 159 pure-logic tests pass in a scratch Kotlin/JVM project (journal Model/
 Known limit, not fixed: **all entries, with their AI reports, live in one JSON string in SharedPreferences** (`JournalStore`, up to 2,000 entries). Every change rewrites the whole string with a synchronous commit and every `all()` parses it. Fine for a year of normal use; a journal approaching the limit would feel slow on save. The fix is to keep reports (the bulk) under their own keys or files, with a migration; do that before it hurts, not after.
 
 First things to check on a phone: Settings > Why you're doing this, then a ride (the panel should appear between "Do one thing now" and "Your own rule"); the evening card's first move and the next morning's card (does the focus block's question say "You planned: ..."?); the Sunday reminder; the log's patterns after five or more entries with "What came just before?" answered; the brick screen's ride button while a block runs; a bedtime window with the journal's tile.
+
+## Update: Déchaîner 2.0, Phase 1 "Safety foundation" (2026-10-01; see BLUEPRINT.md, section 14)
+Work follows `BLUEPRINT.md` one phase at a time; this is Phase 1 only. Phases 2 to 7 are not started.
+
+What exists now (all under `app/src/main/java/io/github/warleysr/dechainer/`):
+- `lock/LockPlanner.kt` + `lock/LockModel.kt`: the pure `plan(now, zone, state)`: running holds, apps to suspend, restrictions, sites, brick or not, next wake time, and whether a stored focus block has expired. `lock/LockEngine.kt` is the Android side: `sync` (blocking) and `requestSync` (coalesced, `lock/SyncCoalescer.kt`) gather state, plan on the trusted clock and apply through `ScheduleEnforcer.applyPlan` (which is now only the apply side). Every wake-up calls it: boot, app update, alarms, receivers, `MainActivity.onResume`, the Focus tick, unlock (`USER_PRESENT`, registered in `DechainerApplication`), and Device Owner being granted.
+- Brick expiry (R1): a block with end `<= now` is over whatever the alarms did. `Pomodoro.closeExpiredBlock` closes it through the alarm's own path; the block end is also a wake-up in the plan (the backup alarm through `ScheduleReceiver`).
+- Crash-loop breaker (R2): `guard/CrashGuard.kt` (pure) and `guard/CrashHandler.kt` (installed first in `Application.onCreate`); `LockEngine.abortBrick`, never reachable from the UI.
+- `lock/SystemGuard.kt`: automatic time and zone forced on, and `setUserControlDisabledPackages` for this app (Force stop and Clear data), on every pass. Date, time and zone are locked all the time when Device Owner (the old "Lock date and time" switch is now a permanent, disabled row). `DISALLOW_APPS_CONTROL` is in the recommended system rules but not switched on by itself.
+- `clock/TrustedClock.kt` (+ pure `TrustedClockMath`): wall time that never goes backwards; checkpoint in `app_state` (`lastSeenWall` holds the trusted reading). Pomodoro, the limits' day start and the door's block end use it; alarms are aimed at wall time converted from it.
+- `store/`: `DechainerDatabase` (SQLiteOpenHelper, WAL), pure `Migrations` (schema version 1 = `app_state` only), `AppStateRepository` (reads never write; `setAll` is a transaction; `runOnce` keeps one-off migrations behind a flag), `Store`. Other tables of blueprint section 7 arrive with the phase that needs them, each as a new migration step.
+- Cold start diet: no eager `getApps()`; the locale reset, the un-hide migration and the browser-policy repair run once behind `app_state` flags; one sync per wake-up.
+- `Rules.kt`: the blueprint's fixed numbers. Debug-only controls live in `app/src/debug` (see below).
+
+Not in the blueprint but still live (carried unchanged, Phase 2 removes the first two): the impulse lock and the ride lock (`LockPlan` holds `IMPULSE_LOCK` and `RIDE_LOCK`), and the old non-brick "lock apps during a session" option (`FOCUS_SESSION`). Brick end times still live in the Pomodoro prefs; the `app_state` brick keys come with the new modes.
+
+Debug controls (debug builds only; the receiver is in the debug source set and CI fails if a release manifest contains it). On an emulator or spare phone with Device Owner set:
+- `adb shell am broadcast -n io.github.warleysr.dechainer/.debug.DebugControlReceiver -a io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK --ei minutes 1` starts a 1 minute block (no 10 minute minimum).
+- `... -a io.github.warleysr.dechainer.DEBUG_DROP_ALARMS` forgets the alarms that would end the block; then unlock or open the app: the block must end from the time alone.
+- `... -a io.github.warleysr.dechainer.DEBUG_ABORT_BRICK` runs the abort.
+
+Testing here: the sandbox has no Android SDK (`dl.google.com` is denied), so CI is the compiler. Pure logic runs in a scratch Kotlin/JVM project (Gradle 8.14 with the Maven Central mirror `maven-central.storage-download.googleapis.com`, source files picked from `app/src` by a list, `RideLock` stubbed because `LockSafety` reads one constant from it, working dir set to `app/`): 120 tests pass there. CI also runs the 14 Robolectric tests (first use of Robolectric in this repo: `@Config(sdk = [34], application = Application::class)` so the real Application does not start the engine). The CI log now lists every test result.
+
+Install order (blueprint 14A): test this phase on an emulator or spare phone first; the daily phone only after the section 15 checks that apply (1, 5, 6, 7 for this phase).
+
