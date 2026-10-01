@@ -53,6 +53,7 @@ import io.github.warleysr.dechainer.screens.setup.SetupRecovery
 import io.github.warleysr.dechainer.screens.tabs.*
 import io.github.warleysr.dechainer.screens.urge.UrgeFlowHost
 import io.github.warleysr.dechainer.screens.urge.UrgeSettingsScreen
+import io.github.warleysr.dechainer.security.AppLock
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import io.github.warleysr.dechainer.ui.theme.Motion
@@ -147,6 +148,17 @@ class MainActivity : ComponentActivity() {
         openReportRequest.longValue = id
     }
 
+    override fun onStart() {
+        super.onStart()
+        // The app lock asks again after the app has been out of sight for a while.
+        AppLock.onForeground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        AppLock.onBackground()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -201,7 +213,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 // A brick shows its own screen, whatever was open before it started.
-                val route = if (lockedHome != null && navViewModel.current() != Route.TODAY && navViewModel.current() != Route.REPORTS) Route.HOME else navViewModel.current()
+                val route = if (lockedHome != null && navViewModel.current() !in Route.OPEN_WHILE_LOCKED) Route.HOME else navViewModel.current()
                 val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
                 // The rules are confirmed once, at the end of setup; enforcement starts then (D19).
                 var rulesConfirmed by remember { mutableStateOf(io.github.warleysr.dechainer.day.DayEngine.rulesConfirmed(this@MainActivity)) }
@@ -256,9 +268,12 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
+                // The app lock (owner request): everything but Home, the urge flow and a running brick waits behind it.
+                val appLocked = AppLock.isLocked(this@MainActivity)
+                var unlockRequested by rememberSaveable { mutableStateOf(false) }
 
                 // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
-                val showTopBar = recoverySet && !urge.active && (focusBrick || route != Route.HOME)
+                val showTopBar = recoverySet && !urge.active && (focusBrick || (route != Route.HOME && !appLocked))
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -317,15 +332,27 @@ class MainActivity : ComponentActivity() {
                             FocusScreen(onOpenLog = { })
                         }
 
+                        // The owner's own PIN or pattern. Asked for the menu and every other screen; never for
+                        // Home itself or the Urge button, so an urge can always be started at once.
+                        appLocked && (route != Route.HOME || unlockRequested) ->
+                            io.github.warleysr.dechainer.screens.AppLockScreen(
+                                onUnlocked = { if (unlockRequested) menuOpen = true; unlockRequested = false },
+                                onCancel = {
+                                    unlockRequested = false
+                                    if (route != Route.HOME) navViewModel.navigateTo(Route.HOME)
+                                },
+                                modifier = Modifier.padding(innerPadding)
+                            )
+
                         route == Route.HOME -> {
                             HomeScreen(
                                 lock = lockedHome,
                                 menuEnabled = Route.menuFor(brick).isNotEmpty(),
                                 onUrge = { urgeVm.openChoice(UrgeSource.HOME) },
-                                onMenu = { menuOpen = true },
+                                onMenu = { if (appLocked) unlockRequested = true else menuOpen = true },
                                 modifier = Modifier.padding(innerPadding)
                             )
-                            if (menuOpen) {
+                            if (menuOpen && !appLocked) {
                                 MenuSheet(
                                     routes = Route.menuFor(brick),
                                     onUrge = { menuOpen = false; urgeVm.openChoice(UrgeSource.HOME) },
@@ -351,9 +378,12 @@ class MainActivity : ComponentActivity() {
                                     Route.TODAY -> io.github.warleysr.dechainer.screens.TodayScreen()
                                     Route.REPORTS -> io.github.warleysr.dechainer.screens.ReportsScreen(
                                         openReportId = openReportRequest.longValue.takeIf { it >= 0 },
-                                        onOpenData = { navViewModel.navigateTo(Route.DATA) }
+                                        onOpenData = { navViewModel.navigateTo(Route.DATA) },
+                                        onOpenJournal = { navViewModel.navigateTo(Route.JOURNAL) }
                                     )
-                                    Route.DATA -> io.github.warleysr.dechainer.screens.DataScreen()
+                                    Route.JOURNAL -> io.github.warleysr.dechainer.screens.JournalScreen(onOpen = { navViewModel.openEntry(it) })
+                                    Route.ENTRY -> io.github.warleysr.dechainer.screens.EntryScreen(navViewModel.entryId)
+                                    Route.DATA -> io.github.warleysr.dechainer.screens.DataScreen(onOpenEntry = { navViewModel.openEntry(it) })
                                     Route.APPS -> AppsScreen()
                                     Route.SCHEDULES -> SchedulesScreen()
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()
@@ -361,6 +391,7 @@ class MainActivity : ComponentActivity() {
                                     Route.RESTRICTIONS -> RestrictionsTab()
                                     Route.SETUP_DEVICE_OWNER -> SetupDeviceOwnerPrivileges()
                                     Route.URGE_SETTINGS -> UrgeSettingsScreen()
+                                    Route.APP_LOCK -> io.github.warleysr.dechainer.screens.AppLockSettingsScreen()
                                     Route.HOME -> Unit
                                 }
                             }

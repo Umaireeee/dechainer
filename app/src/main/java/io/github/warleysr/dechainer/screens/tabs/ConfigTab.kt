@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.ImageSearch
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.LockClock
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NoAdultContent
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Info
@@ -171,6 +172,21 @@ fun ConfigTab(
                     modifier = Modifier.clickable {
                         recoveryGate.run { showRecoveryDialog = true }
                     }
+                ) }
+            }
+            item {
+                val lockState = when (io.github.warleysr.dechainer.security.AppLock.kind(context)) {
+                    null -> R.string.applock_state_off
+                    io.github.warleysr.dechainer.security.AppLockKind.PIN -> R.string.applock_state_pin
+                    io.github.warleysr.dechainer.security.AppLockKind.PATTERN -> R.string.applock_state_pattern
+                }
+                GroupedRow(GroupPos.Middle) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.applock_title)) },
+                    leadingContent = { IconTile(Icons.Outlined.Lock) },
+                    trailingContent = { Chevron() },
+                    supportingContent = { Text(stringResource(lockState)) },
+                    modifier = Modifier.clickable { navViewModel.navigateTo(Route.APP_LOCK) }
                 ) }
             }
             item {
