@@ -68,8 +68,9 @@ object Pomodoro {
     /** Enough for years of daily use; the oldest go first. */
     private const val LOG_LIMIT = 5000
 
-    private const val CHANNEL_TIMER = "focus_timer"
-    private const val CHANNEL_ALARM = "focus_alarm_v1"
+    /** The one Focus channel (blueprint 10). The quiet timer and the questions without sound are silenced per notification. */
+    private const val CHANNEL_FOCUS = "focus_v3"
+    private val OLD_CHANNELS = listOf("focus_timer", "focus_alarm_v1", "focus_chime_v1", "focus_chime_v2")
     private const val ID_TIMER = 8101
     private const val ID_ALARM = 8102
     private const val RC_ALARM = 21
@@ -380,12 +381,11 @@ object Pomodoro {
      * file), vibration and volume behaviour can be changed. Android keeps a channel's sound under
      * the user's control, so this is the reliable way to change it.
      */
-    fun openAlarmSoundSettings(context: Context, chime: Boolean = false) {
+    fun openAlarmSoundSettings(context: Context) {
         ensureChannels(context.applicationContext)
-        if (chime) ensureChimeChannel(context.applicationContext)
         val intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
-            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, if (chime) CHANNEL_CHIME else CHANNEL_ALARM)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, CHANNEL_FOCUS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
             context.startActivity(intent)
@@ -647,18 +647,12 @@ object Pomodoro {
 
     private fun ensureChannels(ctx: Context) {
         val nm = notificationManager(ctx)
-        if (nm.getNotificationChannel(CHANNEL_TIMER) == null) {
+        // The three channels the app used to have for focus are folded into one.
+        OLD_CHANNELS.forEach { if (nm.getNotificationChannel(it) != null) nm.deleteNotificationChannel(it) }
+        if (nm.getNotificationChannel(CHANNEL_FOCUS) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_TIMER, ctx.getString(R.string.focus_channel_timer), NotificationManager.IMPORTANCE_LOW).apply {
-                    description = ctx.getString(R.string.focus_channel_timer_desc)
-                    setShowBadge(false)
-                }
-            )
-        }
-        if (nm.getNotificationChannel(CHANNEL_ALARM) == null) {
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ALARM, ctx.getString(R.string.focus_channel_alarm), NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = ctx.getString(R.string.focus_channel_alarm_desc)
+                NotificationChannel(CHANNEL_FOCUS, ctx.getString(R.string.focus_channel), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = ctx.getString(R.string.focus_channel_desc)
                     setSound(
                         RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
@@ -686,7 +680,7 @@ object Pomodoro {
     private fun showTimer(ctx: Context, s: PomodoroState) {
         try {
             ensureChannels(ctx)
-            val b = NotificationCompat.Builder(ctx, CHANNEL_TIMER)
+            val b = NotificationCompat.Builder(ctx, CHANNEL_FOCUS)
                 .setSmallIcon(R.drawable.ic_notification_time_warning)
                 .setContentTitle(phaseLabel(ctx, s.phase))
                 .setContentIntent(openAppIntent(ctx))
@@ -740,30 +734,6 @@ object Pomodoro {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
-    // v2: a channel's sound can't change once created, and v1 used the quiet notification stream.
-    private const val CHANNEL_CHIME = "focus_chime_v2"
-
-    private fun ensureChimeChannel(ctx: Context) {
-        val nm = notificationManager(ctx)
-        if (nm.getNotificationChannel(CHANNEL_CHIME) != null) return
-        nm.deleteNotificationChannel("focus_chime_v1")
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_CHIME, ctx.getString(R.string.focus_channel_chime), NotificationManager.IMPORTANCE_HIGH).apply {
-                description = ctx.getString(R.string.focus_channel_chime_desc)
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 600)
-            }
-        )
-    }
-
     /**
      * Between phases of a block: rings on the alarm stream for 5 seconds (noticeable with
      * headphones on another device), with the question when a session ended.
@@ -771,13 +741,12 @@ object Pomodoro {
     private fun chime(ctx: Context, finished: PomodoroState, next: PomodoroState, id: Long?) {
         try {
             val nm = notificationManager(ctx)
-            ensureChimeChannel(ctx)
             val title = when {
                 !next.inBlock -> ctx.getString(R.string.focus_block_done)
                 next.phase == Phase.FOCUS -> ctx.getString(R.string.focus_block_next_focus, next.plannedMinutes)
                 else -> ctx.getString(R.string.focus_block_next_break, phaseLabel(ctx, next.phase).lowercase(), next.plannedMinutes)
             }
-            val b = NotificationCompat.Builder(ctx, CHANNEL_CHIME)
+            val b = NotificationCompat.Builder(ctx, CHANNEL_FOCUS)
                 .setSmallIcon(R.drawable.ic_notification_time_warning)
                 .setContentTitle(title)
                 .setAutoCancel(true)
@@ -808,7 +777,7 @@ object Pomodoro {
                 phaseLabel(ctx, next.phase).lowercase(),
                 _settings.value.minutesFor(next.phase)
             )
-            val b = NotificationCompat.Builder(ctx, CHANNEL_ALARM)
+            val b = NotificationCompat.Builder(ctx, CHANNEL_FOCUS)
                 .setSmallIcon(R.drawable.ic_notification_time_warning)
                 .setContentTitle(ctx.getString(R.string.focus_done_title))
                 .setContentText(breakText)
@@ -833,7 +802,7 @@ object Pomodoro {
     private fun ringBreakDone(ctx: Context, next: PomodoroState) {
         try {
             ensureChannels(ctx)
-            val b = NotificationCompat.Builder(ctx, CHANNEL_ALARM)
+            val b = NotificationCompat.Builder(ctx, CHANNEL_FOCUS)
                 .setSmallIcon(R.drawable.ic_notification_time_warning)
                 .setContentTitle(ctx.getString(R.string.focus_break_over_title))
                 .setContentText(
@@ -878,8 +847,7 @@ object Pomodoro {
     internal fun postFlowQuestion(ctx: Context, title: String, text: String?, yesNo: Boolean, loud: Boolean, fullScreen: Boolean) {
         try {
             ensureChannels(ctx)
-            if (loud) ensureChimeChannel(ctx)
-            val b = NotificationCompat.Builder(ctx, if (loud) CHANNEL_CHIME else CHANNEL_TIMER)
+            val b = NotificationCompat.Builder(ctx, CHANNEL_FOCUS)
                 .setSmallIcon(R.drawable.ic_notification_time_warning)
                 .setContentTitle(title)
                 .setOnlyAlertOnce(true)

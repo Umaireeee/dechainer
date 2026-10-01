@@ -203,6 +203,8 @@ class MainActivity : ComponentActivity() {
                 // A brick shows its own screen, whatever was open before it started.
                 val route = if (lockedHome != null && navViewModel.current() != Route.TODAY && navViewModel.current() != Route.REPORTS) Route.HOME else navViewModel.current()
                 val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
+                // The rules are confirmed once, at the end of setup; enforcement starts then (D19).
+                var rulesConfirmed by remember { mutableStateOf(io.github.warleysr.dechainer.day.DayEngine.rulesConfirmed(this@MainActivity)) }
 
                 BackHandler(enabled = route != Route.HOME) {
                     navViewModel.goBack()
@@ -302,6 +304,9 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     when {
                         !recoverySet -> SetupRecovery(innerPadding)
+
+                        !rulesConfirmed && !urge.active && lockedHome == null && !brick ->
+                            io.github.warleysr.dechainer.screens.setup.RulesOnboarding(innerPadding) { rulesConfirmed = true }
 
                         // The urge flow owns the screen: the choice, the breathing, the writing, the questions, the deep dive.
                         urge.active -> UrgeFlowHost(urgeVm)

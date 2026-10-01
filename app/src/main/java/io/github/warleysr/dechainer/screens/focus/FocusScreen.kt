@@ -466,7 +466,7 @@ private fun FocusSettingsDialog(
                 )
                 DialogSection(stringResource(R.string.focus_section_sounds))
                 val context = LocalContext.current
-                TextButton(onClick = { Pomodoro.openAlarmSoundSettings(context, chime = true) }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { Pomodoro.openAlarmSoundSettings(context) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.MusicNote, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.focus_chime_sound))

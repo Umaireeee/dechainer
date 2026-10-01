@@ -14,7 +14,6 @@ import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockStateStore
 import io.github.warleysr.dechainer.lock.PunishmentInput
-import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.store.AppStateKeys
 import io.github.warleysr.dechainer.store.Store
 import timber.log.Timber
@@ -28,17 +27,32 @@ object DayEngine {
     private const val REQUEST = 5202
     private const val ACTION = "io.github.warleysr.dechainer.DAY_WAKE"
 
+    /** Whether the owner has confirmed the checklist rules, which is what starts enforcement (blueprint 6.4, D19). */
+    fun rulesConfirmed(ctx: Context): Boolean = try {
+        Store.appState(ctx).get(AppStateKeys.ACTIVATED_ON) != null
+    } catch (e: Exception) { false }
+
+    /** The one explicit confirmation at the end of setup. Enforcement starts today; it never moves once set. */
+    fun confirmRules(ctx: Context) {
+        try {
+            val state = Store.appState(ctx)
+            if (state.get(AppStateKeys.ACTIVATED_ON) == null) {
+                state.set(AppStateKeys.ACTIVATED_ON, DayWindow.dateOf(TrustedClock.now(ctx), TrustedClock.zone()).toString())
+            }
+            LockEngine.requestSync(ctx.applicationContext)
+        } catch (e: Exception) {
+            Timber.e(e, "Rules not confirmed")
+        }
+    }
+
     /** Called by every sync pass, before the lock is planned, so a new punishment day is in the plan. Never throws. */
     fun runPass(ctx: Context, now: Long) {
         try {
             val zone = TrustedClock.zone()
             val state = Store.appState(ctx)
-            // Enforcement starts when setup finishes (D19); the recovery code is the last step of today's setup.
-            var activated = state.get(AppStateKeys.ACTIVATED_ON)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            if (activated == null && SecurityManager.hasRecoveryCode(ctx)) {
-                activated = DayWindow.dateOf(now, zone)
-                state.set(AppStateKeys.ACTIVATED_ON, activated.toString())
-            }
+            // Enforcement starts when setup finishes (D19): on the owner's explicit confirmation of the rules
+            // ([confirmRules]), not at a first plan and not by itself.
+            val activated = state.get(AppStateKeys.ACTIVATED_ON)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             if (activated != null) {
                 val repo = Store.days(ctx)
                 val today = DayWindow.dateOf(now, zone)

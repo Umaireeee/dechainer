@@ -154,7 +154,7 @@ private fun RestrictionAccordion(
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
+                        contentDescription = stringResource(if (expanded) R.string.collapse else R.string.expand)
                     )
                 }
             }

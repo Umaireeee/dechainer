@@ -96,6 +96,12 @@ fun ConfigTab(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
+            item {
+                io.github.warleysr.dechainer.screens.setup.SetupStatusCard(
+                    onNavigate = { navViewModel.navigateTo(it) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
             item { io.github.warleysr.dechainer.screens.common.FullScreenHint() }
             item { SectionHeader(stringResource(R.string.config_section_protection)) }
             item {
