@@ -31,6 +31,18 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease -PversionCode=${{ github.run_number }}
 
+      # Blueprint 14A: the debug-only controls (abort, short blocks) must not exist in a release build.
+      - name: Release manifest has no debug controls
+        run: |
+          set -eu
+          manifest=$(find app/build/intermediates -path '*merged_manifests/release*' -name AndroidManifest.xml | head -1)
+          echo "Checking $manifest"
+          test -n "$manifest"
+          if grep -q -e DEBUG_ -e DebugControlReceiver "$manifest"; then
+            echo "::error::A debug control is present in the release manifest"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dechainer-debug-apk

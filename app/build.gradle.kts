@@ -50,6 +50,12 @@ android {
                 // which breaks native library name resolution in Conscrypt/Robolectric.
                 it.systemProperty("user.language", "en")
                 it.systemProperty("user.country", "US")
+                // Every result in the CI log, and the full reason for a failure, so a red run can be
+                // read from its log alone.
+                it.testLogging {
+                    events("passed", "skipped", "failed")
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                }
             }
         }
     }
