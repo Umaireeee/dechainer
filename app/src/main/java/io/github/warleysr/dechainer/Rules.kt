@@ -53,4 +53,7 @@ object Rules {
     const val MAX_NOTE_CHARS = 4_000
     const val MAX_ANSWER_CHARS = 600
     const val MAX_REASON_CHARS = 300
+
+    /** D10. A slip goes straight to writing. Flip to true and a slip also starts an urge lock. */
+    const val LOCK_AFTER_SLIP = false
 }

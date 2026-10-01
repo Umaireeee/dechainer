@@ -6,10 +6,16 @@ import android.content.Context
 object Store {
     @Volatile private var database: DechainerDatabase? = null
     @Volatile private var appState: AppStateRepository? = null
+    @Volatile private var urgeEntries: UrgeEntryRepository? = null
 
     fun appState(context: Context): AppStateRepository =
         appState ?: synchronized(this) {
             appState ?: AppStateRepository(database(context)).also { appState = it }
+        }
+
+    fun urgeEntries(context: Context): UrgeEntryRepository =
+        urgeEntries ?: synchronized(this) {
+            urgeEntries ?: UrgeEntryRepository(database(context)).also { urgeEntries = it }
         }
 
     private fun database(context: Context): DechainerDatabase =
@@ -22,5 +28,6 @@ object Store {
         database?.close()
         database = null
         appState = null
+        urgeEntries = null
     }
 }

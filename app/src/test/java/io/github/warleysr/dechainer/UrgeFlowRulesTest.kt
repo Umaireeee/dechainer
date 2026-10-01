@@ -68,9 +68,16 @@ class UrgeFlowRulesTest {
     }
 
     @Test
+    fun aFreshLockBreathesFromTheMomentItWasStoredNotFromALaterRead() {
+        val w = UrgeFlowRules.breathingFor(UrgeStart.Started(now + 10 * minute), now + 50, lockStartedAt = now)
+        assertEquals(now, w.startsAt)
+        assertEquals(10 * minute, w.totalMs)
+    }
+
+    @Test
     fun aSecondTapBreathesUntilTheRunningLockEndsAndNeverLonger() {
         val started = now - 4 * minute
-        val w = UrgeFlowRules.breathingFor(UrgeStart.AlreadyRunning(now + 6 * minute), now, runningLockStartedAt = started)
+        val w = UrgeFlowRules.breathingFor(UrgeStart.AlreadyRunning(now + 6 * minute), now, lockStartedAt = started)
         assertEquals(started, w.startsAt)
         assertEquals(now + 6 * minute, w.endsAt)
         assertFalse(w.lockStarted)
@@ -90,7 +97,7 @@ class UrgeFlowRulesTest {
 
     @Test
     fun aLockStartedInTheFutureIsNeverUsedAsTheWindowStart() {
-        val w = UrgeFlowRules.breathingFor(UrgeStart.AlreadyRunning(now + minute), now, runningLockStartedAt = now + 5 * minute)
+        val w = UrgeFlowRules.breathingFor(UrgeStart.AlreadyRunning(now + minute), now, lockStartedAt = now + 5 * minute)
         assertEquals(now, w.startsAt)
     }
 

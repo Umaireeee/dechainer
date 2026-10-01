@@ -28,6 +28,18 @@ class MigrationsTest {
     }
 
     @Test
+    fun theSecondStepAddsTheUrgeJournalAndLeavesAppStateAlone() {
+        val step = Migrations.ALL.single { it.from == 1 && it.to == 2 }
+        val sql = step.statements.joinToString(" ").lowercase()
+        assertTrue("create table urge_entry" in sql)
+        // Every column of blueprint section 7.
+        for (c in listOf("created_at", "kind", "source", "lock_started_at", "lock_ended_at", "status", "raw_text", "questions_json", "answers_json", "deep_dive")) {
+            assertTrue(c, c in sql)
+        }
+        assertFalse("app_state" in sql)
+    }
+
+    @Test
     fun aFreshDatabaseRunsEveryStepInOrder() {
         assertEquals(listOf("a1", "a2", "b1", "c1", "c2"), Migrations.statementsBetween(0, 3, chain))
     }

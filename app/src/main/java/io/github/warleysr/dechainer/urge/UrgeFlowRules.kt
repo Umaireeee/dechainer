@@ -30,17 +30,19 @@ object UrgeFlowRules {
     }
 
     /**
-     * The breathing window for what [UrgeLockRule] decided (5.3). A fresh lock breathes for its ten
-     * minutes. A lock already running (a second tap, or one the journal started) breathes until it
-     * ends, never longer, and never extends it. Inside a focus block or a punishment day, or without
-     * Device Owner, no lock starts and the breathing still runs for the full ten minutes.
+     * The breathing window for what [UrgeLockRule] decided (5.3). A fresh lock breathes for exactly
+     * its ten minutes, from the moment it was stored ([lockStartedAt]). A lock already running (a second
+     * tap, or one the journal started) breathes until it ends, never longer, and never extends it.
+     * Inside a focus block or a punishment day, or without Device Owner, no lock starts and the
+     * breathing still runs for the full ten minutes from [now].
      */
-    fun breathingFor(start: UrgeStart, now: Long, runningLockStartedAt: Long? = null): BreathingWindow = when (start) {
-        is UrgeStart.Started -> BreathingWindow(now, start.endsAt, lockStarted = true)
+    fun breathingFor(start: UrgeStart, now: Long, lockStartedAt: Long? = null): BreathingWindow = when (start) {
+        is UrgeStart.Started -> BreathingWindow((lockStartedAt ?: now).coerceAtMost(now), start.endsAt, lockStarted = true)
         is UrgeStart.AlreadyRunning ->
-            BreathingWindow((runningLockStartedAt ?: now).coerceAtMost(now), start.endsAt, lockStarted = false)
-        is UrgeStart.Covered -> BreathingWindow(now, start.breathingUntil, lockStarted = false)
-        is UrgeStart.Unavailable -> BreathingWindow(now, start.breathingUntil, lockStarted = false)
+            BreathingWindow((lockStartedAt ?: now).coerceAtMost(now), start.endsAt, lockStarted = false)
+        // The full ten minutes, ending where the rule said, whatever the clock read in between.
+        is UrgeStart.Covered -> BreathingWindow(start.breathingUntil - Rules.URGE_LOCK_MS, start.breathingUntil, lockStarted = false)
+        is UrgeStart.Unavailable -> BreathingWindow(start.breathingUntil - Rules.URGE_LOCK_MS, start.breathingUntil, lockStarted = false)
     }
 
     /**
