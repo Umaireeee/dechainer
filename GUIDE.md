@@ -52,8 +52,10 @@ On **Focus**, open the log. You'll see a 14-day and 12-week chart, tap a point f
 ## Step 7: Use the Urge Journal when it hits
 Urges are handled in the second app, the **Urge Journal** (see Step 11). Déchaîner no longer has its own urge log, so there is one place for every entry.
 
-## Step 8: The panic button
-**Settings → Impulse lock** sets what happens when you press the panic button on the unlock screen: it locks the app, and any apps you choose, for a set time (15 minutes to 6 hours). Set it up on a calm day.
+## Step 8: The panic button, and the entry challenge
+The panic button on the unlock screen starts the **urge lock**: ten minutes, always ten, with every app paused except calls and your alarm clock (text messages and Emergency Info are paused too). Nothing ends it early and a second press does not extend it. While it runs, Déchaîner shows when it ends and nothing else. There is nothing to set up.
+
+**Settings → Entry challenge** is the other half of the old "Impulse lock": a small problem to solve (maths, or typing words) after you authenticate, each time you open Déchaîner. Set it on a calm day.
 
 ## Step 9: Block single apps by hand, and set time limits
 On the **Apps** tab, flip the switch next to any app to pause it. Paused apps are greyed out, can't open, and their notifications are hidden.
@@ -70,11 +72,9 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Install order matters:** install **Déchaîner first**, then the **Urge Journal**. Both must come from the same signed release build, or Android won't let them talk to each other.
 
-**One-time setup in Déchaîner:** *Settings → Impulse lock*, set the panic button to "timer and suspend" and pick the apps to pause. The journal's "Block my phone" button uses that.
-
 **When an urge hits:**
-1. **Hold** the glowing button in the journal (about a second, so a bump in your pocket can't start it), or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately **locks every other app for ten minutes** (calls, your alarm, emergency apps and the journal still work), pauses your distraction apps for 30 (the ones chosen in Déchaîner's Impulse lock), and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), what you wrote for this moment (see **Why you're doing this** below), your own record if it is good news ("In 7 of your last 10 rides, the urge passed or got weaker"), and your own rule if you've written one. Nothing to answer.
-2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes or keep everything locked for 30 more minutes.
+1. **Hold** the glowing button in the journal (about a second, so a bump in your pocket can't start it), or tap the **I feel an urge** quick-settings tile, or long-press the journal icon and pick it. That is the only thing you have to do. It immediately **locks every other app for ten minutes** (calls, your alarm and the journal still work; texts and Emergency Info do not), and starts a ten-minute **ride**: a slow breathing circle, one thing to do (by default, leave the room), what you wrote for this moment (see **Why you're doing this** below), your own record if it is good news ("In 7 of your last 10 rides, the urge passed or got weaker"), and your own rule if you've written one. Nothing to answer.
+2. When the ten minutes are up (or you feel through the worst of it), tell it how it stands: **It passed**, **Weaker, and I'm okay**, or **Still strong**. Tap what you tried. If it's still strong, ride another ten minutes (a new urge lock starts only after the first has ended).
 3. Then choose **Save it and finish** (two taps) or **Add a few details** (three short questions and a plan). If you leave the app, a plain "Quick check-in" notification about 20 minutes later brings you back (you can turn it off in Settings), and a card on Home waits for you.
 4. The coach learns from your check-ins: once a step has worked for you a few times, it moves to the top of your plans.
 

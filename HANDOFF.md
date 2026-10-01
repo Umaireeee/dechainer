@@ -6,15 +6,15 @@ The journal, the door and the guided-ride upgrade are all on `main-clean` (PR #3
 ## What this project is
 Two Android apps in one repo, built to cut compulsive phone use (and porn urges) and to protect study time.
 
-1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, impulse lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, and the "urge action door" below.
+1. **`:app` = Déchaîner** (fork of warleysr/dechainer). Device Owner app that suspends apps, schedules blocks, runs a Pomodoro with an honest log, private DNS, the urge lock, and forced removal (now **4 days**). Also has: Quick-start schedule presets, and the "urge action door" below.
 2. **`:journal` = Urge Journal** (new). An adaptive interview for the moment of an urge or a slip, a rule-based coach, an optional AI "deep dive", a weekly review, history, backup, and a **Lock it in** button that asks Déchaîner to block.
 
 Both are signed with the same key (release workflow), because the link between them is a signature-level permission.
 
 ## The link between the apps (the "door")
 - Déchaîner exposes `io.github.warleysr.dechainer/.UrgeActionReceiver`, action `io.github.warleysr.dechainer.URGE_ACTION`, guarded by permission `io.github.warleysr.dechainer.permission.URGE_ACTION` (protectionLevel signature). See `URGE_ACTIONS.md`.
-- Commands: `IMPULSE_BLOCK` (15 to 360 min; the panic button remotely; suspends the apps chosen in Déchaîner > Settings > Impulse lock, only if that is set to "Timer and suspend apps") and `FOCUS_BLOCK` (25 to 120 min; committed focus block).
-- Rules that must not change: commands only **tighten** (never unblock, never edit schedules or the recovery code), durations are capped, a running impulse block is never shortened, ignored unless Device Owner.
+- Commands (since Phase 2): `IMPULSE_BLOCK` and `RIDE_LOCK` both start the **urge lock** (a fixed 10 minutes, minutes ignored, never extended), and `FOCUS_BLOCK` (25 to 120 min; committed focus block). The status provider's columns changed, see `URGE_ACTIONS.md`.
+- Rules that must not change: commands only **tighten** (never unblock, never edit schedules or the recovery code), durations are capped, a running lock is never shortened or extended, ignored unless Device Owner.
 - Install order matters: Déchaîner first, then the journal (both from the same signed run).
 
 ## Journal internals (`journal/src/main/java/io/github/warleysr/urgejournal/`)
@@ -158,7 +158,7 @@ What exists now (all under `app/src/main/java/io/github/warleysr/dechainer/`):
 - Cold start diet: no eager `getApps()`; the locale reset, the un-hide migration and the browser-policy repair run once behind `app_state` flags; one sync per wake-up.
 - `Rules.kt`: the blueprint's fixed numbers. Debug-only controls live in `app/src/debug` (see below).
 
-Not in the blueprint but still live (carried unchanged, Phase 2 removes the first two): the impulse lock and the ride lock (`LockPlan` holds `IMPULSE_LOCK` and `RIDE_LOCK`), and the old non-brick "lock apps during a session" option (`FOCUS_SESSION`). Brick end times still live in the Pomodoro prefs; the `app_state` brick keys come with the new modes.
+Not in the blueprint but still live (carried unchanged): the old non-brick "lock apps during a session" option (`FOCUS_SESSION`). The focus block's end time still lives in the Pomodoro prefs; the urge lock and the punishment day are in `app_state` (see Phase 2).
 
 Debug controls (debug builds only; the receiver is in the debug source set and CI fails if a release manifest contains it). On an emulator or spare phone with Device Owner set:
 - `adb shell am broadcast -n io.github.warleysr.dechainer/.debug.DebugControlReceiver -a io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK --ei minutes 1` starts a 1 minute block (no 10 minute minimum).
@@ -166,7 +166,30 @@ Debug controls (debug builds only; the receiver is in the debug source set and C
 - `... -a io.github.warleysr.dechainer.DEBUG_ABORT_BRICK` runs the abort.
 - `... -a io.github.warleysr.dechainer.DEBUG_CRASH` crashes the app on purpose through the real handler. With a block running, send it twice within 5 minutes: the second crash must abort the block (apps released, home screen back).
 
-Testing here: the sandbox has no Android SDK (`dl.google.com` is denied), so CI is the compiler. Pure logic runs in a scratch Kotlin/JVM project (Gradle 8.14 with the Maven Central mirror `maven-central.storage-download.googleapis.com`, source files picked from `app/src` by a list, `RideLock` stubbed because `LockSafety` reads one constant from it, working dir set to `app/`): 125 pure tests pass there. CI runs everything: 193 app tests (91 from before this phase, 102 new, 24 of them Robolectric). Robolectric is used here for the first time in this repo: the store, clock and Pomodoro tests use `@Config(sdk = [34], application = Application::class)` so the real Application does not start the engine; `LockEngineSyncTest` uses the real `DechainerApplication` because the blocking code reaches for it. Robolectric's Device Owner shadow does not read back applied restrictions or `getUserControlDisabledPackages`, so those are checked through the engine's own records and on the phone. The CI log lists every test result.
+Testing here: the sandbox has no Android SDK (`dl.google.com` is denied), so CI is the compiler. Pure logic runs in a scratch Kotlin/JVM project (Gradle 8.14 with the Maven Central mirror `maven-central.storage-download.googleapis.com`, source files picked from `app/src` by a list, working dir set to `app/`): 125 pure tests pass there. CI runs everything: 193 app tests (91 from before this phase, 102 new, 24 of them Robolectric). Robolectric is used here for the first time in this repo: the store, clock and Pomodoro tests use `@Config(sdk = [34], application = Application::class)` so the real Application does not start the engine; `LockEngineSyncTest` uses the real `DechainerApplication` because the blocking code reaches for it. Robolectric's Device Owner shadow does not read back applied restrictions or `getUserControlDisabledPackages`, so those are checked through the engine's own records and on the phone. The CI log lists every test result.
 
 Install order (blueprint 14A): test this phase on an emulator or spare phone first; the daily phone only after the section 15 checks that apply (1, 5, 6, 7 for this phase).
 
+## Update: Déchaîner 2.0, Phase 2 "One lock engine" (2026-10-01; see BLUEPRINT.md, sections 5 and 14)
+Phase 2 only. Phase 3 (Today/Home, the Urge screen) is not started, so there is still no Home and no breathing screen: the panic button on the unlock screen starts the urge lock and the main screen shows `screens/LockedHomeScreen.kt` (end time and one calm sentence).
+
+What exists now:
+- **Modes** (`lock/LockModel.kt`): `SCHEDULE`, `DAILY_LIMIT`, `FOCUS_SESSION` (holds) and `URGE_LOCK`, `FOCUS_BLOCK`, `PUNISHMENT_DAY` (bricks, `LockMode.isBrick`). `RIDE_LOCK` and `IMPULSE_LOCK` are gone.
+- **Allow sets** (`lock/LockAllow.kt`, D3 and D7): urge = alarm clock only (SMS and Emergency Info are blocked); punishment day = alarm plus the owner's study-app list, empty by default (`LockStateStore.setPunishmentOwnerApps`, no UI yet); focus block = alarm, emergency apps, the owner's list. Calls and the dialer are in `PhoneFacts.protectedApps`, so they are never blocked by anything.
+- **Precedence** (`lock/LockPlanner.kt`, 5.3): holds only ever add. The blocked set of overlapping bricks is the union of what each blocks, which is the intersection of their allow sets. The phone unlocks when the last brick ends; `BrickStatus.primary` names the one ending last (tie: punishment, then urge, then focus). A schedule or limit ending changes none of that.
+- **Urge lock** (`lock/UrgeLockRule.kt`, `LockEngine.startUrgeLock`): ten minutes (`Rules.URGE_LOCK_MS`), stored in `app_state` (`urgeLockStartedAt`, `urgeLockEndsAt`) before anything else, a second start never extends it, not started inside a focus block or a punishment day (`Covered`) or without Device Owner (`Unavailable`). Its end is a wake-up in the plan, and it is over by the time even if the alarm is lost.
+- **Punishment day** (`PunishmentInput`, `LockStateStore.setPunishment`): a window `[startsAt, endsAt)` in `app_state` (`punishmentFrom`, `punishmentUntil`, `punishmentDate`). Nothing writes one yet except the debug build; the day evaluation is Phase 5. A day that has not started is a wake-up, so the brick is on at its start, not at the next unrelated sync.
+- **Settings freeze** (`lock/SettingsFreeze.kt`, 5.5): checked inside the repositories that write settings (schedules, daily limits, app suspend and uninstall-block, Private DNS and its guard, Pomodoro settings/allow list/tags/targets, the security settings, the recovery code, forced removal, protections, the entry challenge, the study-app list), against the trusted clock. A manual focus block is refused on a punishment day. Reading, the urge flow and everything outside settings are never refused.
+- **Entry challenge**: the old impulse lock's challenge (none, maths, words) is now `SecurityManager.EntryChallenge` and `screens/tabs/EntryChallengeScreen.kt`, with the preference key `impulse_lock_mode` unchanged so a stored choice survives.
+- **Journal link**: `data/JournalLink.kt` holds the journal's package and ride extra (they used to live in `RideLock`). The journal is never suspended by any lock (`LockSafety.neverBlocked`), so it stays reachable under an urge lock; that is the one place where an urge lock leaves more open than "alarm only", and it is deliberate.
+- **Removed** (grep-checked in `app/src`, no matches): `RideLock`, `ImpulseLockScreen`, `ImpulseLockViewModel`, `ImpulseAction` and every impulse getter and setter in `SecurityManager`, `startImpulseBlock`, `ACTION_IMPULSE_END`, `armImpulseEnd`, `armRideEnd`, the `security_prefs` listener in the enforcer, `LockSafety.brickTargets`, the `rideLockMillis` argument of `removalBlocked`, `Pomodoro.rearm(relaunchBrick)` (the reboot relaunch is `LockEngine.reopenIfBrick`, and covers every brick).
+- **Crash-loop breaker** now also ends an urge lock and records a punishment day as ended by the system (`punishmentAbortedAt`).
+- **Pin**: `MainActivity` pins for any brick and passes `BrickStatus.ownerApps` plus the alarm apps to `prepareBrick`; the brick home alias is on for every brick.
+
+Debug controls added (debug builds only, same rules as before): `... -a io.github.warleysr.dechainer.DEBUG_URGE_LOCK --ei minutes 1` (1 minute urge lock, through the real rule) and `... -a io.github.warleysr.dechainer.DEBUG_PUNISHMENT_DAY --ei minutes 5` (5 minute punishment day starting now). A release build does not contain the receiver, and the engine entry points return without doing anything unless `BuildConfig.DEBUG`.
+
+Judgement calls to confirm (BLUEPRINT.md says nothing or is ambiguous):
+- 5.3 "win over" is read as "name and unlock", not "let a focus-allowed app through a limit or schedule". The other reading would loosen a lock, so it is not built.
+- D3 blocks SMS and Emergency Info in an urge lock. A real emergency needs calls, which stay open, but the owner should know.
+- The journal's `IMPULSE_BLOCK`/`RIDE_LOCK` now mean the fixed ten-minute lock. "Pause my apps for 30 minutes" no longer exists.
+- Aborting a punishment day (crash-loop breaker only) ends it for the rest of that day.

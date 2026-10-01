@@ -29,7 +29,8 @@ A calm, minimal Android app for studying without your phone getting in the way: 
 - **Schedules:** block chosen apps, system features and websites at set times each week. "Allow only" mode flips it: only the apps you list work.
   - **Duplicate** a schedule, or **copy apps** from another, so you never pick the same apps twice.
   - The clock is locked while schedules are on, so a window can't be skipped by changing the time.
-- **Impulse lock:** a panic button on the unlock screen that locks the app, and any apps you choose, for a set time.
+- **Urge lock:** a panic button on the unlock screen that pauses every app except calls and the alarm clock for ten minutes. Nothing ends it early.
+- **Entry challenge:** a maths or typing problem before the app opens.
 - **Private DNS:** blocks adult sites across the whole phone. Choose from CleanBrowsing Family (strictest), CleanBrowsing Adult, AdGuard Family or Cloudflare Family.
 - **Protections:** system rules, like blocking factory reset.
 - **Recovery code and unlock delay:** anything that loosens a rule asks for your code, and optionally a waiting period.
@@ -49,7 +50,7 @@ These phones stop apps in the background unless told otherwise, which can delay 
 Then open **Settings → Status** in Déchaîner: it should show no red items.
 
 ### Battery
-Nothing runs in the background and nothing watches your screen: **there's no accessibility service**. Schedules, the impulse lock and the Pomodoro all run on exact alarms, and the timer's countdown is drawn by Android itself.
+Nothing runs in the background and nothing watches your screen: **there's no accessibility service**. Schedules, the urge lock and the Pomodoro all run on exact alarms, and the timer's countdown is drawn by Android itself.
 
 ---
 
