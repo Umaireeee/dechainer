@@ -366,8 +366,9 @@ fun ConfigTab(
     }
 
     if (showDnsDialog) {
-        val currentDns = viewModel.getPrivateDNS()
-        val externalScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        // Once per opening of the dialog: this is a Device Policy call, and a new scope on every redraw was never cancelled.
+        val currentDns = remember { viewModel.getPrivateDNS() }
+        val externalScope = remember { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
 
         DnsSelectionDialog(
             currentDns = currentDns,

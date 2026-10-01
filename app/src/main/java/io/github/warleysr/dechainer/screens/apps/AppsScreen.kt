@@ -58,6 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -266,9 +268,11 @@ private fun LimitDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.limit_custom), modifier = Modifier.weight(1f))
-                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, enabled = minutes > 0) { Text("−") }
+                    val lessDesc = stringResource(R.string.stepper_less)
+                    val moreDesc = stringResource(R.string.stepper_more)
+                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, enabled = minutes > 0, modifier = Modifier.semantics { contentDescription = lessDesc }) { Text("−") }
                     Text(if (minutes == 0) "–" else minutes.toString(), style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(720) }) { Text("+") }
+                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(720) }, modifier = Modifier.semantics { contentDescription = moreDesc }) { Text("+") }
                 }
                 if (!usageAccess) {
                     Spacer(Modifier.height(12.dp))

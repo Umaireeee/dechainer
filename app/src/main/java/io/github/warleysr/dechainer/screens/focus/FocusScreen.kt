@@ -96,6 +96,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.warleysr.dechainer.R
@@ -485,13 +487,15 @@ private fun FocusSettingsDialog(
 private fun Stepper(label: String, value: Int, range: IntRange, step: Int, unit: Boolean = true, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        TextButton(onClick = { onChange((value - step).coerceIn(range)) }, enabled = value > range.first) { Text("−") }
+        val lessDesc = stringResource(R.string.stepper_less)
+        val moreDesc = stringResource(R.string.stepper_more)
+        TextButton(onClick = { onChange((value - step).coerceIn(range)) }, enabled = value > range.first, modifier = Modifier.semantics { contentDescription = lessDesc }) { Text("−") }
         Text(
             if (unit) stringResource(R.string.focus_minutes_short, value) else value.toString(),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.widthIn(min = 52.dp)
         )
-        TextButton(onClick = { onChange((value + step).coerceIn(range)) }, enabled = value < range.last) { Text("+") }
+        TextButton(onClick = { onChange((value + step).coerceIn(range)) }, enabled = value < range.last, modifier = Modifier.semantics { contentDescription = moreDesc }) { Text("+") }
     }
 }
 

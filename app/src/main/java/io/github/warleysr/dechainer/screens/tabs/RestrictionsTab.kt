@@ -36,6 +36,8 @@ fun RestrictionsTab(
     navViewModel: NavigationViewModel = viewModel()
 ) {
     val recoveryGate = rememberRecoveryGate()
+    // The screen shows what is on the phone now, not what it showed on the first visit (a schedule may have changed it).
+    LaunchedEffect(Unit) { restrictionsViewModel.loadRestrictions() }
 
     if (!deviceOwnerViewModel.isDeviceOwner()) {
         NoDeviceOwnerPrivileges(navViewModel)
@@ -130,6 +132,16 @@ private fun RestrictionAccordion(
     }
 
     val isAllEnabled = viewModel.isAllDraftsEnabled(filteredKeys)
+    var confirmSelectAll by remember { mutableStateOf(false) }
+    if (confirmSelectAll) {
+        AlertDialog(
+            onDismissRequest = { confirmSelectAll = false },
+            title = { Text(stringResource(R.string.restrictions_select_all_title)) },
+            text = { Text(stringResource(R.string.restrictions_select_all_body, filteredKeys.size)) },
+            confirmButton = { TextButton({ confirmSelectAll = false; viewModel.toggleAllDrafts(filteredKeys, true) }) { Text(stringResource(R.string.restrictions_select_all_yes)) } },
+            dismissButton = { TextButton({ confirmSelectAll = false }) { Text(stringResource(R.string.cancel)) } }
+        )
+    }
 
     CalmCard(
         modifier = Modifier.fillMaxWidth()
@@ -144,7 +156,8 @@ private fun RestrictionAccordion(
             ) {
                 Checkbox(
                     checked = isAllEnabled,
-                    onCheckedChange = { viewModel.toggleAllDrafts(filteredKeys, it) }
+                    // Selecting dozens of rules in one tap (calls, texts, Wi-Fi, network reset) is asked about first.
+                    onCheckedChange = { if (it && filteredKeys.size > 12) confirmSelectAll = true else viewModel.toggleAllDrafts(filteredKeys, it) }
                 )
                 Text(
                     text = title,

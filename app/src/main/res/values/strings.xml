@@ -119,6 +119,11 @@
     <string name="invalid_recovery_code">Invalid recovery code</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
+    <string name="stepper_less">Less</string>
+    <string name="stepper_more">More</string>
+    <string name="restrictions_select_all_title">Select all of them?</string>
+    <string name="restrictions_select_all_body">This ticks %1$d rules at once, among them calls, texts and Wi-Fi. They only take effect when you apply them with the recovery code. Tick them one by one if you are not sure.</string>
+    <string name="restrictions_select_all_yes">Select all</string>
     <string name="check_again">Check again</string>
     <string name="apply">Apply</string>
     <string name="custom">Custom</string>
