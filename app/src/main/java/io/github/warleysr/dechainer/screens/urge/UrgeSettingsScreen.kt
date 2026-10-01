@@ -66,7 +66,10 @@ fun UrgeSettingsScreen() {
 
     // A new key or a new consent may be all a waiting deep dive needed: queue the retry.
     fun retryWaiting() {
-        thread { DeepDiveScheduler.enqueueIfPending(context, replace = true) }
+        thread {
+            DeepDiveScheduler.enqueueIfPending(context, replace = true)
+            io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(context)
+        }
     }
 
     Column(

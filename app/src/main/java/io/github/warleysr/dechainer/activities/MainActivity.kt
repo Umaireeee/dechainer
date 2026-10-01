@@ -109,6 +109,8 @@ class MainActivity : ComponentActivity() {
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
         // An urge that was left half-written opens straight back into its step.
         urgeVm.resumeIfAny()
+        // A weekly report that came due while the phone was off is queued again (blueprint 6.5).
+        thread { io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(applicationContext) }
     }
 
     /**
@@ -134,11 +136,23 @@ class MainActivity : ComponentActivity() {
         openTodayRequest.value = true
     }
 
+    /** The weekly report notification opens that report. -1 when none was asked for. */
+    private val openReportRequest = mutableLongStateOf(-1L)
+
+    private fun handleReportIntent(intent: Intent?) {
+        val id = intent?.getLongExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT, -1L) ?: -1L
+        if (id < 0) return
+        intent!!.removeExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT)
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        openReportRequest.longValue = id
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleUrgeIntent(intent)
         handleTodayIntent(intent)
+        handleReportIntent(intent)
     }
 
 
@@ -176,7 +190,7 @@ class MainActivity : ComponentActivity() {
         Pomodoro.ensureLoaded(this)
         // The first frame already knows whether something holds the phone.
         LockEngine.refreshStatus(this)
-        if (savedInstanceState == null) { handleUrgeIntent(intent); handleTodayIntent(intent) }
+        if (savedInstanceState == null) { handleUrgeIntent(intent); handleTodayIntent(intent); handleReportIntent(intent) }
         // A deep dive that could not be made earlier gets another try (a job already waiting is left alone).
         thread { DeepDiveScheduler.enqueueIfPending(applicationContext) }
         setContent {
@@ -208,7 +222,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 // A brick shows its own screen, whatever was open before it started.
-                val route = if (lockedHome != null && navViewModel.current() != Route.TODAY) Route.HOME else navViewModel.current()
+                val route = if (lockedHome != null && navViewModel.current() != Route.TODAY && navViewModel.current() != Route.REPORTS) Route.HOME else navViewModel.current()
                 val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
 
                 BackHandler(enabled = route != Route.HOME) {
@@ -220,6 +234,10 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(brick) {
                     if (brick) navViewModel.navigateTo(Route.HOME)
                 }
+                LaunchedEffect(openReportRequest.longValue) {
+                    if (openReportRequest.longValue >= 0 && !focusBrick && !urge.active) navViewModel.navigateTo(Route.REPORTS)
+                }
+                LaunchedEffect(route) { if (route != Route.REPORTS) openReportRequest.longValue = -1L }
                 LaunchedEffect(openTodayRequest.value) {
                     if (openTodayRequest.value) {
                         openTodayRequest.value = false
@@ -357,6 +375,11 @@ class MainActivity : ComponentActivity() {
                                     Route.FOCUS -> FocusScreen(onOpenLog = { navViewModel.navigateTo(Route.FOCUS_LOG) })
                                     Route.FOCUS_LOG -> FocusLogScreen()
                                     Route.TODAY -> io.github.warleysr.dechainer.screens.TodayScreen()
+                                    Route.REPORTS -> io.github.warleysr.dechainer.screens.ReportsScreen(
+                                        openReportId = openReportRequest.longValue.takeIf { it >= 0 },
+                                        onOpenData = { navViewModel.navigateTo(Route.DATA) }
+                                    )
+                                    Route.DATA -> io.github.warleysr.dechainer.screens.DataScreen()
                                     Route.APPS -> AppsScreen()
                                     Route.SCHEDULES -> SchedulesScreen()
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()

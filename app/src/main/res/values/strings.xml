@@ -686,4 +686,47 @@
     <string name="info_today_what">Your daily checklist.</string>
     <string name="info_today_does">Each evening, from 20:00, you write tomorrow\'s 3 to 7 goals and close today.</string>
     <string name="info_today_how">Fewer than half of the goals done, an unresolved goal or a missing plan makes the next day a punishment day. A punishment day never follows a punishment day.</string>
+
+    <!-- Reports and data tools (Phase 6) -->
+    <string name="reports_tab">Reports</string>
+    <string name="data_title">Your data</string>
+    <string name="report_channel">Weekly report</string>
+    <string name="report_ready">Your weekly report is ready</string>
+    <string name="reports_empty">The first report is made when your first week with something recorded has ended. It needs an AI key, your consent and a connection; if the phone was off, it is made the next time it is on and online.</string>
+    <string name="reports_progress">Daily checklist results</string>
+    <string name="reports_progress_none">No finished days yet.</string>
+    <string name="reports_progress_desc">Line of the share of goals done each day over the last four weeks. Punishment days are marked.</string>
+    <string name="reports_week">%1$s to %2$s</string>
+    <string name="reports_back">Back to the list</string>
+    <string name="reports_your_data">Your data</string>
+    <string name="reports_frozen">Reports are read only today.</string>
+    <string name="data_frozen">A punishment day is running. Your data can be read, but not changed, until midnight.</string>
+    <string name="data_export_section">Backup</string>
+    <string name="data_export_hint">The file holds your entries, sessions, goals and reports. Entries still waiting for a deep dive keep their text in it. Keep it somewhere private.</string>
+    <string name="data_export">Save a backup file</string>
+    <string name="data_import">Read a backup file</string>
+    <string name="data_exported">Backup saved.</string>
+    <string name="data_export_failed">The backup could not be saved.</string>
+    <string name="data_imported">Read the backup: %1$d added, %2$d left as they are or not taken.</string>
+    <string name="data_import_failed">That file could not be read, and nothing was changed.</string>
+    <string name="data_entries">Urges and slips</string>
+    <string name="data_sessions">Focus sessions</string>
+    <string name="data_reports">Weekly reports</string>
+    <string name="data_goals">Goal text</string>
+    <string name="data_none">Nothing here.</string>
+    <string name="data_urge_row">%1$s · %2$s · %3$s</string>
+    <string name="data_session_row">%1$s · %2$d min · %3$s</string>
+    <string name="data_kind_urge">Urge</string>
+    <string name="data_kind_slip">Slip</string>
+    <string name="data_delete">Delete</string>
+    <string name="data_delete_deep_dive">Delete the deep dive</string>
+    <string name="data_deleted">Deleted.</string>
+    <string name="data_not_allowed">That cannot be deleted yet. A slip or a session can go once its day is closed, and goal text once a weekly report covers its day.</string>
+    <string name="data_goals_row">Goals of %1$s</string>
+    <string name="data_wipe_section">Wipe all data</string>
+    <string name="data_wipe_hint">Removes what the rules allow: entries, sessions, reports and old goal text. Punishment days, rest days and your weeks are not reset. It asks for the recovery code.</string>
+    <string name="data_wipe">Wipe all data</string>
+    <string name="data_wipe_confirm_title">Wipe all data?</string>
+    <string name="data_wipe_confirm">This cannot be undone. Nothing that sets a punishment is touched.</string>
+    <string name="data_wipe_done">Wiped: %1$d removed, %2$d kept because the rules say so.</string>
 </resources>

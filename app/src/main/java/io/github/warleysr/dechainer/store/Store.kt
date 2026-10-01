@@ -27,6 +27,11 @@ object Store {
     fun days(context: Context): io.github.warleysr.dechainer.day.DayRepository =
         io.github.warleysr.dechainer.day.DayRepository(database(context))
 
+    fun reports(context: Context): WeeklyReportRepository = WeeklyReportRepository(database(context))
+
+    /** The open database, for the export and import. */
+    internal fun raw(context: Context): DechainerDatabase = database(context)
+
     private fun database(context: Context): DechainerDatabase =
         database ?: synchronized(this) {
             database ?: DechainerDatabase(context).also { database = it }
@@ -42,6 +47,9 @@ object Store {
         db.execSQL("DELETE FROM urge_entry")
         db.execSQL("DELETE FROM focus_checkin")
         db.execSQL("DELETE FROM focus_session")
+        db.execSQL("DELETE FROM weekly_report")
+        db.execSQL("DELETE FROM goal")
+        db.execSQL("DELETE FROM day")
         db.execSQL("DELETE FROM app_state")
     }
 

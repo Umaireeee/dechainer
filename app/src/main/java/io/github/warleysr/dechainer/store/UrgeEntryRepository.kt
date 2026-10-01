@@ -54,6 +54,26 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
     fun pendingDeepDives(): List<UrgeEntry> =
         list("status = ?", arrayOf(UrgeStatus.PENDING_DEEPDIVE.name)).sortedBy { it.createdAt }
 
+    /** Entries created in [from, to), oldest first (the weekly report's read). */
+    fun between(from: Long, to: Long): List<UrgeEntry> =
+        list("created_at >= ? AND created_at < ?", arrayOf(from.toString(), to.toString())).sortedBy { it.createdAt }
+
+    /** Every entry that can be read, oldest first. */
+    fun all(): List<UrgeEntry> = list("1 = 1", emptyArray()).sortedBy { it.createdAt }
+
+    /** The time of the first entry, or null. */
+    fun firstCreatedAt(): Long? =
+        database.readableDatabase.rawQuery("SELECT MIN(created_at) FROM $TABLE", null).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+
+    /** Removes the deep dive and keeps the entry as a counted stub (blueprint 6.6). The note is already gone once a deep dive exists. */
+    fun deleteDeepDive(id: Long): Boolean {
+        var n = 0
+        inTransaction {
+            n = it.update(TABLE, ContentValues().apply { putNull("deep_dive") }, "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.DONE.name))
+        }
+        return n > 0
+    }
+
     /** Every entry that can be read, counted stubs included. */
     fun count(): Int =
         database.readableDatabase.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use { if (it.moveToFirst()) it.getInt(0) else 0 }

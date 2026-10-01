@@ -79,6 +79,17 @@ object Migrations {
                     "state TEXT NOT NULL DEFAULT 'OPEN', resolved_by TEXT)",
                 "CREATE INDEX goal_day ON goal (day_date)"
             )
+        ),
+        // Phase 6: the weekly report (blueprint sections 6.5 and 7). `period_index` is the week's number
+        // counted from `weekAnchor`; it is unique, so a period is never built twice. A deleted report keeps
+        // its row (status DELETED, text emptied) so it is not built again.
+        Migration(
+            from = 4, to = 5,
+            statements = listOf(
+                "CREATE TABLE weekly_report (id INTEGER PRIMARY KEY AUTOINCREMENT, period_index INTEGER NOT NULL UNIQUE, " +
+                    "period_start INTEGER NOT NULL, period_end INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
+                    "status TEXT NOT NULL, body_md TEXT NOT NULL DEFAULT '', summary_json TEXT NOT NULL DEFAULT '')"
+            )
         )
     )
 
