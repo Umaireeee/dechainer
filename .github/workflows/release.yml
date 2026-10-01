@@ -7,15 +7,6 @@ on:
         description: "Leave blank for an artifact only. Put a tag here (e.g. v1.2.0-schedules.2) to also cut a real GitHub Release."
         required: false
         default: ""
-      apps:
-        description: "What to build. both = Déchaîner and the Urge Journal. dechainer = Déchaîner only (with its emulator tests). journal = Urge Journal only (quick: no emulator tests, they only cover Déchaîner)."
-        required: false
-        type: choice
-        options:
-          - both
-          - dechainer
-          - journal
-        default: both
 
 permissions:
   contents: read
@@ -35,34 +26,21 @@ jobs:
           cache: gradle
 
       - name: Unit tests (must pass)
-        env:
-          APPS: ${{ inputs.apps }}
         run: |
           chmod +x gradlew
-          case "${APPS:-both}" in
-            dechainer) ./gradlew :app:testDebugUnitTest ;;
-            journal) ./gradlew :journal:testDebugUnitTest ;;
-            *) ./gradlew testDebugUnitTest ;;
-          esac
+          ./gradlew testDebugUnitTest
 
       # The run number only ever goes up, so every build installs as an upgrade over the last.
       - name: Build debug and release
         env:
-          APPS: ${{ inputs.apps }}
           RUN: ${{ github.run_number }}
         run: |
-          case "${APPS:-both}" in
-            dechainer) ./gradlew :app:assembleDebug :app:assembleRelease -PversionCode="$RUN" -PversionNameSuffix="-sched.$RUN" ;;
-            journal) ./gradlew :journal:assembleRelease -PversionCode="$RUN" -PversionNameSuffix=".$RUN" ;;
-            *) ./gradlew :app:assembleDebug :app:assembleRelease -PversionCode="$RUN" -PversionNameSuffix="-sched.$RUN"
-               ./gradlew :journal:assembleDebug :journal:assembleRelease -PversionCode="$RUN" -PversionNameSuffix=".$RUN" ;;
-          esac
+          ./gradlew :app:assembleDebug :app:assembleRelease -PversionCode="$RUN" -PversionNameSuffix="-sched.$RUN"
 
       - name: Sign release APK with your permanent key
         env:
           SIGNING_KEY_B64: ${{ secrets.SIGNING_KEY_B64 }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-          APPS: ${{ inputs.apps }}
         run: |
           if [ -z "$SIGNING_KEY_B64" ] || [ -z "$SIGNING_PASSWORD" ]; then
             echo "Signing secrets are missing. Run 'Make signing key (run once)' and add both secrets first."
@@ -70,54 +48,27 @@ jobs:
           fi
           echo "$SIGNING_KEY_B64" | tr -d '\r\n ' | base64 -d > /tmp/key.p12
           BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
-          # Only the app(s) that were built are signed; the signing commands themselves are unchanged.
-          if [ "${APPS:-both}" != "journal" ]; then
-            "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
-            "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
-              --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
-              --out dechainer-schedules-release.apk /tmp/aligned.apk
-          fi
-          # The urge journal, signed with the same key: Android only lets it talk to Déchaîner
-          # (a signature permission) when both apps share a signing key.
-          if [ "${APPS:-both}" != "dechainer" ]; then
-            "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 journal/build/outputs/apk/release/journal-release-unsigned.apk /tmp/journal-aligned.apk
-            "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
-              --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
-              --out urge-journal-release.apk /tmp/journal-aligned.apk
-          fi
+          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks /tmp/key.p12 --ks-key-alias dechainer \
+            --ks-pass env:SIGNING_PASSWORD --key-pass env:SIGNING_PASSWORD \
+            --out dechainer-schedules-release.apk /tmp/aligned.apk
           rm -f /tmp/key.p12
-          if [ "${APPS:-both}" != "journal" ]; then
-            "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs dechainer-schedules-release.apk
-          fi
-          if [ "${APPS:-both}" != "dechainer" ]; then
-            "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs urge-journal-release.apk
-          fi
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs dechainer-schedules-release.apk
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: inputs.apps != 'journal'
         with:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 1
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: inputs.apps != 'journal'
         with:
           name: release-apk-untested
           path: dechainer-schedules-release.apk
           retention-days: 1
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: inputs.apps != 'dechainer'
-        with:
-          name: URGE-JOURNAL-RELEASE
-          path: urge-journal-release.apk
-          retention-days: 90
-
   engine-test:
     needs: build
-    # The emulator tests cover Déchaîner only, so a journal-only build skips them.
-    if: inputs.apps != 'journal'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -335,7 +286,6 @@ jobs:
 
   release-test:
     needs: build
-    if: inputs.apps != 'journal'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

@@ -21,4 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Dechainer"
 include(":app")
-include(":journal")
