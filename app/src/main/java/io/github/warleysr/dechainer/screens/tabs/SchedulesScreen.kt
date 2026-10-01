@@ -40,6 +40,7 @@ import io.github.warleysr.dechainer.screens.common.AppPickerDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import io.github.warleysr.dechainer.viewmodels.Route
 import io.github.warleysr.dechainer.viewmodels.SchedulesViewModel
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -130,7 +131,7 @@ fun SchedulesScreen(
                             onClick = {
                                 // Like a new schedule, a preset only adds blocking: no code needed.
                                 viewModel.startPreset(preset, name)
-                                navViewModel.navigateTo("schedule_editor")
+                                navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                             },
                             label = { Text(name) }
                         )
@@ -156,13 +157,13 @@ fun SchedulesScreen(
                     // A copy only adds blocking, so like a new schedule it needs no recovery code.
                     onDuplicate = {
                         viewModel.startDuplicate(schedule, copySuffix)
-                        navViewModel.navigateTo("schedule_editor")
+                        navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                     },
                     onClick = {
                         if (viewModel.isLocked(schedule)) showLocked()
                         else recoveryGate.run {
                             viewModel.startEditing(schedule)
-                            navViewModel.navigateTo("schedule_editor")
+                            navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                         }
                     },
                     onEnabledChange = { enabled ->
@@ -190,7 +191,7 @@ fun SchedulesScreen(
             onClick = {
                 // Creating a schedule only adds blocking, so it never needs the recovery code.
                 viewModel.startNew(defaultName)
-                navViewModel.navigateTo("schedule_editor")
+                navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
             },
             icon = { Icon(Icons.Filled.Add, null) },
             text = { Text(stringResource(R.string.schedule_new)) },

@@ -96,7 +96,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.data.JournalLink
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.warleysr.dechainer.urge.UrgeSource
+import io.github.warleysr.dechainer.viewmodels.UrgeViewModel
 import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Phase
 import io.github.warleysr.dechainer.focus.Pomodoro
@@ -359,7 +361,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 AllowedAppsRow(allowedApps)
             }
-            RideItOutButton()
+            UrgeButton()
         } else {
             // Only reachable for a single session left running by an older version.
             IconButton(onClick = { confirmStop = true }) {
@@ -772,33 +774,18 @@ private fun DialogSection(text: String) {
 }
 
 /**
- * An urge during a block: the phone is bricked, so the journal's ten-minute ride is one tap away
- * from here, with its five-second countdown to cancel. Shown only when the journal is installed.
+ * An urge during a block (blueprint 6.2, 5.3): the Urge button opens the same flow as everywhere
+ * else. The phone is already bricked, so no second lock starts, and the breathing still runs for ten
+ * minutes.
  */
 @Composable
-private fun RideItOutButton() {
-    val context = LocalContext.current
-    val installed = remember {
-        runCatching { context.packageManager.getPackageInfo(JournalLink.PACKAGE, 0) }.isSuccess
-    }
-    if (!installed) return
+private fun UrgeButton() {
+    val urge: UrgeViewModel = viewModel()
     Spacer(Modifier.height(24.dp))
     OutlinedButton(
-        onClick = {
-            runCatching {
-                context.packageManager.getLaunchIntentForPackage(JournalLink.PACKAGE)?.let {
-                    context.startActivity(it.putExtra(JournalLink.RIDE_EXTRA, JournalLink.RIDE_VALUE))
-                }
-            }
-        },
+        onClick = { urge.openChoice(UrgeSource.FOCUS) },
         modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
-    ) { Text(stringResource(R.string.focus_ride_out)) }
-    Text(
-        stringResource(R.string.focus_ride_out_note),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 6.dp)
-    )
+    ) { Text(stringResource(R.string.urge_button)) }
 }
 
 /**

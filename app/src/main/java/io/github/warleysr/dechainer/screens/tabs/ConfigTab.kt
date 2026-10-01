@@ -53,6 +53,7 @@ import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import io.github.warleysr.dechainer.viewmodels.Route
 import kotlinx.coroutines.CoroutineScope
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
@@ -113,7 +114,7 @@ fun ConfigTab(
                             Text(badgeText, style = MaterialTheme.typography.bodyMedium)
                         }
                     },
-                    modifier = Modifier.clickable(onClick = { navViewModel.navigateTo("setup_device_owner") })
+                    modifier = Modifier.clickable(onClick = { navViewModel.navigateTo(Route.SETUP_DEVICE_OWNER) })
                 ) }
             }
             item {
@@ -149,7 +150,7 @@ fun ConfigTab(
                             scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
                             return@clickable
                         }
-                        navViewModel.navigateTo("restrictions")
+                        navViewModel.navigateTo(Route.RESTRICTIONS)
                     }
                 ) }
             }
@@ -160,7 +161,7 @@ fun ConfigTab(
                     supportingContent = { Text(stringResource(R.string.entry_challenge_desc)) },
                     leadingContent = { IconTile(Icons.Outlined.LockClock) },
                     trailingContent = { Chevron() },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("entry_challenge") }
+                    modifier = Modifier.clickable { navViewModel.navigateTo(Route.ENTRY_CHALLENGE) }
                 ) }
             }
             item { SectionHeader(stringResource(R.string.config_section_security)) }
@@ -211,11 +212,21 @@ fun ConfigTab(
             }
             item { SectionHeader(stringResource(R.string.config_section_app)) }
             item {
+                GroupedRow(GroupPos.Top) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.urge_settings_title)) },
+                    supportingContent = { Text(stringResource(R.string.urge_settings_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.Shield) },
+                    trailingContent = { Chevron() },
+                    modifier = Modifier.clickable { navViewModel.navigateTo(Route.URGE_SETTINGS) }
+                ) }
+            }
+            item {
                 val keyboardLabel = if (shuffleKeyboard)
                     stringResource(R.string.keyboard_shuffle)
                 else
                     stringResource(R.string.keyboard_normal)
-                GroupedRow(GroupPos.Single) { ListItem(
+                GroupedRow(GroupPos.Bottom) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.keyboard_type)) },
                     supportingContent = { Text(keyboardLabel) },
