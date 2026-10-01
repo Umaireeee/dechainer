@@ -10,7 +10,6 @@ import androidx.biometric.compose.rememberAuthenticationLauncher
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,16 +24,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.data.DeviceOwnerRepository
-import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.screens.challenges.MathChallenge
 import io.github.warleysr.dechainer.screens.challenges.WordChallenge
 import io.github.warleysr.dechainer.security.SecurityManager
 
 /**
- * Entry gate of the app. Authentication is deliberately *not* triggered on open: the panic button
- * has to stay one tap away at all times, so the biometric prompt only runs when the user actually
- * asks to get in. Order is therefore: open -> "access app" -> biometrics -> challenge (if any).
+ * The gate in front of the menu's screens (everything but Home). Home has the Urge button and is
+ * never behind it. Authentication is not triggered on open: the biometric prompt only runs when the
+ * user actually asks to get in. Order is: "access app" -> biometrics -> challenge (if any).
  */
 @Composable
 fun LockScreen(onAuthenticated: () -> Unit) {
@@ -112,22 +109,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            if (DeviceOwnerRepository.isDeviceOwner()) {
-                // The urge lock: ten minutes, only the alarm clock works. The rule lives in the engine;
-                // the main screen takes over as soon as it is stored.
-                BigActionButton(
-                    icon = Icons.Filled.Warning,
-                    title = stringResource(R.string.having_impulses),
-                    subtitle = stringResource(R.string.having_impulses_subtitle),
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    height = 96.dp,
-                    onClick = { Thread { LockEngine.startUrgeLock(context) }.start() }
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
             BigActionButton(
                 icon = Icons.Outlined.LockOpen,
                 title = stringResource(R.string.access_app),

@@ -7,9 +7,9 @@ class Migration(val from: Int, val to: Int, val statements: List<String>)
  * The schema history (blueprint section 7). Every change to the database is a new entry at the end;
  * an entry that has shipped is never edited. Pure, so the chain can be tested without a database.
  *
- * Version 1 is the skeleton: only `app_state`. Version 2 (Phase 4) adds `focus_session` and
- * `focus_checkin`. The other tables of section 7 arrive with the phase that first needs them, each
- * as its own step here.
+ * Version 1 is the skeleton: only `app_state`. Version 2 adds `urge_entry` (Phase 3). Version 3 adds
+ * `focus_session` and `focus_checkin` (Phase 4). The other tables of section 7 arrive with the phase that
+ * first needs them, each as its own step here.
  */
 object Migrations {
     val ALL: List<Migration> = listOf(
@@ -19,8 +19,29 @@ object Migrations {
                 "CREATE TABLE app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"
             )
         ),
+        // Phase 3: the urge journal (blueprint section 7). Times are trusted-clock epoch millis.
         Migration(
             from = 1, to = 2,
+            statements = listOf(
+                """CREATE TABLE urge_entry (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    lock_started_at INTEGER,
+                    lock_ended_at INTEGER,
+                    status TEXT NOT NULL,
+                    raw_text TEXT,
+                    questions_json TEXT,
+                    answers_json TEXT,
+                    deep_dive TEXT
+                )""",
+                "CREATE INDEX urge_entry_status ON urge_entry (status)"
+            )
+        ),
+        // Phase 4: focus sessions and their check-ins (blueprint section 7).
+        Migration(
+            from = 2, to = 3,
             statements = listOf(
                 // `id` is the start time in epoch millis (bumped by one on a clash), so a session keeps the
                 // identity the old log gave it: notifications, the log screen and the import all name it.

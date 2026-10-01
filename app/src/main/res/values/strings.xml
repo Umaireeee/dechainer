@@ -170,8 +170,6 @@
     <string name="full_screen_hint_body">When a focus session ends, the question can appear over your lock screen. Android 14 needs you to allow that once. Until then the question still shows on the notification, with its Yes and No buttons.</string>
     <string name="full_screen_hint_open">Open the setting</string>
     <string name="full_screen_hint_dismiss">Not now</string>
-    <string name="having_impulses">Having an urge?</string>
-    <string name="having_impulses_subtitle">Ten minutes. Only the alarm clock works.</string>
     <string name="access_app">Access app</string>
     <string name="access_app_subtitle">Requires authentication</string>
     <string name="entry_challenge_explanation">A small problem to solve each time you open Déchaîner, after authentication. It only slows the way in; it does not lock anything.</string>
@@ -488,21 +486,14 @@
     <string name="focus_brick_source">Focus block</string>
     <string name="urge_lock_source">Urge lock</string>
     <string name="punishment_day_source">Punishment day</string>
-    <string name="locked_title">Locked</string>
     <string name="locked_until">Locked until %1$s</string>
-    <string name="locked_urge_title">Urge lock</string>
-    <string name="locked_urge_body">Ten minutes. It ends by itself, and nothing can end it sooner. Only the alarm clock works. Breathe, and let it pass.</string>
-    <string name="locked_punishment_title">Punishment day</string>
     <string name="locked_punishment_body">Today is locked. Calls, the alarm clock and anything you chose for study stay open. It ends at midnight, and settings cannot be changed until then.</string>
-    <string name="locked_focus_title">Focus block</string>
     <string name="focus_setting_brick">Brick the phone during blocks</string>
     <string name="focus_setting_brick_desc">For the whole block, breaks included: only Déchaîner, incoming calls, the Urge Journal and Quick Settings (airplane mode, mobile data, hotspot).</string>
     <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge Journal (from its Quick Settings tile) and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_next_subject">Next session is for:</string>
     <string name="focus_block_start">Start focus block</string>
     <string name="focus_block_no_way_out">Bricked until the end. No way out.</string>
-    <string name="focus_ride_out">Urge hit? Ride it out</string>
-    <string name="focus_ride_out_note">Opens the Urge Journal\'s ten-minute ride, after a five-second countdown you can cancel. The Home button brings you back here.</string>
     <string name="focus_block_irreversible">Once you commit, nothing ends this block early. Not Stop, not your recovery code. Only the end time.</string>
     <string name="limit_source">Daily limit</string>
     <string name="limit_title">Daily limit · %1$s</string>
@@ -518,6 +509,122 @@
     <string name="focus_allowed_hint">These apps stay open during a block, with calls, your alarm clock and Quick Settings. Everything else is paused.</string>
     <string name="focus_block_allowed_line">Apps you allowed stay open: %1$d</string>
     <string name="forced_removal_cancel_action">Cancel forced removal</string>
+
+    <!-- Home and the menu -->
+    <string name="urge_button">Urge</string>
+    <string name="home_open_menu">Open the menu</string>
+    <string name="menu_urge">Urge</string>
+    <string name="home_reason_urge">The urge lock ends by itself. Nothing can end it sooner.</string>
+    <string name="menu_apps_limits">Apps and limits</string>
+    <string name="back">Back</string>
+    <string name="end_session">End the unlock session</string>
+    <string name="urge_tile_label">Urge</string>
+    <string name="urge_shortcut_short">Urge</string>
+    <string name="urge_shortcut_long">I feel an urge</string>
+
+    <!-- The urge choice -->
+    <string name="urge_choice_title">What is happening?</string>
+    <string name="urge_choice_ongoing">Ongoing</string>
+    <string name="urge_choice_ongoing_desc">Lock the phone for ten minutes and breathe until it passes.</string>
+    <string name="urge_choice_ongoing_desc_nolock">Breathe for ten minutes. The phone cannot be locked until Device Owner is set up.</string>
+    <string name="urge_choice_slip">I slipped</string>
+    <string name="urge_choice_slip_desc">No lock. Write down what happened.</string>
+
+    <!-- Breathing -->
+    <string name="urge_breath_in">Breathe in</string>
+    <string name="urge_breath_out">Breathe out</string>
+    <string name="urge_breath_left">%1$s left</string>
+    <string name="urge_breath_reason">Remember why: %1$s</string>
+    <string-array name="urge_breath_prompts">
+        <item>Let your shoulders drop. You only have to get through this minute.</item>
+        <item>Find where the urge sits in your body. Watch it, don’t fight it.</item>
+        <item>Urges rise, peak and pass. This one is already changing.</item>
+        <item>Breathe out slower than you breathe in.</item>
+        <item>Remember why you set this lock up when you were thinking clearly.</item>
+        <item>Name it quietly: this is an urge, not an instruction.</item>
+        <item>You don’t have to decide anything for the next few minutes.</item>
+        <item>Notice what your hands are doing. Let them rest.</item>
+        <item>The strongest part is usually behind you.</item>
+        <item>Almost there. Stay with the breath until the lock ends.</item>
+    </string-array>
+
+    <!-- Writing and the questions -->
+    <string name="urge_write_title">What happened?</string>
+    <string name="urge_write_hint">Write it plainly, in your own words. Once your deep dive is made, this note is deleted from the phone.</string>
+    <string name="urge_write_label">Your note</string>
+    <string name="urge_write_continue">Continue</string>
+    <string name="urge_write_skip">Not now</string>
+    <string name="urge_questions_title">A few questions</string>
+    <string name="urge_questions_loading">Reading what you wrote…</string>
+    <string name="urge_questions_submit">Get my deep dive</string>
+    <string name="urge_questions_skip">Skip the questions</string>
+    <string name="urge_answer_label">Your answer</string>
+    <string name="urge_scale_low">Barely</string>
+    <string name="urge_scale_high">Very strong</string>
+    <string name="urge_fixed_q1">What was happening just before the urge started?</string>
+    <string name="urge_fixed_q2">How were you feeling, in a word or two?</string>
+    <string name="urge_fixed_q3">Where were you, and roughly what time was it?</string>
+
+    <!-- The deep dive -->
+    <string name="urge_dd_title">Your deep dive</string>
+    <string name="urge_dd_writing">Writing your deep dive…</string>
+    <string name="urge_dd_deleted">Your note was deleted from this phone. Only the deep dive is kept.</string>
+    <string name="urge_dd_pending_title">The deep dive is not made yet</string>
+    <string name="urge_dd_pending_note">Your note is still saved on this phone. It is deleted once the deep dive exists, or when you delete it.</string>
+    <string name="urge_dd_why_no_key">No AI key is set. Add one under Settings, Urge and AI, and the deep dive is made then.</string>
+    <string name="urge_dd_why_no_consent">You have not agreed yet to send your note to the AI. You can agree under Settings, Urge and AI.</string>
+    <string name="urge_dd_why_offline">There is no connection right now. It will be tried again when the phone is online.</string>
+    <string name="urge_dd_why_busy">It is being made in the background.</string>
+    <string name="urge_ai_err_bad_key">The AI service refused the key. Check it under Settings, Urge and AI.</string>
+    <string name="urge_ai_err_no_credits">The AI account has no credit left.</string>
+    <string name="urge_ai_err_bad_model">The AI service does not know that model. Check it under Settings, Urge and AI.</string>
+    <string name="urge_ai_err_bad_url">The AI address is not a valid web address.</string>
+    <string name="urge_ai_err_insecure">The AI address must start with https://, so that your key is never sent in the clear.</string>
+    <string name="urge_ai_err_rate">The AI service is busy. It will be tried again.</string>
+    <string name="urge_ai_err_network">The connection failed. It will be tried again.</string>
+    <string name="urge_ai_err_server">The AI service had a problem. It will be tried again.</string>
+    <string name="urge_ai_err_empty">The AI service sent nothing usable. It will be tried again.</string>
+    <string name="urge_dd_done">Done</string>
+    <string name="urge_dd_delete">Delete this entry</string>
+    <string name="urge_dd_delete_title">Delete this entry?</string>
+    <string name="urge_dd_delete_body">The note and everything saved with it are removed from this phone.</string>
+    <string name="urge_dd_delete_confirm">Delete</string>
+    <string name="urge_dd_delete_keep">Keep</string>
+
+    <!-- The crisis card -->
+    <string name="urge_support_title">Please reach someone now</string>
+    <string name="urge_support_body">What you wrote worries me. You do not have to carry this alone. Call or message someone you trust, or your local emergency number or a crisis line.</string>
+    <string name="urge_support_call">Call %1$s</string>
+    <string name="urge_support_text">Text %1$s</string>
+    <string name="urge_support_nobody">You have not saved anyone yet. You can add a person under Settings, Urge and AI.</string>
+    <string name="urge_support_sms_body">Can you call me? I need someone right now.</string>
+
+    <!-- Urge and AI settings -->
+    <string name="urge_settings_title">Urge and AI</string>
+    <string name="urge_settings_desc">Your reason, someone to call, and the AI behind your deep dives</string>
+    <string name="urge_frozen">Settings cannot be changed today.</string>
+    <string name="urge_saved">Saved.</string>
+    <string name="urge_save">Save</string>
+    <string name="urge_reason_section">Your reason</string>
+    <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone and is never sent to the AI.</string>
+    <string name="urge_reason_field">Why you set this up</string>
+    <string name="urge_contact_section">Someone to call</string>
+    <string name="urge_contact_hint">Saved on this phone only and never sent to the AI. The crisis card offers to call or text this person.</string>
+    <string name="urge_contact_name">Name</string>
+    <string name="urge_contact_number">Phone number</string>
+    <string name="ai_section">AI</string>
+    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive. The note is deleted from this phone once its deep dive exists. Nothing else about you is sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
+    <string name="ai_provider">Provider</string>
+    <string name="ai_key_label">API key</string>
+    <string name="ai_key_none">No key is saved.</string>
+    <string name="ai_key_saved">A key is saved. Type a new one to replace it, or save an empty box to remove it.</string>
+    <string name="ai_key_cannot_encrypt">This phone could not encrypt the key, so it was not saved.</string>
+    <string name="ai_key_get">Get a key at %1$s</string>
+    <string name="ai_model_label">Model</string>
+    <string name="ai_model_default">Leave empty to use %1$s.</string>
+    <string name="ai_base_label">Address (https only)</string>
+    <string name="ai_consent_label">Send my notes to %1$s</string>
+    <string name="ai_consent_hint">Without this, nothing leaves the phone.</string>
 
     <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
     <string name="focus_default_purpose">Focus</string>

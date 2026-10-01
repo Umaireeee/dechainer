@@ -21,7 +21,6 @@ import io.github.warleysr.dechainer.lock.LockStateStore
 import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.models.BlockSchedule
 import io.github.warleysr.dechainer.models.ScheduleType
-import io.github.warleysr.dechainer.store.DechainerDatabase
 import io.github.warleysr.dechainer.store.Store
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,8 +55,9 @@ class FocusRunnerTest {
             "pomodoro", "schedule_state", "schedule_prefs", "security_prefs", "lock_settings", "crash_guard",
             "app_time_limits", "app_time_limits_reached"
         ).forEach { ctx.getSharedPreferences(it, Context.MODE_PRIVATE).edit(commit = true) { clear() } }
+        // The real Application's startup work opens the database on its own thread: empty the tables, do not delete the file under it.
         Store.resetForTests()
-        ctx.deleteDatabase(DechainerDatabase.FILE_NAME)
+        Store.clearForTests(ctx)
         TrustedClock.resetForTests()
         LockStateStore.resetForTests()
         Pomodoro.resetForTests()

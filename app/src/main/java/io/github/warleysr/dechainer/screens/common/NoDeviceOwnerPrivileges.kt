@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import io.github.warleysr.dechainer.viewmodels.Route
 
 @Composable
 fun NoDeviceOwnerPrivileges(navViewModel: NavigationViewModel) {
@@ -36,7 +37,7 @@ fun NoDeviceOwnerPrivileges(navViewModel: NavigationViewModel) {
                     modifier = Modifier.padding(16.dp)
                 )
                 TextButton(onClick = {
-                    navViewModel.navigateTo("config")
+                    navViewModel.navigateTo(Route.SETTINGS)
                 }) {
                     Row {
                         Icon(Icons.Outlined.Settings, null)

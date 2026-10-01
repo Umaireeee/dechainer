@@ -1,71 +1,73 @@
 package io.github.warleysr.dechainer.activities
 
-import io.github.warleysr.dechainer.lock.LockEngine
-import io.github.warleysr.dechainer.lock.LockMode
-import io.github.warleysr.dechainer.clock.TrustedClock
-import io.github.warleysr.dechainer.screens.LockedHomeScreen
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
-import io.github.warleysr.dechainer.focus.Pomodoro
-import io.github.warleysr.dechainer.ui.theme.Motion
-import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
-import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import android.Manifest
-import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.filled.AppBlocking
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.WbTwilight
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.focus.Pomodoro
+import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.screens.apps.AppsScreen
+import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
+import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
 import io.github.warleysr.dechainer.screens.focus.FocusLogScreen
 import io.github.warleysr.dechainer.screens.focus.FocusScreen
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Schedule
+import io.github.warleysr.dechainer.screens.home.HomeScreen
+import io.github.warleysr.dechainer.screens.home.MenuSheet
 import io.github.warleysr.dechainer.screens.setup.SetupDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.setup.SetupRecovery
 import io.github.warleysr.dechainer.screens.tabs.*
+import io.github.warleysr.dechainer.screens.urge.UrgeFlowHost
+import io.github.warleysr.dechainer.screens.urge.UrgeSettingsScreen
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
+import io.github.warleysr.dechainer.ui.theme.Motion
+import io.github.warleysr.dechainer.urge.DeepDiveScheduler
+import io.github.warleysr.dechainer.urge.UrgeSource
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
-import kotlinx.coroutines.delay
+import io.github.warleysr.dechainer.viewmodels.Route
+import io.github.warleysr.dechainer.viewmodels.UrgeViewModel
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
+    /** The urge flow's state, shared with every screen that can start it (Home, Focus, the tile). */
+    private val urgeVm: UrgeViewModel by viewModels()
+
     /**
      * Pins the phone to Déchaîner while any brick runs (an urge lock, a focus block, a punishment
      * day), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
@@ -105,6 +107,27 @@ class MainActivity : ComponentActivity() {
         val status = LockEngine.refreshStatus(this)
         if (status != null) syncBrickPin(true, status.ownerApps)
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
+        // An urge that was left half-written opens straight back into its step.
+        urgeVm.resumeIfAny()
+    }
+
+    /**
+     * The Quick Settings tile and the icon shortcut start the ongoing path with no question first
+     * (D2). The extra is taken off once handled, and an intent replayed from recents is ignored, so
+     * neither can start a second lock by accident.
+     */
+    private fun handleUrgeIntent(intent: Intent?) {
+        val name = intent?.getStringExtra(EXTRA_URGE_SOURCE) ?: return
+        intent.removeExtra(EXTRA_URGE_SOURCE)
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
+        urgeVm.startOngoing(source)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUrgeIntent(intent)
     }
 
 
@@ -142,14 +165,18 @@ class MainActivity : ComponentActivity() {
         Pomodoro.ensureLoaded(this)
         // The first frame already knows whether something holds the phone.
         LockEngine.refreshStatus(this)
+        if (savedInstanceState == null) handleUrgeIntent(intent)
+        // A deep dive that could not be made earlier gets another try (a job already waiting is left alone).
+        thread { DeepDiveScheduler.enqueueIfPending(applicationContext) }
         setContent {
-            // The brick: pinned to this screen for as long as anything holds the phone.
             val focusState by Pomodoro.state.collectAsState()
             val lockStatus by LockEngine.status.collectAsState()
-            // An urge lock or a punishment day shows the locked screen; a focus block shows Focus.
-            // When they overlap, the one that ends last is the one named.
+            val urge by urgeVm.state.collectAsState()
+            // A punishment day (or an urge lock the flow has not picked up yet) shows Home with its end
+            // time; a focus block shows the Focus page. When bricks overlap, the one that ends last is named.
             val lockedHome = lockStatus?.takeIf { it.primary != LockMode.FOCUS_BLOCK }
             val brick = focusState.inBlock || lockStatus != null
+            val focusBrick = brick && lockedHome == null
             val pinApps = lockStatus?.ownerApps ?: Pomodoro.allowedApps.value
             LaunchedEffect(brick, pinApps) { syncBrickPin(brick, pinApps) }
             // The status ends with the clock: when the end time has passed, ask for the plan again.
@@ -160,23 +187,27 @@ class MainActivity : ComponentActivity() {
                     LockEngine.requestSync(this@MainActivity)
                 }
             }
+            // Every urge lock gets its counted entry and its breathing, also one the journal's door started.
+            LaunchedEffect(lockStatus?.primary, urge.entry == null) {
+                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
+            }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
                 viewModel.addShizukuListener()
                 val navViewModel: NavigationViewModel = viewModel()
 
-                val currentScreen = navViewModel.selectedTab()
-                val isRoot = currentScreen in NavigationViewModel.ROOTS
+                // A brick shows its own screen, whatever was open before it started.
+                val route = if (lockedHome != null) Route.HOME else navViewModel.current()
+                val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
 
-                BackHandler(enabled = !isRoot) {
+                BackHandler(enabled = route != Route.HOME) {
                     navViewModel.goBack()
                 }
-                // In a block, Back does nothing: on the main screen it would close the app, and
-                // closing the pinned screen ends the pin. Registered last, so it wins.
-                BackHandler(enabled = brick) { }
-                // And a focus block always shows the Focus page, wherever you were.
-                LaunchedEffect(brick, lockedHome) {
-                    if (brick && lockedHome == null && currentScreen != "focus") navViewModel.navigateTo("focus")
+                // In a brick or in the urge flow, Back does nothing: on the main screen it would close
+                // the app, and closing the pinned screen ends the pin. Registered last, so it wins.
+                BackHandler(enabled = brick || urge.active) { }
+                LaunchedEffect(brick) {
+                    if (brick) navViewModel.navigateTo(Route.HOME)
                 }
 
                 // An urge lock or a punishment day locks Déchaîner itself, also when you are already
@@ -213,145 +244,113 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var menuOpen by rememberSaveable { mutableStateOf(false) }
+
+                // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
+                val showTopBar = recoverySet && !urge.active && (focusBrick || route != Route.HOME)
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
-                        TopAppBar(
-                            // The screen you're on, so you always know where you are. Today keeps
-                            // the app's name.
-                            title = {
-                                Text(
-                                    stringResource(
-                                        if (lockedHome != null) R.string.locked_title
-                                        else if (brick) R.string.focus_tab
-                                        else if (!authenticated.value) R.string.app_name else when (currentScreen) {
-                                            "focus" -> R.string.focus_tab
-                                            "focus_log" -> R.string.focus_log
-                                            "apps" -> R.string.apps
-                                            "config" -> R.string.settings
-                                            "restrictions" -> R.string.protections
-                                            "schedules", "schedule_editor" -> R.string.schedules
-                                            "entry_challenge" -> R.string.entry_challenge
-                                            else -> R.string.app_name
-                                        }
-                                    )
-                                )
-                            },
+                        if (showTopBar) TopAppBar(
+                            // The screen you're on, so you always know where you are.
+                            title = { Text(stringResource(if (focusBrick) R.string.focus_tab else route.title)) },
                             // Same tone as the page, so the bar reads as part of it, not a band on top.
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.background
                             ),
                             navigationIcon = {
-                                if (!isRoot) {
+                                if (!focusBrick) {
                                     IconButton(onClick = { navViewModel.goBack() }) {
-                                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, null)
+                                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back))
                                     }
                                 }
                             },
                             actions = {
                                 // Nothing up here during a block: no info, no sign-out.
                                 if (!brick) {
-                                if (authenticated.value) ScreenInfoButton(currentScreen)
-                                if (SecurityManager.isSessionActive()) {
-                                    val remaining = SecurityManager.sessionEndTime - currentTime
-                                    val minutes = (remaining / 1000) / 60
-                                    val seconds = (remaining / 1000) % 60
-                                    
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Outlined.LockClock, null, modifier = Modifier.padding(end = 4.dp))
-                                        Text(
-                                            text = "%02d:%02d".format(minutes, seconds),
-                                            style = MaterialTheme.typography.labelLarge
-                                        )
-                                        IconButton(onClick = { SecurityManager.endSession() }) {
-                                            Icon(Icons.Outlined.Logout, null)
+                                    if (authenticated.value) ScreenInfoButton(route)
+                                    if (SecurityManager.isSessionActive()) {
+                                        val remaining = SecurityManager.sessionEndTime - currentTime
+                                        val minutes = (remaining / 1000) / 60
+                                        val seconds = (remaining / 1000) % 60
+
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Outlined.LockClock, null, modifier = Modifier.padding(end = 4.dp))
+                                            Text(
+                                                text = "%02d:%02d".format(minutes, seconds),
+                                                style = MaterialTheme.typography.labelLarge
+                                            )
+                                            IconButton(onClick = { SecurityManager.endSession() }) {
+                                                Icon(Icons.Outlined.Logout, stringResource(R.string.end_session))
+                                            }
                                         }
                                     }
                                 }
-                                }
                             }
                         )
-                    },
-                    bottomBar = {
-                      // No tabs during a block: the Focus page is all there is.
-                      if (!brick) {
-                        val tabs = listOf(
-                            Pair("focus", stringResource(R.string.focus_tab)),
-                            Pair("apps", stringResource(R.string.apps)),
-                            Pair("schedules", stringResource(R.string.schedules)),
-                            Pair("config", stringResource(R.string.settings))
-                        )
+                    }
+                ) { innerPadding ->
+                    when {
+                        !recoverySet -> SetupRecovery(innerPadding)
 
-                        val selectedBaseTab = when (currentScreen) {
-                            "focus", "focus_log" -> "focus"
-                            "apps" -> "apps"
-                            "schedules", "schedule_editor" -> "schedules"
-                            else -> "config"
+                        // The urge flow owns the screen: the choice, the breathing, the writing, the questions, the deep dive.
+                        urge.active -> UrgeFlowHost(urgeVm)
+
+                        // The focus block: only this page. It has nothing to protect (no settings, no way
+                        // out), so it doesn't wait behind the unlock screen either.
+                        focusBrick -> Box(modifier = Modifier.padding(innerPadding)) {
+                            FocusScreen(onOpenLog = { })
                         }
 
-                        NavigationBar(
-                            modifier = Modifier.alpha(if (!authenticated.value) 0f else 1f)
-                        ) {
-                            tabs.forEach { pair ->
-                                NavigationBarItem(
-                                    selected = selectedBaseTab == pair.first,
-                                    onClick = { navViewModel.navigateTo(pair.first) },
-                                    label = { Text(pair.second) },
-                                    icon = {
-                                        Icon(
-                                            when (pair.first) {
-                                                "focus" -> Icons.Outlined.Timer
-                                                "apps" -> Icons.Outlined.Block
-                                                "schedules" -> Icons.Outlined.Schedule
-                                                else -> Icons.Outlined.Settings
-                                            }, contentDescription = null
-                                        )
-                                    }
+                        route == Route.HOME -> {
+                            HomeScreen(
+                                lock = lockedHome,
+                                menuEnabled = Route.menuFor(brick).isNotEmpty(),
+                                onUrge = { urgeVm.openChoice(UrgeSource.HOME) },
+                                onMenu = { menuOpen = true },
+                                modifier = Modifier.padding(innerPadding)
+                            )
+                            if (menuOpen) {
+                                MenuSheet(
+                                    routes = Route.menuFor(brick),
+                                    onUrge = { menuOpen = false; urgeVm.openChoice(UrgeSource.HOME) },
+                                    onRoute = { menuOpen = false; navViewModel.navigateTo(it) },
+                                    onDismiss = { menuOpen = false }
                                 )
                             }
                         }
-                      }
-                    }
-                ) { innerPadding ->
 
-                    if (lockedHome != null)
-                        // An urge lock or a punishment day: when it ends and why, nothing to tap.
-                        LockedHomeScreen(lockedHome, Modifier.padding(innerPadding))
-                    else if (brick)
-                        // The brick: only this page. It has nothing to protect (no settings, no
-                        // way out), so it doesn't wait behind the unlock screen either.
-                        Box(modifier = Modifier.padding(innerPadding)) {
-                            FocusScreen(onOpenLog = { })
-                        }
-                    else if (!(SecurityManager.isRecoveryCodeSet(this)))
-                        SetupRecovery(innerPadding)
-                    else {
-                        if (!authenticated.value)
-                            LockScreen(onAuthenticated = { authenticated.value = true })
-                        else
+                        route.needsUnlock && !authenticated.value ->
                             Box(modifier = Modifier.padding(innerPadding)) {
-                                // A soft cross-fade between screens: it answers the tap without
-                                // pulling attention.
-                                AnimatedContent(
-                                    targetState = currentScreen,
-                                    transitionSpec = {
-                                        fadeIn(tween(Motion.SCREEN_MS, delayMillis = 60)) togetherWith fadeOut(tween(Motion.SCREEN_OUT_MS))
-                                    },
-                                    label = "screen"
-                                ) { screen ->
+                                LockScreen(onAuthenticated = { authenticated.value = true })
+                            }
+
+                        else -> Box(modifier = Modifier.padding(innerPadding)) {
+                            // A soft cross-fade between screens: it answers the tap without
+                            // pulling attention.
+                            AnimatedContent(
+                                targetState = route,
+                                transitionSpec = {
+                                    fadeIn(tween(Motion.SCREEN_MS, delayMillis = 60)) togetherWith fadeOut(tween(Motion.SCREEN_OUT_MS))
+                                },
+                                label = "screen"
+                            ) { screen ->
                                 when (screen) {
-                                    "focus" -> FocusScreen(onOpenLog = { navViewModel.navigateTo("focus_log") })
-                                    "focus_log" -> FocusLogScreen()
-                                    "apps" -> AppsScreen()
-                                    "schedules" -> SchedulesScreen()
-                                    "schedule_editor" -> ScheduleEditorScreen()
-                                    "config" -> ConfigTab()
-                                    "restrictions" -> RestrictionsTab()
-                                    "entry_challenge" -> EntryChallengeScreen()
-                                    "setup_device_owner" -> SetupDeviceOwnerPrivileges()
-                                }
+                                    Route.FOCUS -> FocusScreen(onOpenLog = { navViewModel.navigateTo(Route.FOCUS_LOG) })
+                                    Route.FOCUS_LOG -> FocusLogScreen()
+                                    Route.APPS -> AppsScreen()
+                                    Route.SCHEDULES -> SchedulesScreen()
+                                    Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()
+                                    Route.SETTINGS -> ConfigTab()
+                                    Route.RESTRICTIONS -> RestrictionsTab()
+                                    Route.ENTRY_CHALLENGE -> EntryChallengeScreen()
+                                    Route.SETUP_DEVICE_OWNER -> SetupDeviceOwnerPrivileges()
+                                    Route.URGE_SETTINGS -> UrgeSettingsScreen()
+                                    Route.HOME -> Unit
                                 }
                             }
+                        }
                     }
                 }
             }
@@ -363,8 +362,14 @@ class MainActivity : ComponentActivity() {
         SecurityManager.endSession()
     }
 
-    private companion object {
+    companion object {
+        /**
+         * Set by the Quick Settings tile and the icon shortcut: the name of the [UrgeSource] that
+         * started the ongoing path. See [handleUrgeIntent].
+         */
+        const val EXTRA_URGE_SOURCE = "urge_source"
+
         /** Away longer than this, and the app asks to be unlocked again. */
-        const val RELOCK_AFTER_MS = 5 * 60 * 1000L
+        private const val RELOCK_AFTER_MS = 5 * 60 * 1000L
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.viewmodels.Route
 
 /** What a screen is, what it does, and how it works — shown from the ⓘ in the top bar. */
 data class ScreenInfo(
@@ -33,24 +34,24 @@ data class ScreenInfo(
 )
 
 object ScreenInfos {
-    /** The explainer for [screen], or null for screens that need none. */
-    fun forScreen(screen: String): ScreenInfo? = when (screen) {
-        "focus", "focus_log" -> ScreenInfo(R.string.focus_tab, R.string.info_focus_what, R.string.info_focus_does, R.string.info_focus_how)
-        "apps" -> ScreenInfo(R.string.apps, R.string.info_apps_what, R.string.info_apps_does, R.string.info_apps_how)
-        "schedules", "schedule_editor" -> ScreenInfo(R.string.schedules, R.string.info_schedules_what, R.string.info_schedules_does, R.string.info_schedules_how)
-        "config" -> ScreenInfo(R.string.settings, R.string.info_config_what, R.string.info_config_does, R.string.info_config_how)
-        "restrictions" -> ScreenInfo(R.string.protections, R.string.info_restrictions_what, R.string.info_restrictions_does, R.string.info_restrictions_how)
-        "entry_challenge" -> ScreenInfo(R.string.entry_challenge, R.string.info_entry_what, R.string.info_entry_does, R.string.info_entry_how)
-        "setup_device_owner" -> ScreenInfo(R.string.info_owner_title, R.string.info_owner_what, R.string.info_owner_does, R.string.info_owner_how)
-        else -> null
+    /** The explainer for [route], or null for screens that need none. */
+    fun forRoute(route: Route): ScreenInfo? = when (route) {
+        Route.FOCUS, Route.FOCUS_LOG -> ScreenInfo(R.string.focus_tab, R.string.info_focus_what, R.string.info_focus_does, R.string.info_focus_how)
+        Route.APPS -> ScreenInfo(R.string.apps, R.string.info_apps_what, R.string.info_apps_does, R.string.info_apps_how)
+        Route.SCHEDULES, Route.SCHEDULE_EDITOR -> ScreenInfo(R.string.schedules, R.string.info_schedules_what, R.string.info_schedules_does, R.string.info_schedules_how)
+        Route.SETTINGS -> ScreenInfo(R.string.settings, R.string.info_config_what, R.string.info_config_does, R.string.info_config_how)
+        Route.RESTRICTIONS -> ScreenInfo(R.string.protections, R.string.info_restrictions_what, R.string.info_restrictions_does, R.string.info_restrictions_how)
+        Route.ENTRY_CHALLENGE -> ScreenInfo(R.string.entry_challenge, R.string.info_entry_what, R.string.info_entry_does, R.string.info_entry_how)
+        Route.SETUP_DEVICE_OWNER -> ScreenInfo(R.string.info_owner_title, R.string.info_owner_what, R.string.info_owner_does, R.string.info_owner_how)
+        Route.HOME, Route.URGE_SETTINGS -> null
     }
 }
 
 /** The ⓘ button. Shows nothing for screens without an explainer. */
 @Composable
-fun ScreenInfoButton(screen: String) {
-    val info = ScreenInfos.forScreen(screen) ?: return
-    var open by rememberSaveable(screen) { mutableStateOf(false) }
+fun ScreenInfoButton(route: Route) {
+    val info = ScreenInfos.forRoute(route) ?: return
+    var open by rememberSaveable(route) { mutableStateOf(false) }
     IconButton(onClick = { open = true }) {
         Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.info_button))
     }

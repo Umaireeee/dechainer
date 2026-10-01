@@ -28,15 +28,26 @@ class MigrationsTest {
     }
 
     @Test
-    fun theFocusTablesArriveInSchemaVersionTwoAndVersionOneIsNotEdited() {
-        val v1 = Migrations.statementsBetween(0, 1).joinToString(" ").lowercase()
-        assertTrue("app_state" in v1)
-        assertFalse("focus_session" in v1)
-        val v2 = Migrations.statementsBetween(1, 2).joinToString(" ").lowercase()
-        assertTrue("focus_session" in v2)
-        assertTrue("focus_checkin" in v2)
-        assertTrue("planned_end_at" in v2)
-        assertTrue("reset_result" in v2)
+    fun theSecondStepAddsTheUrgeJournalAndLeavesAppStateAlone() {
+        val step = Migrations.ALL.single { it.from == 1 && it.to == 2 }
+        val sql = step.statements.joinToString(" ").lowercase()
+        assertTrue("create table urge_entry" in sql)
+        // Every column of blueprint section 7.
+        for (c in listOf("created_at", "kind", "source", "lock_started_at", "lock_ended_at", "status", "raw_text", "questions_json", "answers_json", "deep_dive")) {
+            assertTrue(c, c in sql)
+        }
+        assertFalse("app_state" in sql)
+    }
+
+    @Test
+    fun theFocusTablesArriveInSchemaVersionThreeAndEarlierStepsAreNotEdited() {
+        val before = Migrations.statementsBetween(0, 2).joinToString(" ").lowercase()
+        assertFalse("focus_session" in before)
+        val v3 = Migrations.statementsBetween(2, 3).joinToString(" ").lowercase()
+        assertTrue("focus_session" in v3)
+        assertTrue("focus_checkin" in v3)
+        assertTrue("planned_end_at" in v3)
+        assertTrue("reset_result" in v3)
     }
 
     @Test
