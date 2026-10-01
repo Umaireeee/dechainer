@@ -138,7 +138,7 @@ class FocusSessionRepositoryTest {
     // ---- The old log (blueprint 13) ----
 
     private val oldLog = listOf(
-        FocusSession(id = t0, minutes = 25, done = true, tag = "FAR", intention = "Revenue recognition", lectures = 1),
+        FocusSession(id = t0, minutes = 25, done = true, intention = "Revenue recognition"),
         FocusSession(id = t0 + 40 * minute, minutes = 30, done = false),
         FocusSession(id = t0 + 90 * minute, minutes = 25, done = null)
     )

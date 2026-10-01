@@ -41,8 +41,6 @@ object Pomodoro {
     /** Starts whatever phase is waiting (the break, or the next focus session). */
     const val ACTION_START_NEXT = "io.github.warleysr.dechainer.POMODORO_START_NEXT"
     const val ACTION_STOP_ALARM = "io.github.warleysr.dechainer.POMODORO_STOP_ALARM"
-    const val ACTION_LECTURE = "io.github.warleysr.dechainer.POMODORO_LECTURE"
-    const val EXTRA_LECTURE = "lecture_answer"
     const val EXTRA_SESSION_ID = "session_id"
     const val EXTRA_DONE = "done"
 
@@ -62,18 +60,10 @@ object Pomodoro {
     private const val K_AUTO_BREAK = "auto_start_breaks"
     private const val K_LOG = "log"
     private const val K_PENDING = "pending_question"
-    private const val K_TAGS = "tags"          // newline-separated, in the order you added them
-    private const val K_TAG = "current_tag"
     private const val K_INTENTION = "intention"
-    private const val K_GOAL = "daily_goal"
-    private const val K_TARGETS = "subject_targets"
     private const val K_LOCK = "lock_apps"
-    private const val K_LECTURE_MIN = "lecture_minutes"
     private const val K_BRICK = "brick_blocks"
-    private const val K_PROGRESS = "lecture_progress"
-    private const val K_LECTURE_ASK = "lecture_ask"
     private const val K_ALLOWED = "allowed_apps"
-    private const val TAG_LIMIT = 12
 
     /** Enough for years of daily use; the oldest go first. */
     private const val LOG_LIMIT = 5000
@@ -104,33 +94,18 @@ object Pomodoro {
     private val _settings = MutableStateFlow(PomodoroSettings())
     private val _log = MutableStateFlow<List<FocusSession>>(emptyList())
     private val _pending = MutableStateFlow<Long?>(null)
-    private val _tags = MutableStateFlow<List<String>>(emptyList())
-    private val _tag = MutableStateFlow<String?>(null)
     private val _intention = MutableStateFlow("")
-    private val _targets = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val _allowed = MutableStateFlow<Set<String>>(emptySet())
-    private val _progress = MutableStateFlow<Map<String, LectureProgress>>(emptyMap())
-    private val _lectureAsk = MutableStateFlow<Long?>(null)
 
     val state: StateFlow<PomodoroState> = _state.asStateFlow()
     val settings: StateFlow<PomodoroSettings> = _settings.asStateFlow()
     val log: StateFlow<List<FocusSession>> = _log.asStateFlow()
     /** The finished focus session still waiting for "Did you do the work?", if any. */
     val pendingQuestion: StateFlow<Long?> = _pending.asStateFlow()
-    /** Your subjects, e.g. FAR, Tax. */
-    val tags: StateFlow<List<String>> = _tags.asStateFlow()
-    /** The subject the next finished session is logged under, or null for none. */
-    val currentTag: StateFlow<String?> = _tag.asStateFlow()
     /** What the next (or current) focus session is for, in your words. Cleared once it's logged. */
     val intention: StateFlow<String> = _intention.asStateFlow()
-    /** Sessions a day you aim for per subject, e.g. FAR → 2. Subjects without one aren't listed. */
-    val targets: StateFlow<Map<String, Int>> = _targets.asStateFlow()
     /** Apps that keep working during a locked focus session. */
     val allowedApps: StateFlow<Set<String>> = _allowed.asStateFlow()
-    /** Each subject's current lecture ("" for no subject). */
-    val lectureProgress: StateFlow<Map<String, LectureProgress>> = _progress.asStateFlow()
-    /** The finished session whose question is "How's the lecture?" rather than "Did you do the work?". */
-    val lectureAsk: StateFlow<Long?> = _lectureAsk.asStateFlow()
 
     /**
      * True while a focus block holds the phone: from its start until its end time. The end time is
@@ -165,13 +140,9 @@ object Pomodoro {
                 longBreakEvery = p.getInt(K_EVERY, 4),
                 autoStartBreaks = p.getBoolean(K_AUTO_BREAK, false),
                 autoStartFocus = p.getBoolean(K_AUTO_FOCUS, false),
-                dailyGoal = p.getInt(K_GOAL, 0),
                 lockApps = p.getBoolean(K_LOCK, false),
-                lectureMinutes = p.getInt(K_LECTURE_MIN, 90),
                 brickBlocks = p.getBoolean(K_BRICK, true)
             ).clamped()
-            _progress.value = LectureMath.decode(p.getString(K_PROGRESS, null))
-            _lectureAsk.value = p.getLong(K_LECTURE_ASK, 0L).takeIf { it > 0L }
             _allowed.value = p.getStringSet(K_ALLOWED, emptySet())?.toSet() ?: emptySet()
             _state.value = PomodoroState(
                 phase = runCatching { Phase.valueOf(p.getString(K_PHASE, null) ?: "") }.getOrDefault(Phase.FOCUS),
@@ -184,10 +155,7 @@ object Pomodoro {
             )
             _log.value = loadLog(context, p)
             _pending.value = p.getLong(K_PENDING, 0L).takeIf { it > 0L }
-            _tags.value = (p.getString(K_TAGS, null) ?: "").split('\n').mapNotNull { FocusLogMath.cleanTag(it) }.distinct()
-            _tag.value = p.getString(K_TAG, null)?.takeIf { it in _tags.value }
             _intention.value = p.getString(K_INTENTION, "") ?: ""
-            _targets.value = FocusLogMath.decodeTargets(p.getString(K_TARGETS, null)).filterKeys { it in _tags.value }
             loaded = true
         }
     }
@@ -296,9 +264,7 @@ object Pomodoro {
                 putInt(K_EVERY, s.longBreakEvery)
                 putBoolean(K_AUTO_FOCUS, s.autoStartFocus)
                 putBoolean(K_AUTO_BREAK, s.autoStartBreaks)
-                putInt(K_GOAL, s.dailyGoal)
                 putBoolean(K_LOCK, s.lockApps)
-                putInt(K_LECTURE_MIN, s.lectureMinutes)
                 putBoolean(K_BRICK, s.brickBlocks)
             }
         }
@@ -322,10 +288,6 @@ object Pomodoro {
         recordAnswer(ctx, id, done)
         synchronized(lock) {
             if (_pending.value == id) _pending.value = null
-            if (_lectureAsk.value == id) {
-                _lectureAsk.value = null
-                prefs(ctx).edit { remove(K_LECTURE_ASK) }
-            }
             prefs(ctx).edit(commit = true) {
                 if (_pending.value == null) remove(K_PENDING)
             }
@@ -384,125 +346,12 @@ object Pomodoro {
         }
     }
 
-    // ---- Subjects ----
-
-    fun addTag(context: Context, raw: String) {
-        if (!SettingsFreeze.allowWrite(context, "focus subjects")) return
-        ensureLoaded(context)
-        val tag = FocusLogMath.cleanTag(raw) ?: return
-        synchronized(lock) {
-            if (_tags.value.any { it.equals(tag, ignoreCase = true) } || _tags.value.size >= TAG_LIMIT) return
-            _tags.value = _tags.value + tag
-            _tag.value = tag
-            saveTags(context)
-        }
-    }
-
-    /** Removes a subject from the picker. Sessions already logged under it keep it. */
-    fun removeTag(context: Context, tag: String) {
-        if (!SettingsFreeze.allowWrite(context, "focus subjects")) return
-        ensureLoaded(context)
-        synchronized(lock) {
-            _tags.value = _tags.value - tag
-            _targets.value = _targets.value - tag
-            if (_tag.value == tag) _tag.value = null
-            saveTags(context)
-        }
-    }
-
-    fun selectTag(context: Context, tag: String?) {
-        ensureLoaded(context)
-        synchronized(lock) {
-            _tag.value = tag?.takeIf { it in _tags.value }
-            saveTags(context)
-        }
-    }
-
-    fun setTarget(context: Context, tag: String, sessions: Int) {
-        if (!SettingsFreeze.allowWrite(context, "focus targets")) return
-        ensureLoaded(context)
-        synchronized(lock) {
-            if (tag !in _tags.value) return
-            val n = sessions.coerceIn(0, 10)
-            _targets.value = if (n == 0) _targets.value - tag else _targets.value + (tag to n)
-            saveTags(context)
-        }
-    }
-
-    private fun saveTags(context: Context) = prefs(context).edit {
-        putString(K_TAGS, _tags.value.joinToString("\n"))
-        putString(K_TARGETS, FocusLogMath.encodeTargets(_targets.value))
-        if (_tag.value == null) remove(K_TAG) else putString(K_TAG, _tag.value)
-    }
-
     fun setIntention(context: Context, text: String) {
         ensureLoaded(context)
         synchronized(lock) {
             _intention.value = text.take(80)
             prefs(context).edit { putString(K_INTENTION, _intention.value) }
         }
-    }
-
-    // ---- Backup ----
-
-    /** Writes the whole log to [uri] as CSV. True if it worked. */
-    fun exportTo(context: Context, uri: android.net.Uri): Boolean {
-        ensureLoaded(context)
-        return try {
-            context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
-                out.write(FocusLogMath.toCsv(_log.value).toByteArray(Charsets.UTF_8))
-            } != null
-        } catch (e: Exception) {
-            Timber.w(e, "Export failed")
-            false
-        }
-    }
-
-    /**
-     * Adds the sessions in the CSV at [uri] that aren't in the log yet. Subjects and lecture counts
-     * are not stored any more, so they are dropped. Nothing already in the log is changed. Returns how many were added, or -1 if unreadable.
-     */
-    fun importFrom(context: Context, uri: android.net.Uri): Int {
-        ensureLoaded(context)
-        val incoming = try {
-            context.contentResolver.openInputStream(uri)?.use { FocusLogMath.fromCsv(it.readBytes().toString(Charsets.UTF_8)) }
-                ?: return -1
-        } catch (e: Exception) {
-            Timber.w(e, "Import failed")
-            return -1
-        }
-        val added = try {
-            Store.focus(context.applicationContext).importLegacy(incoming)
-        } catch (e: Exception) {
-            Timber.w(e, "Import not stored")
-            return -1
-        }
-        reloadLog(context.applicationContext)
-        return added
-    }
-
-    /**
-     * The answer to "How's the lecture?" for session [id]. It also answers "Did you do the work?":
-     * done and in progress mean yes, procrastinating means no. Done counts one lecture.
-     */
-    fun answerLecture(context: Context, id: Long, answer: LectureAnswer) {
-        ensureLoaded(context)
-        val ctx = context.applicationContext
-        val session = synchronized(lock) { _log.value.firstOrNull { it.id == id } } ?: return
-        recordAnswer(ctx, id, answer != LectureAnswer.PROCRASTINATING)
-        synchronized(lock) {
-            val key = session.tag ?: ""
-            val updated = LectureMath.answer(_progress.value[key] ?: LectureProgress(), answer, session.minutes)
-            _progress.value = _progress.value + (key to updated)
-            if (_pending.value == id) _pending.value = null
-            if (_lectureAsk.value == id) _lectureAsk.value = null
-            prefs(ctx).edit(commit = true) {
-                putString(K_PROGRESS, LectureMath.encode(_progress.value))
-                if (_pending.value == null) remove(K_PENDING)
-                remove(K_LECTURE_ASK)
-            }
-        }
-        notificationManager(ctx).cancel(ID_ALARM)
     }
 
     /** Removes one session from the log for good (a test run, a mistaken start). */
@@ -518,10 +367,8 @@ object Pomodoro {
         synchronized(lock) {
             _log.value = _log.value.filterNot { it.id == id }
             if (_pending.value == id) _pending.value = null
-            if (_lectureAsk.value == id) _lectureAsk.value = null
             prefs(ctx).edit(commit = true) {
                 if (_pending.value == null) remove(K_PENDING)
-                if (_lectureAsk.value == null) remove(K_LECTURE_ASK)
             }
         }
     }
@@ -599,7 +446,6 @@ object Pomodoro {
                     val entry = FocusSession(
                         id = current.phaseStartedAt.takeIf { it > 0 } ?: now(),
                         minutes = minutes,
-                        tag = _tag.value,
                         intention = FocusLogMath.cleanIntention(_intention.value)
                     )
                     // A fresh intention for the next session.
@@ -608,14 +454,8 @@ object Pomodoro {
                     _pending.value = entry.id
                     loggedId = entry.id
                     stored = entry
-                    val key = entry.tag ?: ""
-                    val progressed = LectureMath.afterSession(_progress.value[key] ?: LectureProgress(), entry.minutes)
-                    _progress.value = _progress.value + (key to progressed)
-                    _lectureAsk.value = if (LectureMath.shouldAsk(progressed, _settings.value.lectureMinutes)) entry.id else null
                     prefs(ctx).edit(commit = true) {
                         putLong(K_PENDING, entry.id)
-                        putString(K_PROGRESS, LectureMath.encode(_progress.value))
-                        if (_lectureAsk.value != null) putLong(K_LECTURE_ASK, entry.id) else remove(K_LECTURE_ASK)
                         remove(K_INTENTION)
                     }
                 }
@@ -879,23 +719,10 @@ object Pomodoro {
         notificationManager(ctx).notify(ID_ALARM, n)
     }
 
-    private fun lectureIntent(ctx: Context, id: Long, a: LectureAnswer) = PendingIntent.getBroadcast(
-        ctx, 40 + a.ordinal,
-        Intent(ctx, PomodoroReceiver::class.java).setAction(ACTION_LECTURE)
-            .putExtra(EXTRA_SESSION_ID, id).putExtra(EXTRA_LECTURE, a.name),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    )
-
-    /** The question's buttons on a notification, whichever question it is. */
+    /** The question's buttons on a notification. */
     private fun addQuestionActions(ctx: Context, b: NotificationCompat.Builder, id: Long) {
-        if (_lectureAsk.value == id) {
-            b.addAction(0, ctx.getString(R.string.lecture_done), lectureIntent(ctx, id, LectureAnswer.DONE))
-            b.addAction(0, ctx.getString(R.string.lecture_in_progress), lectureIntent(ctx, id, LectureAnswer.IN_PROGRESS))
-            b.addAction(0, ctx.getString(R.string.lecture_procrastinating), lectureIntent(ctx, id, LectureAnswer.PROCRASTINATING))
-        } else {
-            b.addAction(0, ctx.getString(R.string.focus_answer_yes), answerIntent(ctx, id, true))
-            b.addAction(0, ctx.getString(R.string.focus_answer_no), answerIntent(ctx, id, false))
-        }
+        b.addAction(0, ctx.getString(R.string.focus_answer_yes), answerIntent(ctx, id, true))
+        b.addAction(0, ctx.getString(R.string.focus_answer_no), answerIntent(ctx, id, false))
     }
 
     private fun answerIntent(ctx: Context, id: Long, done: Boolean) = PendingIntent.getBroadcast(
@@ -960,7 +787,7 @@ object Pomodoro {
                 .setTimeoutAfter(5_000L)
                 .setContentIntent(openAppIntent(ctx))
             if (finished.phase == Phase.FOCUS && id != null) {
-                b.setContentText(ctx.getString(if (_lectureAsk.value == id) R.string.lecture_question else R.string.focus_question))
+                b.setContentText(ctx.getString(R.string.focus_question))
                 addQuestionActions(ctx, b, id)
             }
             // Repeats until the timeout, a tap or a swipe.
@@ -996,10 +823,7 @@ object Pomodoro {
                 b.setFullScreenIntent(questionIntent(ctx, id), true)
             }
             if (id != null) addQuestionActions(ctx, b, id)
-            // Three lecture answers already fill the notification; tapping any stops the ring too.
-            if (id == null || _lectureAsk.value != id) {
-                b.addAction(0, ctx.getString(R.string.focus_stop_alarm), broadcast(ctx, RC_STOP, ACTION_STOP_ALARM))
-            }
+            b.addAction(0, ctx.getString(R.string.focus_stop_alarm), broadcast(ctx, RC_STOP, ACTION_STOP_ALARM))
             ring(ctx, b)
         } catch (e: Exception) {
             Timber.w(e, "Focus alarm not shown")

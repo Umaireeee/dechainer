@@ -28,11 +28,6 @@ class PomodoroReceiver : BroadcastReceiver() {
                 if (Pomodoro.state.value.isIdle) Pomodoro.start(ctx) else Pomodoro.dismissAlarm(ctx)
             }
             Pomodoro.ACTION_STOP_ALARM -> Pomodoro.dismissAlarm(ctx)
-            Pomodoro.ACTION_LECTURE -> {
-                val id = intent.getLongExtra(Pomodoro.EXTRA_SESSION_ID, 0L)
-                val a = runCatching { LectureAnswer.valueOf(intent.getStringExtra(Pomodoro.EXTRA_LECTURE) ?: "") }.getOrNull()
-                if (id > 0L && a != null) Pomodoro.answerLecture(ctx, id, a)
-            }
         }
         // Every receiver is a wake-up (blueprint 5.4): the lock is recomputed from stored data, so
         // an alarm that arrives late or twice can never leave a stale brick behind.

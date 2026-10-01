@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.activities
 
-import io.github.warleysr.dechainer.focus.LectureAnswer
 import androidx.compose.material3.FilterChip
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -60,8 +59,6 @@ class PomodoroEndActivity : ComponentActivity() {
         val id = intent.getLongExtra(Pomodoro.EXTRA_SESSION_ID, 0L).takeIf { it > 0L }
             ?: Pomodoro.pendingQuestion.value
         val session = id?.let { Pomodoro.session(it) }
-        // At a lecture checkpoint the question is "How's the lecture?" instead.
-        val isLectureCheck = session != null && Pomodoro.lectureAsk.value == session.id
         // Already answered (from the notification, say) or nothing to ask: nothing to show.
         if (session == null || session.done != null) {
             finish()
@@ -92,7 +89,7 @@ class PomodoroEndActivity : ComponentActivity() {
                         )
                         Spacer(Modifier.height(40.dp))
                         Text(
-                            stringResource(if (isLectureCheck) R.string.lecture_question else R.string.focus_question),
+                            stringResource(R.string.focus_question),
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onBackground,
                             textAlign = TextAlign.Center
@@ -116,27 +113,7 @@ class PomodoroEndActivity : ComponentActivity() {
                             Pomodoro.answer(this@PomodoroEndActivity, session.id, done)
                             afterAnswer()
                         }
-                        fun replyLecture(a: LectureAnswer) {
-                            Pomodoro.answerLecture(this@PomodoroEndActivity, session.id, a)
-                            afterAnswer()
-                        }
-                        if (!answered && isLectureCheck) {
-                            // One tap answers both: done / in progress mean the work happened.
-                            Column(
-                                modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Button(onClick = { replyLecture(LectureAnswer.DONE) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                                    Text(stringResource(R.string.lecture_done))
-                                }
-                                OutlinedButton(onClick = { replyLecture(LectureAnswer.IN_PROGRESS) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                                    Text(stringResource(R.string.lecture_in_progress))
-                                }
-                                TextButton(onClick = { replyLecture(LectureAnswer.PROCRASTINATING) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                                    Text(stringResource(R.string.lecture_procrastinating), color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        } else if (!answered) {
+                        if (!answered) {
                             Row(
                                 modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)

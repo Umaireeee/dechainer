@@ -11,7 +11,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.Image
-import io.github.warleysr.dechainer.focus.LectureAnswer
 import io.github.warleysr.dechainer.ui.theme.Motion
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -125,17 +124,10 @@ fun FocusScreen(onOpenLog: () -> Unit) {
     val settings by Pomodoro.settings.collectAsState()
     val log by Pomodoro.log.collectAsState()
     val pending by Pomodoro.pendingQuestion.collectAsState()
-    val tags by Pomodoro.tags.collectAsState()
-    val currentTag by Pomodoro.currentTag.collectAsState()
-    var showTags by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var showBlock by remember { mutableStateOf(false) }
     val allowedApps by Pomodoro.allowedApps.collectAsState()
     val gate = rememberRecoveryGate()
-    val intention by Pomodoro.intention.collectAsState()
-    val targets by Pomodoro.targets.collectAsState()
-    val lectureAsk by Pomodoro.lectureAsk.collectAsState()
-    val lectureProgress by Pomodoro.lectureProgress.collectAsState()
 
     var now by remember { mutableLongStateOf(TrustedClock.now()) }
     // Also while a block runs as one stretch (a special session, the plain timer): its end is a wake-up too.
@@ -176,34 +168,16 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             CalmCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), highlighted = true) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        if (lectureAsk == session.id) stringResource(R.string.lecture_question_pending, session.tag ?: "")
-                        else stringResource(R.string.focus_question_pending, session.minutes),
+                        stringResource(R.string.focus_question_pending, session.minutes),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(Modifier.height(12.dp))
-                    if (lectureAsk == session.id) {
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.DONE) }) {
-                                Text(stringResource(R.string.lecture_done))
-                            }
-                            OutlinedButton(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.IN_PROGRESS) }) {
-                                Text(stringResource(R.string.lecture_in_progress))
-                            }
-                            TextButton(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.PROCRASTINATING) }) {
-                                Text(stringResource(R.string.lecture_procrastinating), color = MaterialTheme.colorScheme.error)
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { Pomodoro.answer(context, session.id, false) }) {
+                            Text(stringResource(R.string.focus_answer_no))
                         }
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { Pomodoro.answer(context, session.id, false) }) {
-                                Text(stringResource(R.string.focus_answer_no))
-                            }
-                            Button(onClick = { Pomodoro.answer(context, session.id, true) }) {
-                                Text(stringResource(R.string.focus_answer_yes))
-                            }
+                        Button(onClick = { Pomodoro.answer(context, session.id, true) }) {
+                            Text(stringResource(R.string.focus_answer_yes))
                         }
                     }
                 }
@@ -376,64 +350,12 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                         else stringResource(R.string.focus_today_summary, sessionsLabel(today.count), today.doneCount, formatMinutes(today.minutes)),
                         style = MaterialTheme.typography.titleMedium
                     )
-                    // The current lecture for the chosen subject: "FAR lecture: 45 of 90 min".
-                    val current = lectureProgress[currentTag ?: ""]
-                    if (current != null && current.minutes > 0) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            stringResource(
-                                R.string.lecture_progress_line,
-                                currentTag ?: stringResource(R.string.focus_untagged),
-                                current.minutes, settings.lectureMinutes
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    val perSubject = FocusLogMath.subjectProgress(today?.sessions ?: emptyList(), targets, tags)
-                    if (perSubject.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            perSubject.forEach { (tag, done, target) ->
-                                val reached = done >= target
-                                Text(
-                                    stringResource(R.string.focus_subject_progress, tag, done, target),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (reached) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    if (settings.dailyGoal > 0) {
-                        // The goal counts lectures finished, as reported at the end of each session.
-                        val done = today?.lectures ?: 0
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { (done.toFloat() / settings.dailyGoal).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            stringResource(
-                                if (done >= settings.dailyGoal) R.string.focus_goal_reached else R.string.focus_goal_progress,
-                                done, settings.dailyGoal
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = stringResource(R.string.focus_log))
             }
         }
         Spacer(Modifier.height(24.dp))
     }
-
-    if (showTags) SubjectsDialog(tags, targets, onDismiss = { showTags = false })
 
     RecoveryGateDialog(gate)
     if (showBlock) BlockDialog(settings, onDismiss = { showBlock = false })
@@ -530,12 +452,6 @@ private fun FocusSettingsDialog(
                 Stepper(stringResource(R.string.focus_setting_every), s.longBreakEvery, PomodoroSettings.EVERY_RANGE, 1, unit = false) {
                     s = s.copy(longBreakEvery = it)
                 }
-                Stepper(stringResource(R.string.focus_setting_lecture), s.lectureMinutes, PomodoroSettings.LECTURE_RANGE, 15) {
-                    s = s.copy(lectureMinutes = it)
-                }
-                Stepper(stringResource(R.string.focus_setting_goal), s.dailyGoal, PomodoroSettings.GOAL_RANGE, 1, unit = false) {
-                    s = s.copy(dailyGoal = it)
-                }
                 DialogSection(stringResource(R.string.focus_section_blocks))
                 // Open all through a block, with calls, your alarm clock and Quick Settings.
                 TextButton(onClick = onPickApps, modifier = Modifier.fillMaxWidth()) {
@@ -576,60 +492,6 @@ private fun Stepper(label: String, value: Int, range: IntRange, step: Int, unit:
         )
         TextButton(onClick = { onChange((value + step).coerceIn(range)) }, enabled = value < range.last) { Text("+") }
     }
-}
-
-/** Add and remove subjects. Removing one keeps the sessions already logged under it. */
-@Composable
-private fun SubjectsDialog(tags: List<String>, targets: Map<String, Int>, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var text by remember { mutableStateOf("") }
-    fun add() {
-        if (text.isNotBlank()) Pomodoro.addTag(context, text)
-        text = ""
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.focus_subjects)) },
-        text = {
-            Column {
-                if (tags.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.focus_target_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
-                tags.forEach { tag ->
-                    val target = targets[tag] ?: 0
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(tag, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1)
-                        // Daily target for this subject: − n +, 0 shows as a dash (no target).
-                        TextButton(onClick = { Pomodoro.setTarget(context, tag, target - 1) }, enabled = target > 0) { Text("−") }
-                        Text(if (target == 0) "–" else target.toString(), style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { Pomodoro.setTarget(context, tag, target + 1) }, enabled = target < 10) { Text("+") }
-                        IconButton(onClick = { Pomodoro.removeTag(context, tag) }) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.remove))
-                        }
-                    }
-                }
-                if (tags.size < 12) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it.take(20) },
-                        placeholder = { Text(stringResource(R.string.focus_subject_hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { add() }),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { add(); onDismiss() }) { Text(stringResource(R.string.done)) }
-        }
-    )
 }
 
 /**
