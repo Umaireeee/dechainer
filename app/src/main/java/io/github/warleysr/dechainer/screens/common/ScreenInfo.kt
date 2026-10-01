@@ -44,7 +44,8 @@ object ScreenInfos {
         Route.RESTRICTIONS -> ScreenInfo(R.string.protections, R.string.info_restrictions_what, R.string.info_restrictions_does, R.string.info_restrictions_how)
         Route.SETUP_DEVICE_OWNER -> ScreenInfo(R.string.info_owner_title, R.string.info_owner_what, R.string.info_owner_does, R.string.info_owner_how)
         Route.REPORTS -> ScreenInfo(R.string.reports_tab, R.string.info_reports_what, R.string.info_reports_does, R.string.info_reports_how)
-        Route.HOME, Route.URGE_SETTINGS, Route.DATA -> null
+        Route.JOURNAL, Route.ENTRY -> ScreenInfo(R.string.journal_title, R.string.info_journal_what, R.string.info_journal_does, R.string.info_journal_how)
+        Route.HOME, Route.URGE_SETTINGS, Route.DATA, Route.APP_LOCK -> null
     }
 }
 

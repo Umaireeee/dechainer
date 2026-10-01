@@ -32,7 +32,7 @@ import java.time.format.FormatStyle
  * punishment day by [DataTools] itself; this screen only says so.
  */
 @Composable
-fun DataScreen(modifier: Modifier = Modifier) {
+fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val zone = TrustedClock.zone()
     val tools = remember { DataTools(ctx, zone) { TrustedClock.now(ctx) } }
@@ -103,8 +103,14 @@ fun DataScreen(modifier: Modifier = Modifier) {
         if (urges.isEmpty()) item { Text(stringResource(R.string.data_none)) }
         items(urges, key = { "u${it.id}" }) { e ->
             Column(Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.data_urge_row, at(e.createdAt),
-                    stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge), e.status.name.lowercase().replace('_', ' ')))
+                // The row opens the entry: its deep dive and answers can be read again from here.
+                EntryRow(
+                    title = stringResource(R.string.data_urge_row, at(e.createdAt),
+                        stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge),
+                        stringResource(entryStatusLabel(e.status, e.deepDive != null))),
+                    subtitle = stringResource(R.string.data_open_hint),
+                    onClick = { onOpenEntry(e.id) }
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton({ report(tools.deleteUrge(e.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
@@ -164,4 +170,12 @@ fun DataScreen(modifier: Modifier = Modifier) {
         )
     }
     RecoveryGateDialog(gate)
+}
+
+/** A plain word for where an entry is, instead of the stored status name. */
+private fun entryStatusLabel(status: UrgeStatus, hasDeepDive: Boolean): Int = when {
+    hasDeepDive -> R.string.journal_label_deep_dive
+    status == UrgeStatus.PENDING_DEEPDIVE -> R.string.journal_label_waiting
+    status == UrgeStatus.SKIPPED -> R.string.journal_label_skipped
+    else -> R.string.journal_label_unfinished
 }

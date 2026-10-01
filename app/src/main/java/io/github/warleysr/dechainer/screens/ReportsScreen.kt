@@ -34,7 +34,7 @@ import java.time.format.FormatStyle
  * so it stays open on a punishment day. Deleting and the backup are on [DataScreen].
  */
 @Composable
-fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, modifier: Modifier = Modifier) {
+fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, onOpenJournal: () -> Unit = {}, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val zone = TrustedClock.zone()
     val reports = remember { Store.reports(ctx).all().filter { !it.deleted } }
@@ -72,6 +72,7 @@ fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, modifier: Modifie
                 Text(label(r), Modifier.padding(16.dp).heightIn(min = 24.dp), style = MaterialTheme.typography.titleMedium)
             }
         }
+        item { TextButton(onOpenJournal) { Text(stringResource(R.string.reports_deep_dives)) } }
         item {
             if (SettingsFreeze.isFrozen(ctx)) Text(stringResource(R.string.reports_frozen), style = MaterialTheme.typography.bodySmall)
             else TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) }
