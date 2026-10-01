@@ -89,6 +89,9 @@ object Pomodoro {
     private val lock = Any()
     @Volatile private var loaded = false
 
+    /** Remembered from the first call that brings one, so the trusted clock can be read without the global Application. */
+    @Volatile private var appContext: Context? = null
+
     private val _state = MutableStateFlow(PomodoroState())
     private val _settings = MutableStateFlow(PomodoroSettings())
     private val _log = MutableStateFlow<List<FocusSession>>(emptyList())
@@ -142,6 +145,7 @@ object Pomodoro {
 
     /** Reads the saved state once per process. Cheap to call again. */
     fun ensureLoaded(context: Context) {
+        appContext = context.applicationContext
         if (loaded) return
         synchronized(lock) {
             if (loaded) return
@@ -640,7 +644,10 @@ object Pomodoro {
     // ---- Plumbing ----
 
     /** The trusted clock (blueprint 9.2): every stored time here is on it. */
-    private fun now() = TrustedClock.now()
+    private fun now(): Long = appContext?.let { TrustedClock.now(it) } ?: TrustedClock.now()
+
+    /** For tests: forget what was loaded, so the next call reads the preferences again. */
+    internal fun resetForTests() = synchronized(lock) { loaded = false }
 
     private inline fun change(context: Context, requestSync: Boolean = true, transform: (PomodoroState) -> PomodoroState) {
         ensureLoaded(context)
