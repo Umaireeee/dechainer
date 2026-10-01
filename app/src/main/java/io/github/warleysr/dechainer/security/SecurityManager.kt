@@ -16,13 +16,6 @@ import androidx.core.content.edit
 class SecurityManager {
 
     companion object {
-            /** A stored mode that is missing or unknown (an older or damaged value) means OFF, never a crash. */
-            fun parse(raw: String?): EntryChallenge =
-                runCatching { valueOf(raw ?: OFF.name) }.getOrDefault(OFF)
-        }
-    }
-
-    companion object {
         private const val CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
         /** How long forced removal makes you wait, without the recovery code: four days. */
