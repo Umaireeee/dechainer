@@ -70,7 +70,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Suspend any app with one switch. Suspending is free; lifting a suspension asks for the recovery
- * code, and an app held by an open schedule or impulse lock can't be lifted until it ends.
+ * code, and an app held by an open schedule or brick can't be lifted until it ends.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

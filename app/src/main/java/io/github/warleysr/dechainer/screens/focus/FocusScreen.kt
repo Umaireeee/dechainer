@@ -1,10 +1,16 @@
 package io.github.warleysr.dechainer.screens.focus
 
+import io.github.warleysr.dechainer.DechainerApplication
+import io.github.warleysr.dechainer.Rules
+import io.github.warleysr.dechainer.focus.Flavor
+import io.github.warleysr.dechainer.focus.FocusFlow
+import io.github.warleysr.dechainer.focus.FocusRunner
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.lock.LockEngine
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.Image
-import io.github.warleysr.dechainer.focus.LectureAnswer
 import io.github.warleysr.dechainer.ui.theme.Motion
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -93,7 +99,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.data.RideLock
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.warleysr.dechainer.urge.UrgeSource
+import io.github.warleysr.dechainer.viewmodels.UrgeViewModel
 import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Phase
 import io.github.warleysr.dechainer.focus.Pomodoro
@@ -110,25 +118,25 @@ import java.time.LocalDate
 @Composable
 fun FocusScreen(onOpenLog: () -> Unit) {
     val context = LocalContext.current
-    remember { Pomodoro.ensureLoaded(context) }
+    remember { Pomodoro.ensureLoaded(context); FocusRunner.ensureLoaded(context) }
+    val flow by FocusRunner.flow.collectAsState()
     val state by Pomodoro.state.collectAsState()
     val settings by Pomodoro.settings.collectAsState()
     val log by Pomodoro.log.collectAsState()
     val pending by Pomodoro.pendingQuestion.collectAsState()
-    val tags by Pomodoro.tags.collectAsState()
-    val currentTag by Pomodoro.currentTag.collectAsState()
-    var showTags by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var showBlock by remember { mutableStateOf(false) }
     val allowedApps by Pomodoro.allowedApps.collectAsState()
     val gate = rememberRecoveryGate()
-    val intention by Pomodoro.intention.collectAsState()
-    val targets by Pomodoro.targets.collectAsState()
-    val lectureAsk by Pomodoro.lectureAsk.collectAsState()
-    val lectureProgress by Pomodoro.lectureProgress.collectAsState()
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    if (state.isRunning) RepeatWhileVisible(1000) { now = System.currentTimeMillis() }
+    var now by remember { mutableLongStateOf(TrustedClock.now()) }
+    // Also while a block runs as one stretch (a special session, the plain timer): its end is a wake-up too.
+    if (state.isRunning || state.inBlock) RepeatWhileVisible(1000) {
+        now = TrustedClock.now()
+        // The tick is a wake-up too (blueprint 5.4, R1): once a block's end has passed, have the lock
+        // engine close it from the time, whether or not its alarm ever fired.
+        if (state.inBlock && now >= state.blockEndsAt) LockEngine.requestSync(DechainerApplication.getInstance())
+    }
 
     var showSettings by remember { mutableStateOf(false) }
     var confirmStop by remember { mutableStateOf(false) }
@@ -160,37 +168,35 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             CalmCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), highlighted = true) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        if (lectureAsk == session.id) stringResource(R.string.lecture_question_pending, session.tag ?: "")
-                        else stringResource(R.string.focus_question_pending, session.minutes),
+                        stringResource(R.string.focus_question_pending, session.minutes),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(Modifier.height(12.dp))
-                    if (lectureAsk == session.id) {
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.DONE) }) {
-                                Text(stringResource(R.string.lecture_done))
-                            }
-                            OutlinedButton(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.IN_PROGRESS) }) {
-                                Text(stringResource(R.string.lecture_in_progress))
-                            }
-                            TextButton(onClick = { Pomodoro.answerLecture(context, session.id, LectureAnswer.PROCRASTINATING) }) {
-                                Text(stringResource(R.string.lecture_procrastinating), color = MaterialTheme.colorScheme.error)
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { Pomodoro.answer(context, session.id, false) }) {
+                            Text(stringResource(R.string.focus_answer_no))
                         }
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { Pomodoro.answer(context, session.id, false) }) {
-                                Text(stringResource(R.string.focus_answer_no))
-                            }
-                            Button(onClick = { Pomodoro.answer(context, session.id, true) }) {
-                                Text(stringResource(R.string.focus_answer_yes))
-                            }
+                        Button(onClick = { Pomodoro.answer(context, session.id, true) }) {
+                            Text(stringResource(R.string.focus_answer_yes))
                         }
                     }
                 }
+            }
+        }
+
+        // The focus flow (blueprint 6.3): the prompt, a check-in, the reset, the plain timer, a special
+        // session's countdown, or the last question. While a block runs it takes the place of the ring.
+        val panel = flow?.takeIf { flowPanelShows(it.stage) }
+        if (panel != null) {
+            FocusFlowPanel(panel, Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(16.dp))
+            if (state.inBlock) {
+                if (allowedApps.isNotEmpty()) {
+                    AllowedAppsRow(allowedApps)
+                }
+                UrgeButton()
+                Spacer(Modifier.height(24.dp))
+                return@Column
             }
         }
 
@@ -229,38 +235,8 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 modifier = Modifier.padding(bottom = 6.dp)
             )
         }
-        // What this session is for. Logged with it, so the week shows hours per subject.
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tags.forEach { tag ->
-                FilterChip(
-                    selected = tag == currentTag,
-                    onClick = { Pomodoro.selectTag(context, if (tag == currentTag) null else tag) },
-                    label = { Text(tag) }
-                )
-            }
-            AssistChip(
-                onClick = { showTags = true },
-                label = { Text(stringResource(if (tags.isEmpty()) R.string.focus_add_subject else R.string.focus_edit_subjects)) },
-                leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(16.dp)) }
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        // One line on what the next session is for. Logged with it, and the end-of-session
-        // question asks about exactly this ("You planned: ...").
-        OutlinedTextField(
-            value = intention,
-            onValueChange = { Pomodoro.setIntention(context, it.replace('\n', ' ')) },
-            placeholder = { Text(stringResource(R.string.focus_intention_hint)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
-        )
-        Spacer(Modifier.height(20.dp))
+        // What a session is for is asked when it starts (the start dialog, or the prompt of a scheduled one).
+        Spacer(Modifier.height(8.dp))
 
         // --- The ring ---
         val track = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -351,7 +327,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 AllowedAppsRow(allowedApps)
             }
-            RideItOutButton()
+            UrgeButton()
         } else {
             // Only reachable for a single session left running by an older version.
             IconButton(onClick = { confirmStop = true }) {
@@ -374,64 +350,12 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                         else stringResource(R.string.focus_today_summary, sessionsLabel(today.count), today.doneCount, formatMinutes(today.minutes)),
                         style = MaterialTheme.typography.titleMedium
                     )
-                    // The current lecture for the chosen subject: "FAR lecture: 45 of 90 min".
-                    val current = lectureProgress[currentTag ?: ""]
-                    if (current != null && current.minutes > 0) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            stringResource(
-                                R.string.lecture_progress_line,
-                                currentTag ?: stringResource(R.string.focus_untagged),
-                                current.minutes, settings.lectureMinutes
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    val perSubject = FocusLogMath.subjectProgress(today?.sessions ?: emptyList(), targets, tags)
-                    if (perSubject.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            perSubject.forEach { (tag, done, target) ->
-                                val reached = done >= target
-                                Text(
-                                    stringResource(R.string.focus_subject_progress, tag, done, target),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (reached) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    if (settings.dailyGoal > 0) {
-                        // The goal counts lectures finished, as reported at the end of each session.
-                        val done = today?.lectures ?: 0
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { (done.toFloat() / settings.dailyGoal).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            stringResource(
-                                if (done >= settings.dailyGoal) R.string.focus_goal_reached else R.string.focus_goal_progress,
-                                done, settings.dailyGoal
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = stringResource(R.string.focus_log))
             }
         }
         Spacer(Modifier.height(24.dp))
     }
-
-    if (showTags) SubjectsDialog(tags, targets, onDismiss = { showTags = false })
 
     RecoveryGateDialog(gate)
     if (showBlock) BlockDialog(settings, onDismiss = { showBlock = false })
@@ -528,12 +452,6 @@ private fun FocusSettingsDialog(
                 Stepper(stringResource(R.string.focus_setting_every), s.longBreakEvery, PomodoroSettings.EVERY_RANGE, 1, unit = false) {
                     s = s.copy(longBreakEvery = it)
                 }
-                Stepper(stringResource(R.string.focus_setting_lecture), s.lectureMinutes, PomodoroSettings.LECTURE_RANGE, 15) {
-                    s = s.copy(lectureMinutes = it)
-                }
-                Stepper(stringResource(R.string.focus_setting_goal), s.dailyGoal, PomodoroSettings.GOAL_RANGE, 1, unit = false) {
-                    s = s.copy(dailyGoal = it)
-                }
                 DialogSection(stringResource(R.string.focus_section_blocks))
                 // Open all through a block, with calls, your alarm clock and Quick Settings.
                 TextButton(onClick = onPickApps, modifier = Modifier.fillMaxWidth()) {
@@ -548,7 +466,7 @@ private fun FocusSettingsDialog(
                 )
                 DialogSection(stringResource(R.string.focus_section_sounds))
                 val context = LocalContext.current
-                TextButton(onClick = { Pomodoro.openAlarmSoundSettings(context, chime = true) }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { Pomodoro.openAlarmSoundSettings(context) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Outlined.MusicNote, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.focus_chime_sound))
@@ -576,60 +494,6 @@ private fun Stepper(label: String, value: Int, range: IntRange, step: Int, unit:
     }
 }
 
-/** Add and remove subjects. Removing one keeps the sessions already logged under it. */
-@Composable
-private fun SubjectsDialog(tags: List<String>, targets: Map<String, Int>, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var text by remember { mutableStateOf("") }
-    fun add() {
-        if (text.isNotBlank()) Pomodoro.addTag(context, text)
-        text = ""
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.focus_subjects)) },
-        text = {
-            Column {
-                if (tags.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.focus_target_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
-                tags.forEach { tag ->
-                    val target = targets[tag] ?: 0
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(tag, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1)
-                        // Daily target for this subject: − n +, 0 shows as a dash (no target).
-                        TextButton(onClick = { Pomodoro.setTarget(context, tag, target - 1) }, enabled = target > 0) { Text("−") }
-                        Text(if (target == 0) "–" else target.toString(), style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { Pomodoro.setTarget(context, tag, target + 1) }, enabled = target < 10) { Text("+") }
-                        IconButton(onClick = { Pomodoro.removeTag(context, tag) }) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.remove))
-                        }
-                    }
-                }
-                if (tags.size < 12) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it.take(20) },
-                        placeholder = { Text(stringResource(R.string.focus_subject_hint)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { add() }),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { add(); onDismiss() }) { Text(stringResource(R.string.done)) }
-        }
-    )
-}
-
 /**
  * Commit a focus block: pick when it ends on a clock, see the plan, commit. After that it runs
  * by itself and can't be changed or left early without the recovery code.
@@ -653,7 +517,11 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
     // A time that's already passed today means tomorrow.
     val end = now.toLocalDate().atTime(endTime).let { if (!it.isAfter(now)) it.plusDays(1) else it }
     val total = java.time.Duration.between(now, end).toMinutes().toInt()
-    val tooLong = total > 720
+    // Blueprint 5.2: at least 10 minutes, at most 8 hours.
+    val tooLong = total > (Rules.FOCUS_BLOCK_MAX_MS / 60_000L).toInt()
+    val tooShort = total < (Rules.FOCUS_BLOCK_MIN_MS / 60_000L).toInt()
+    var flavor by remember { mutableStateOf(Flavor.USUAL) }
+    var purpose by remember { mutableStateOf("") }
     val plan = remember(total, settings) { if (tooLong) emptyList() else BlockPlanner.plan(total, settings) }
     val sessions = plan.count { it.first == Phase.FOCUS }
     val breaks = plan.size - sessions
@@ -663,7 +531,10 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.focus_block_title)) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            ) {
                 Text(stringResource(R.string.focus_block_until_label), style = MaterialTheme.typography.labelLarge)
                 // Tap the time to set any time on a clock.
                 TextButton(onClick = { showClock = true }) {
@@ -675,9 +546,34 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(12.dp))
+                // Usual (sessions, breaks and check-ins) or special (one continuous session), and what it is for.
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FilterChip(
+                        selected = flavor == Flavor.USUAL, onClick = { flavor = Flavor.USUAL },
+                        label = { Text(stringResource(R.string.focus_flow_usual)) }
+                    )
+                    FilterChip(
+                        selected = flavor == Flavor.SPECIAL, onClick = { flavor = Flavor.SPECIAL },
+                        label = { Text(stringResource(R.string.focus_flow_special)) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = purpose,
+                    onValueChange = { purpose = it.replace('\n', ' ').take(80) },
+                    label = { Text(stringResource(R.string.focus_flow_purpose_label)) },
+                    placeholder = { Text(stringResource(R.string.focus_flow_purpose_hint)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
                 Text(
                     when {
                         tooLong -> stringResource(R.string.focus_block_too_long)
+                        tooShort -> stringResource(R.string.focus_block_too_short)
+                        flavor == Flavor.SPECIAL -> stringResource(R.string.focus_flow_special_hint)
                         plan.isEmpty() -> stringResource(R.string.focus_block_too_short)
                         else -> stringResource(
                             R.string.focus_block_plan,
@@ -711,10 +607,11 @@ private fun BlockDialog(settings: PomodoroSettings, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Button(
-                enabled = plan.isNotEmpty(),
+                enabled = !tooLong && !tooShort && FocusFlow.cleanPurpose(purpose) != null &&
+                    (flavor == Flavor.SPECIAL || plan.isNotEmpty()),
                 onClick = {
                     val endMillis = end.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                    if (Pomodoro.startBlock(context, endMillis)) {
+                    if (FocusRunner.startManual(context, endMillis, flavor, purpose)) {
                         blockHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onDismiss()
                     }
@@ -764,33 +661,18 @@ private fun DialogSection(text: String) {
 }
 
 /**
- * An urge during a block: the phone is bricked, so the journal's ten-minute ride is one tap away
- * from here, with its five-second countdown to cancel. Shown only when the journal is installed.
+ * An urge during a block (blueprint 6.2, 5.3): the Urge button opens the same flow as everywhere
+ * else. The phone is already bricked, so no second lock starts, and the breathing still runs for ten
+ * minutes.
  */
 @Composable
-private fun RideItOutButton() {
-    val context = LocalContext.current
-    val installed = remember {
-        runCatching { context.packageManager.getPackageInfo(RideLock.JOURNAL_PACKAGE, 0) }.isSuccess
-    }
-    if (!installed) return
+private fun UrgeButton() {
+    val urge: UrgeViewModel = viewModel()
     Spacer(Modifier.height(24.dp))
     OutlinedButton(
-        onClick = {
-            runCatching {
-                context.packageManager.getLaunchIntentForPackage(RideLock.JOURNAL_PACKAGE)?.let {
-                    context.startActivity(it.putExtra(RideLock.JOURNAL_RIDE_EXTRA, RideLock.JOURNAL_RIDE_VALUE))
-                }
-            }
-        },
+        onClick = { urge.openChoice(UrgeSource.FOCUS) },
         modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
-    ) { Text(stringResource(R.string.focus_ride_out)) }
-    Text(
-        stringResource(R.string.focus_ride_out_note),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 6.dp)
-    )
+    ) { Text(stringResource(R.string.urge_button)) }
 }
 
 /**

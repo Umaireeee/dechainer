@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only (blueprint 14A). This file lives in the debug source set, so a release build
+    does not contain these receivers at all; CI greps the merged release manifest to prove it.
+    Exported so `adb shell am broadcast` can reach it. Never ship a debug build to the daily phone.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".debug.DebugControlReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.warleysr.dechainer.DEBUG_ABORT_BRICK" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_FOCUS_BLOCK" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_URGE_LOCK" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_PUNISHMENT_DAY" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_DROP_ALARMS" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_CRASH" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

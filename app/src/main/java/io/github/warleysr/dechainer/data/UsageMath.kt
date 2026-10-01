@@ -16,10 +16,7 @@ object UsageMath {
     const val SHUTDOWN = 26
     const val STARTUP = 27
 
-    /** Foreground milliseconds of [pkg] across [events], counting an app still in front until [now]. */
-    fun foregroundMillis(events: List<UsageEvt>, pkg: String, now: Long): Long =
-        sum(events.sortedBy { it.time }, pkg, now)
-
+    /** Foreground milliseconds of each of [pkgs] across [events], counting an app still in front until [now]. */
     fun foregroundMillisAll(events: List<UsageEvt>, pkgs: Set<String>, now: Long): Map<String, Long> {
         val sorted = events.sortedBy { it.time }
         return pkgs.associateWith { sum(sorted, it, now) }

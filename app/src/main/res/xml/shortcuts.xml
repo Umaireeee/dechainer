@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Starts the ongoing urge path, with no question first (blueprint D2). -->
+    <shortcut
+        android:shortcutId="urge"
+        android:enabled="true"
+        android:icon="@drawable/ic_urge_tile"
+        android:shortcutShortLabel="@string/urge_shortcut_short"
+        android:shortcutLongLabel="@string/urge_shortcut_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="io.github.warleysr.dechainer"
+            android:targetClass="io.github.warleysr.dechainer.activities.MainActivity">
+            <extra android:name="urge_source" android:value="SHORTCUT" />
+        </intent>
+    </shortcut>
+</shortcuts>

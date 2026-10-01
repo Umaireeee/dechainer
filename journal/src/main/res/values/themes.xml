@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.UrgeJournal" parent="android:Theme.DeviceDefault.NoActionBar">
-        <item name="android:windowBackground">#1C1A17</item>
-        <item name="android:statusBarColor">#1C1A17</item>
-        <item name="android:navigationBarColor">#1C1A17</item>
-    </style>
-</resources>

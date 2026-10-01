@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import android.content.RestrictionEntry
 import android.content.RestrictionsManager
@@ -59,11 +60,13 @@ object AppRepository {
 
     /** Manual suspension. The schedule engine never releases an app it didn't suspend itself. */
     fun setAppSuspended(packageName: String, suspended: Boolean) {
+        if (!SettingsFreeze.allowWrite(context, "manual suspension")) return
         dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended)
         updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
     }
 
     fun setUninstallBlocked(packageName: String, block: Boolean) {
+        if (!SettingsFreeze.allowWrite(context, "uninstall protection")) return
         dpm.setUninstallBlocked(adminName, packageName, block)
         updateCachedApp(packageName) { it.copy(isUninstallBlocked = block) }
     }

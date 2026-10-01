@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.models.BlockSchedule
@@ -15,7 +16,6 @@ import java.time.LocalDateTime
 object ScheduleRepository {
     const val PREFS_NAME = "schedule_prefs"
     private const val KEY_SCHEDULES = "schedules_json"
-    private const val KEY_ANTI_TAMPER = "anti_tamper_enabled"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -35,6 +35,8 @@ object ScheduleRepository {
      */
     private fun mutate(context: Context, change: (MutableList<BlockSchedule>) -> Unit): Boolean =
         synchronized(lock) {
+            // Frozen on a punishment day (blueprint 5.5): refused here, not only hidden in the UI.
+            if (!SettingsFreeze.allowWrite(context, "schedules")) return@synchronized false
             val read = parseSchedules(prefs(context).getString(KEY_SCHEDULES, null))
             if (!read.rootOk) {
                 Timber.e("Stored schedules could not be read; leaving them untouched")
@@ -59,17 +61,6 @@ object ScheduleRepository {
     /** True while [schedule]'s window is open and it was set to lock itself during that time. */
     fun isLockedNow(schedule: BlockSchedule, now: LocalDateTime = LocalDateTime.now()): Boolean =
         schedule.lockWhileActive && schedule.isActiveAt(now)
-
-    /**
-     * Anti-tamper forces automatic date/time and blocks changing it while any schedule is enabled,
-     * so a window can't be skipped by moving the clock. On by default.
-     */
-    fun isAntiTamperEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_ANTI_TAMPER, true)
-
-    fun setAntiTamperEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit(commit = true) { putBoolean(KEY_ANTI_TAMPER, enabled) }
-    }
 }
 
 /** What was read from storage: the schedules that parsed, and the rows that did not, kept as they were. */

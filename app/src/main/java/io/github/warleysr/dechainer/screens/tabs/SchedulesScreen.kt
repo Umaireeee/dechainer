@@ -36,10 +36,12 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.models.BlockSchedule
 import io.github.warleysr.dechainer.models.SchedulePreset
+import io.github.warleysr.dechainer.models.ScheduleType
 import io.github.warleysr.dechainer.screens.common.AppPickerDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import io.github.warleysr.dechainer.viewmodels.Route
 import io.github.warleysr.dechainer.viewmodels.SchedulesViewModel
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -74,7 +76,6 @@ fun SchedulesScreen(
     val lockedMsg = stringResource(R.string.schedule_locked_message)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
     val defaultName = stringResource(R.string.schedule_default_name)
-    val antiTamperLabel = stringResource(R.string.schedule_anti_tamper)
     val copySuffix = stringResource(R.string.schedule_copy_suffix)
 
     var now by remember { mutableStateOf(ZonedDateTime.now()) }
@@ -97,24 +98,13 @@ fun SchedulesScreen(
             }
 
             item {
+                // Always on while this app is Device Owner (blueprint 9.2): the row stays so the rule can be
+                // seen, but it is not a switch any more.
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.schedule_anti_tamper)) },
                     supportingContent = { Text(stringResource(R.string.schedule_anti_tamper_desc)) },
                     leadingContent = { Icon(Icons.Outlined.Lock, null) },
-                    trailingContent = {
-                        Switch(
-                            checked = viewModel.antiTamper,
-                            onCheckedChange = { checked ->
-                                // Turning protection on is always allowed; turning it off needs the code.
-                                if (checked) viewModel.updateAntiTamper(true)
-                                else if (viewModel.isAnyLocked()) showLocked()
-                                else recoveryGate.run {
-                                    if (viewModel.updateAntiTamper(false) == SchedulesViewModel.SaveResult.LOCKED)
-                                        showLocked()
-                                }
-                            }
-                        )
-                    }
+                    trailingContent = { Switch(checked = true, onCheckedChange = null, enabled = false) }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -142,7 +132,7 @@ fun SchedulesScreen(
                             onClick = {
                                 // Like a new schedule, a preset only adds blocking: no code needed.
                                 viewModel.startPreset(preset, name)
-                                navViewModel.navigateTo("schedule_editor")
+                                navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                             },
                             label = { Text(name) }
                         )
@@ -168,13 +158,13 @@ fun SchedulesScreen(
                     // A copy only adds blocking, so like a new schedule it needs no recovery code.
                     onDuplicate = {
                         viewModel.startDuplicate(schedule, copySuffix)
-                        navViewModel.navigateTo("schedule_editor")
+                        navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                     },
                     onClick = {
                         if (viewModel.isLocked(schedule)) showLocked()
                         else recoveryGate.run {
                             viewModel.startEditing(schedule)
-                            navViewModel.navigateTo("schedule_editor")
+                            navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
                         }
                     },
                     onEnabledChange = { enabled ->
@@ -202,7 +192,7 @@ fun SchedulesScreen(
             onClick = {
                 // Creating a schedule only adds blocking, so it never needs the recovery code.
                 viewModel.startNew(defaultName)
-                navViewModel.navigateTo("schedule_editor")
+                navViewModel.navigateTo(Route.SCHEDULE_EDITOR)
             },
             icon = { Icon(Icons.Filled.Add, null) },
             text = { Text(stringResource(R.string.schedule_new)) },
@@ -297,7 +287,8 @@ private fun ScheduleCard(
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    if (schedule.allowOnly) stringResource(R.string.schedule_summary_study, schedule.packages.size)
+                    if (schedule.isFocus) stringResource(R.string.schedule_type_focus)
+                    else if (schedule.allowOnly) stringResource(R.string.schedule_summary_study, schedule.packages.size)
                     else scheduleSummary(schedule.packages.size, schedule.restrictions.size, schedule.websites.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -365,6 +356,8 @@ fun ScheduleEditorScreen(
     val nothingMsg = stringResource(R.string.schedule_error_nothing)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
     val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
+    val focusShortMsg = stringResource(R.string.schedule_error_focus_short)
+    val focusLongMsg = stringResource(R.string.schedule_error_focus_long)
     var showLongLockConfirm by remember { mutableStateOf(false) }
 
     var showStartPicker by remember { mutableStateOf(false) }
@@ -389,6 +382,8 @@ fun ScheduleEditorScreen(
                 scope.launch { snackbarHostState.showSnackbar(noFreeTimeMsg) }
             SchedulesViewModel.SaveResult.NEEDS_CONFIRMATION -> showLongLockConfirm = true
             SchedulesViewModel.SaveResult.NOT_SAVED -> scope.launch { snackbarHostState.showSnackbar(notSavedMsg) }
+            SchedulesViewModel.SaveResult.FOCUS_TOO_SHORT -> scope.launch { snackbarHostState.showSnackbar(focusShortMsg) }
+            SchedulesViewModel.SaveResult.FOCUS_TOO_LONG -> scope.launch { snackbarHostState.showSnackbar(focusLongMsg) }
         }
     }
 
@@ -405,6 +400,41 @@ fun ScheduleEditorScreen(
                             .fillMaxWidth()
                             .padding(16.dp)
                     )
+                }
+
+                // --- Type: block apps, or start a focus session (blueprint D12). Chosen when the entry is made. ---
+                item {
+                    EditorSectionTitle(stringResource(R.string.schedule_type_label))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        FilterChip(
+                            selected = !draft.isFocus,
+                            enabled = viewModel.isNewDraft,
+                            onClick = { viewModel.updateDraft { it.copy(type = ScheduleType.BLOCK) } },
+                            label = { Text(stringResource(R.string.schedule_type_block)) }
+                        )
+                        FilterChip(
+                            selected = draft.isFocus,
+                            enabled = viewModel.isNewDraft,
+                            onClick = {
+                                viewModel.updateDraft {
+                                    it.copy(type = ScheduleType.FOCUS, lockWhileActive = false, allowOnly = false)
+                                }
+                            },
+                            label = { Text(stringResource(R.string.schedule_type_focus)) }
+                        )
+                    }
+                    if (draft.isFocus) {
+                        Text(
+                            stringResource(R.string.schedule_focus_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
 
                 // --- Days ---
@@ -487,7 +517,7 @@ fun ScheduleEditorScreen(
                 }
 
                 // --- Apps ---
-                item {
+                if (!draft.isFocus) item {
                     ListItem(
                         headlineContent = {
                             Text(stringResource(if (draft.allowOnly) R.string.schedule_allowed_apps else R.string.schedule_apps))
@@ -523,7 +553,7 @@ fun ScheduleEditorScreen(
                 }
 
                 // --- Services ---
-                item {
+                if (!draft.isFocus) item {
                     val context = LocalContext.current
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.schedule_services)) },
@@ -552,7 +582,7 @@ fun ScheduleEditorScreen(
                 }
 
                 // --- Websites ---
-                item {
+                if (!draft.isFocus) item {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
@@ -592,7 +622,7 @@ fun ScheduleEditorScreen(
                 }
 
                 // --- Protection ---
-                item {
+                if (!draft.isFocus) item {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.schedule_lock_while_active)) },
                         supportingContent = { Text(stringResource(R.string.schedule_lock_while_active_desc)) },

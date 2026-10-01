@@ -76,7 +76,7 @@ fun AppPickerDialog(
                     )
                     Box {
                         IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, null)
+                            Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options))
                         }
                         DropdownMenu(
                             expanded = showMenu,

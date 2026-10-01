@@ -12,31 +12,20 @@ object LockSafety {
     /** Apps that must always open, in an emergency: never suspended by a brick or an allow-only window. */
     val EMERGENCY_APPS = setOf("com.android.emergency", "com.google.android.apps.safetyhub")
 
-    /** What a brick suspends, given the phone's icons: everything except the essentials, alarms, emergency apps and [allowed]. */
-    fun brickTargets(
-        launcher: Set<String>,
-        protectedPkgs: Set<String>,
-        alarms: Set<String>,
-        allowed: Set<String>
-    ): Set<String> = launcher - protectedPkgs - alarms - allowed - EMERGENCY_APPS
-
     /**
      * What no block of Déchaîner may ever suspend, before the launcher, the dialer and the keyboards
-     * are added: Déchaîner itself, the system UI, the phone, and the Urge Journal. The journal is the
-     * safety net for the worst moments, which come at night, inside a bedtime window; if a block
-     * could suspend it, its icon and its Quick Settings tile would be dead exactly then. It can only
-     * ever add blocking, so keeping it open loosens nothing.
+     * are added: Déchaîner itself, the system UI and the phone.
      */
     fun neverBlocked(selfPackage: String): Set<String> =
-        setOf(selfPackage, "com.android.systemui", "com.android.phone", RideLock.JOURNAL_PACKAGE)
+        setOf(selfPackage, "com.android.systemui", "com.android.phone")
 
     /**
-     * Whether Device Owner may not be removed right now: a locked schedule, a focus block (brick) or
-     * a ride lock is running. Forced removal, after its own four-day wait, is the only exit and
-     * ignores all of them ([forced]).
+     * Whether Device Owner may not be removed right now: a locked schedule is open, or a brick is
+     * running ([brick]: a focus block, an urge lock or a punishment day). Forced removal, after its
+     * own four-day wait, is the only exit and ignores all of them ([forced]).
      */
-    fun removalBlocked(scheduleLocked: Boolean, brick: Boolean, rideLockMillis: Long, forced: Boolean): Boolean =
-        !forced && (scheduleLocked || brick || rideLockMillis > 0L)
+    fun removalBlocked(scheduleLocked: Boolean, brick: Boolean, forced: Boolean): Boolean =
+        !forced && (scheduleLocked || brick)
 
     /** Locked windows must leave at least this much free time somewhere in the week. */
     const val MIN_FREE_MINUTES = 60

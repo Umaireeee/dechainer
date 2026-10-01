@@ -14,8 +14,10 @@ android {
         applicationId = "io.github.warleysr.dechainer"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes -PversionCode=<run number> (and -PversionNameSuffix) so every build installs
+        // as an upgrade over the last; a plain local build keeps the defaults.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = "1.0" + ((project.findProperty("versionNameSuffix") as String?) ?: "")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,15 +50,18 @@ android {
                 // which breaks native library name resolution in Conscrypt/Robolectric.
                 it.systemProperty("user.language", "en")
                 it.systemProperty("user.country", "US")
+                // Every result in the CI log, and the full reason for a failure, so a red run can be
+                // read from its log alone.
+                it.testLogging {
+                    events("passed", "skipped", "failed")
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                }
             }
         }
     }
 }
 
 dependencies {
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.biometric)
-    implementation(libs.androidx.biometric.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -71,6 +76,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.timber)
+    // The retry for a deep dive that could not be made yet (blueprint 6.2) and, later, the weekly report job.
+    implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
     // Android has its own org.json; the real one is only needed by the unit tests on the JVM.
     testImplementation(libs.json)

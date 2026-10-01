@@ -53,6 +53,7 @@ import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import io.github.warleysr.dechainer.viewmodels.Route
 import kotlinx.coroutines.CoroutineScope
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +96,12 @@ fun ConfigTab(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
+            item {
+                io.github.warleysr.dechainer.screens.setup.SetupStatusCard(
+                    onNavigate = { navViewModel.navigateTo(it) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
             item { io.github.warleysr.dechainer.screens.common.FullScreenHint() }
             item { SectionHeader(stringResource(R.string.config_section_protection)) }
             item {
@@ -113,7 +120,7 @@ fun ConfigTab(
                             Text(badgeText, style = MaterialTheme.typography.bodyMedium)
                         }
                     },
-                    modifier = Modifier.clickable(onClick = { navViewModel.navigateTo("setup_device_owner") })
+                    modifier = Modifier.clickable(onClick = { navViewModel.navigateTo(Route.SETUP_DEVICE_OWNER) })
                 ) }
             }
             item {
@@ -138,7 +145,7 @@ fun ConfigTab(
                 ) }
             }
             item {
-                GroupedRow(GroupPos.Middle) { ListItem(
+                GroupedRow(GroupPos.Bottom) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.protections)) },
                     supportingContent = { Text(stringResource(R.string.protections_desc)) },
@@ -149,18 +156,8 @@ fun ConfigTab(
                             scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
                             return@clickable
                         }
-                        navViewModel.navigateTo("restrictions")
+                        navViewModel.navigateTo(Route.RESTRICTIONS)
                     }
-                ) }
-            }
-            item {
-                GroupedRow(GroupPos.Bottom) { ListItem(
-                    colors = groupedRowColors(),
-                    headlineContent = { Text(stringResource(R.string.impulse_lock)) },
-                    supportingContent = { Text(stringResource(R.string.impulse_lock_desc)) },
-                    leadingContent = { IconTile(Icons.Outlined.LockClock) },
-                    trailingContent = { Chevron() },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("impulse_lock") }
                 ) }
             }
             item { SectionHeader(stringResource(R.string.config_section_security)) }
@@ -211,11 +208,21 @@ fun ConfigTab(
             }
             item { SectionHeader(stringResource(R.string.config_section_app)) }
             item {
+                GroupedRow(GroupPos.Top) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.urge_settings_title)) },
+                    supportingContent = { Text(stringResource(R.string.urge_settings_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.Shield) },
+                    trailingContent = { Chevron() },
+                    modifier = Modifier.clickable { navViewModel.navigateTo(Route.URGE_SETTINGS) }
+                ) }
+            }
+            item {
                 val keyboardLabel = if (shuffleKeyboard)
                     stringResource(R.string.keyboard_shuffle)
                 else
                     stringResource(R.string.keyboard_normal)
-                GroupedRow(GroupPos.Single) { ListItem(
+                GroupedRow(GroupPos.Bottom) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.keyboard_type)) },
                     supportingContent = { Text(keyboardLabel) },

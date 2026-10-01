@@ -35,9 +35,9 @@ class RecoveryCodeHashTest {
     fun anOldPlainTextCodeIsRecognisedAsNotAHashAndCanBeMigrated() {
         // What an older version stored: the code itself. It is not a hash, so it gets migrated on first read,
         // and the new hash accepts the same code.
-        assertFalse(RecoveryCodeHash.isHash(code))
+        assertFalse(code.startsWith("v1$"))
         val migrated = RecoveryCodeHash.create(code)
-        assertTrue(RecoveryCodeHash.isHash(migrated))
+        assertTrue(migrated.startsWith("v1$"))
         assertTrue(RecoveryCodeHash.verify(code, migrated))
     }
 

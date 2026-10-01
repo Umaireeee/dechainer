@@ -46,40 +46,6 @@ class BrowserRestrictionsManager(private val context: Context) {
         return results
     }
 
-    fun isBrowser(packageName: String): Boolean {
-        return getPossibleBrowsers().any { it.activityInfo.packageName == packageName }
-    }
-
-    fun getPossibleTorrentApps(): Set<String> {
-        val pm = context.packageManager
-
-        val magnetIntent = Intent(Intent.ACTION_VIEW, "magnet:?xt=urn:btih:1234567890ABCDEF".toUri())
-        val magnetHandlers = pm.queryIntentActivities(magnetIntent, PackageManager.MATCH_DEFAULT_ONLY)
-
-        val torrentIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.EMPTY, "application/x-bittorrent")
-        }
-        val torrentHandlers = pm.queryIntentActivities(torrentIntent, PackageManager.MATCH_DEFAULT_ONLY)
-
-        val suspiciousPackages = (magnetHandlers + torrentHandlers).map { it.activityInfo.packageName }.toSet()
-
-        return suspiciousPackages
-    }
-
-    fun isTorrentApp(packageName: String): Boolean {
-        return getPossibleTorrentApps().any { it == packageName }
-    }
-
-    fun supportsRestrictions(packageName: String): Boolean {
-        return try {
-            val rm = context.getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
-            rm.getManifestRestrictions(packageName).any { it.key == "URLBlocklist" }
-                    && rm.getManifestRestrictions(packageName).any { it.key == "ForceGoogleSafeSearch" }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     /** Whether Déchaîner has set a specific Private DNS provider for the whole device. */
     private fun isPrivateDnsPinned(): Boolean = try {
         DeviceOwnerRepository.getPrivateDNS() != null

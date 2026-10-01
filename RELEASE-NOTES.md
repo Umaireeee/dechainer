@@ -1,3 +1,17 @@
+## Déchaîner 2.0
+
+One app, one lock engine, one store. The Urge Journal is merged in and its module is gone.
+
+- Home with the Urge button, the Urge flow (lock, breathing, questions, deep dive) and the AI client.
+- Focus sessions (usual, special, reset, plain timer) and a weekly timetable with FOCUS entries.
+- The daily checklist, rest day and punishment day; settings freeze on a punishment day.
+- Weekly reports, the Reports screen, delete, backup and wipe.
+- Removed: the door to the old journal, the biometric entry gate and the maths and word challenges, subjects, targets, lectures, the focus chart and CSV, the old migrations, and the journal module.
+- Three notification channels: Weekly report, Focus, Evening checklist.
+- Install over the old Déchaîner (same app id and key), then uninstall the Urge Journal. The journal's data is not migrated.
+
+---
+
 ## Déchaîner 1.2.0 + Schedules
 
 An unofficial personal build of [Déchaîner](https://github.com/warleysr/dechainer) by @warleysr,

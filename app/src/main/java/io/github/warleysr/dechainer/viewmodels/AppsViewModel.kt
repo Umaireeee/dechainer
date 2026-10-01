@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -56,7 +57,7 @@ class AppsViewModel : ViewModel() {
             usedMinutes = u
             usageAccess = access
             // Access may just have been granted: have the engine look.
-            if (l.isNotEmpty() && access) ScheduleEnforcer.requestSyncAll(context)
+            if (l.isNotEmpty() && access) LockEngine.requestSync(context)
         }
     }
 
@@ -82,7 +83,7 @@ class AppsViewModel : ViewModel() {
                 (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true))
         }.sortedWith(compareByDescending<AppItem> { it.isSuspended }.thenBy { it.name.lowercase() })
 
-    /** The schedule or impulse lock holding [pkg] right now, if any. Those can't be lifted by hand. */
+    /** The schedule or brick holding [pkg] right now, if any. Those can't be lifted by hand. */
     // Fresh, not cached: a focus lock starts and ends many times a day, and a stale answer here
     // would let a tap lift an app that a schedule or session still holds. A fresh answer can mean
     // a full sync, so it's only ever asked off the main thread (see requestUnsuspend).

@@ -42,7 +42,4 @@ internal object RecoveryCodeHash {
     } catch (_: Exception) {
         false
     }
-
-    /** True if [stored] looks like a hash made by [create], as opposed to an old plain-text code. */
-    fun isHash(stored: String): Boolean = stored.startsWith("$PREFIX$") && stored.count { it == '$' } == 3
 }

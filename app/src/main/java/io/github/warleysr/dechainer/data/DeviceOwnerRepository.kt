@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.accounts.AccountManager
 import android.app.admin.DevicePolicyManager
 import android.content.ActivityNotFoundException
@@ -60,9 +61,6 @@ object DeviceOwnerRepository {
     /** Removes device-owner status, or requests it via Shizuku's `dpm set-device-owner` — returns the resulting state. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false): Boolean {
         if (remove && dpm.isAdminActive(adminName)) {
-            // Android does not un-hide apps when a Device Owner goes away, and nothing could
-            // afterwards. Bring back everything Déchaîner hid first.
-            Blocker.releaseAllHidden(context, dpm, adminName)
             // Same for the brick's home-screen takeover: undo it while it still can be undone,
             // so your own launcher is the home screen afterwards, not the timer.
             try {
@@ -90,8 +88,15 @@ object DeviceOwnerRepository {
     }
 
     fun setPrivateDNS(host: String): Int {
+        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
         return dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
     }
+
+    /** The DNS guard putting the pinned provider back: enforcement, so a punishment day does not stop it. */
+    fun restorePrivateDns(host: String): Int = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
+
+    /** What a refused change returns, in the same terms as Android's own result codes. */
+    private const val REFUSED = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
 
     /**
      * "Automatic" Private DNS: encrypted where the network allows, plain otherwise, and no
@@ -104,10 +109,11 @@ object DeviceOwnerRepository {
      * other app are out of reach.
      */
     fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
-        // Déchaîner, the dialers, the apps you allowed and the urge journal (opened from its Quick
-        // Settings tile when an urge hits mid-block): a pinned phone opens only these.
-        val pkgs = mutableSetOf(context.packageName, RideLock.JOURNAL_PACKAGE)
+        // Déchaîner, the dialers, and the apps you allowed: a pinned phone opens only these.
+        val pkgs = mutableSetOf(context.packageName)
         pkgs += allowed
+        // The alarm clock is allowed by every brick, so it may also run pinned (D3).
+        try { pkgs += ScheduleEnforcer.alarmApps(context) } catch (_: Exception) { }
         try {
             val telecom = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager
             telecom.defaultDialerPackage?.let { pkgs += it }
@@ -137,7 +143,10 @@ object DeviceOwnerRepository {
         }
     }
 
-    fun setPrivateDnsAutomatic(): Int = dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
+    fun setPrivateDnsAutomatic(): Int {
+        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
+        return dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
+    }
 
     fun getPrivateDNS(): String? {
         if (dpm.getGlobalPrivateDnsMode(adminName) != DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME)

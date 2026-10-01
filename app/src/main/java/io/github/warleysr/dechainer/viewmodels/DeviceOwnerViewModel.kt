@@ -51,15 +51,13 @@ class DeviceOwnerViewModel : ViewModel() {
         processDeviceOwnerPrivileges(remove = true, ignoreScheduleLock = true)
     }
 
-    /** Returns false if removal was refused because a locked schedule, a focus block or a ride lock is running. */
+    /** Returns false if removal was refused because a locked schedule or a brick (focus block, urge lock, punishment day) is running. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false, ignoreScheduleLock: Boolean = false): Boolean {
         if (remove) {
             val context = DechainerApplication.getInstance()
-            io.github.warleysr.dechainer.focus.Pomodoro.ensureLoaded(context)
             if (io.github.warleysr.dechainer.data.LockSafety.removalBlocked(
                     scheduleLocked = ScheduleEnforcer.isAnyScheduleLocked(context),
-                    brick = io.github.warleysr.dechainer.focus.Pomodoro.brickActive(),
-                    rideLockMillis = io.github.warleysr.dechainer.data.RideLock.remainingMillis(context),
+                    brick = io.github.warleysr.dechainer.lock.LockEngine.brickRunning(context),
                     forced = ignoreScheduleLock
                 )
             ) return false

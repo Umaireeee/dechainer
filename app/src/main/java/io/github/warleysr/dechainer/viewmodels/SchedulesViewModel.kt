@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import android.os.UserManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,7 @@ import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.ScheduleRepository
 import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.lock.FocusTimetable
 import io.github.warleysr.dechainer.models.BlockSchedule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,12 +27,9 @@ import java.util.UUID
 class SchedulesViewModel : ViewModel() {
     private val context = DechainerApplication.getInstance()
 
-    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED }
+    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED, FOCUS_TOO_SHORT, FOCUS_TOO_LONG }
 
     var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
-        private set
-
-    var antiTamper by mutableStateOf(ScheduleRepository.isAntiTamperEnabled(context))
         private set
 
     var apps by mutableStateOf<List<AppItem>>(emptyList())
@@ -79,7 +78,6 @@ class SchedulesViewModel : ViewModel() {
 
     fun refresh() {
         schedules = ScheduleRepository.getSchedules(context)
-        antiTamper = ScheduleRepository.isAntiTamperEnabled(context)
     }
 
     fun loadApps() {
@@ -160,6 +158,16 @@ class SchedulesViewModel : ViewModel() {
         val stored = ScheduleRepository.getSchedule(context, current.id)
         if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
         if (current.days.isEmpty()) return SaveResult.NO_DAYS
+        if (current.isFocus) {
+            // A focus entry holds nothing itself: when its window opens a focus block starts, and a block is
+            // 10 minutes to 8 hours (blueprint 5.2). It has no lock of its own to guard against lock-out.
+            val check = FocusTimetable.checkWindow(current.windowMinutes)
+            if (check != null) return if (check < 0) SaveResult.FOCUS_TOO_SHORT else SaveResult.FOCUS_TOO_LONG
+            if (!ScheduleRepository.upsert(context, current.cleanedForFocus())) return SaveResult.NOT_SAVED
+            draft = null
+            applyAndRefresh()
+            return SaveResult.OK
+        }
         // A study-mode schedule always blocks something (every app not allowed), even with an
         // empty list — that's "phone and essentials only".
         if (!current.allowOnly && current.packages.isEmpty() && current.restrictions.isEmpty() && current.websites.isEmpty())
@@ -213,15 +221,8 @@ class SchedulesViewModel : ViewModel() {
         return SaveResult.OK
     }
 
-    fun updateAntiTamper(enabled: Boolean): SaveResult {
-        if (!enabled && ScheduleEnforcer.isAnyScheduleLocked(context)) return SaveResult.LOCKED
-        ScheduleRepository.setAntiTamperEnabled(context, enabled)
-        applyAndRefresh()
-        return SaveResult.OK
-    }
-
     private fun applyAndRefresh() {
         refresh()
-        viewModelScope.launch(Dispatchers.IO) { ScheduleEnforcer.sync(context) }
+        viewModelScope.launch(Dispatchers.IO) { LockEngine.sync(context) }
     }
 }
