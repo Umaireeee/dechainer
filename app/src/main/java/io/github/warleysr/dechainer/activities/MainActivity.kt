@@ -58,6 +58,7 @@ import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import io.github.warleysr.dechainer.ui.theme.Motion
 import io.github.warleysr.dechainer.urge.DeepDiveScheduler
+import io.github.warleysr.dechainer.urge.UrgeIntentToken
 import io.github.warleysr.dechainer.urge.UrgeSource
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
@@ -124,7 +125,18 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra(EXTRA_URGE_SOURCE)
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
-        urgeVm.startOngoing(source)
+        val token = intent.getStringExtra(EXTRA_URGE_TOKEN)
+        intent.removeExtra(EXTRA_URGE_TOKEN)
+        when (source) {
+            // Only the tile can start the lock with no question, and only with the token it just issued.
+            // MainActivity is exported, so a bare extra from another app must never start a lock.
+            UrgeSource.TILE ->
+                if (UrgeIntentToken.shared.consume(token, android.os.SystemClock.elapsedRealtime())) urgeVm.startOngoing(source)
+            // The icon shortcut cannot carry a secret, so it opens the choice instead of locking at once:
+            // one tap more, and a forged intent can do nothing but show a screen.
+            UrgeSource.SHORTCUT -> urgeVm.openChoice(source)
+            else -> Unit
+        }
     }
 
     private val openTodayRequest = mutableStateOf(false)
@@ -420,5 +432,8 @@ class MainActivity : ComponentActivity() {
          * started the ongoing path. See [handleUrgeIntent].
          */
         const val EXTRA_URGE_SOURCE = "urge_source"
+
+        /** The one-time proof that the tile sent the request. See [UrgeIntentToken]. */
+        const val EXTRA_URGE_TOKEN = "urge_token"
     }
 }

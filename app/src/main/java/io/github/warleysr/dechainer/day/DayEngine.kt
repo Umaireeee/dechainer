@@ -56,7 +56,12 @@ object DayEngine {
             if (activated != null) {
                 val repo = Store.days(ctx)
                 val today = DayWindow.dateOf(now, zone)
-                if (DayService.evaluate(repo, repo.stats(zone), activated, now, zone) &&
+                // The first time this runs on a phone, today becomes the first day that counts: days before it
+                // were never enforced (the pass was not wired in), so none of them can be punished now.
+                val liveFrom = state.get(AppStateKeys.DAY_ENGINE_LIVE_FROM)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    ?: today.also { state.set(AppStateKeys.DAY_ENGINE_LIVE_FROM, it.toString()) }
+                val from = effectiveStart(activated, liveFrom)
+                if (DayService.evaluate(repo, repo.stats(zone), from, now, zone) &&
                     state.get(AppStateKeys.PUNISHMENT_DATE) != today.toString()
                 ) {
                     LockStateStore.setPunishment(ctx, PunishmentInput.wholeDay(today, zone), today.toString())
@@ -67,6 +72,9 @@ object DayEngine {
             Timber.e(e, "Day evaluation failed; the lock pass goes on")
         }
     }
+
+    /** The day enforcement counts from: the later of the confirmation day and the day the evaluation went live. */
+    internal fun effectiveStart(activated: LocalDate, liveFrom: LocalDate): LocalDate = if (liveFrom.isAfter(activated)) liveFrom else activated
 
     /** The next moment that needs a wake-up: 20:00, 23:00 or midnight. Only a wake-up; the truth is recomputed on arrival. */
     private fun arm(ctx: Context, now: Long, zone: java.time.ZoneId) {

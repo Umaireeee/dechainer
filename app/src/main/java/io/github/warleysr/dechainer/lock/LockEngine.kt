@@ -135,6 +135,9 @@ object LockEngine {
             } catch (e: Throwable) {
                 Timber.e(e, "Focus flow not advanced; the lock is planned without it")
             }
+            // The daily checklist: close yesterday, judge the new day, record a punishment day, arm the evening
+            // wake-ups. Before the plan, so a punishment day that begins now is in it. It never throws.
+            io.github.warleysr.dechainer.day.DayEngine.runPass(ctx, now)
             var gathered = gather(ctx, now)
             var plan = plan(now, zone, gathered.state)
             if (plan.expiredFocusBlock) {

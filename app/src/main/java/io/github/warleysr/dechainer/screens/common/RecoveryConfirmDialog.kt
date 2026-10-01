@@ -54,7 +54,7 @@ fun RecoveryConfirmDialog(
                         supportingText = {
                             if (isError) {
                                 Text(
-                                    stringResource(R.string.invalid_recovery_code),
+                                    recoveryErrorText(context),
                                     color = MaterialTheme.colorScheme.error
                                 )
                             } else {
@@ -133,7 +133,7 @@ private fun ShuffleKeyboardRecoveryDialog(
 
                 if (isError) {
                     Text(
-                        text = stringResource(R.string.invalid_recovery_code),
+                        text = recoveryErrorText(LocalContext.current),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -208,4 +208,12 @@ private fun ShuffleKeyboardRecoveryDialog(
             }
         }
     )
+}
+
+/** "Wrong code", or, once too many tries in a row have been wrong, how long the app now refuses to try. */
+private fun recoveryErrorText(context: android.content.Context): String {
+    val wait = SecurityManager.recoveryWaitMs(context)
+    if (wait <= 0L) return context.getString(R.string.invalid_recovery_code)
+    val s = ((wait + 999) / 1000).toInt()
+    return context.getString(R.string.recovery_wait, "%d:%02d".format(s / 60, s % 60))
 }

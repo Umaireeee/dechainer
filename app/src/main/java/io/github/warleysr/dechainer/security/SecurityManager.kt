@@ -159,14 +159,42 @@ class SecurityManager {
             isRecoveryKeySet.value = true
         }
 
-        /** Checks [userInput] against the stored hash. An open recovery session counts as correct. */
+        private const val KEY_RECOVERY_FAILURES = "recovery_failures"
+        private const val KEY_RECOVERY_LAST_FAILURE = "recovery_last_failure"
+
+        /**
+         * How long the recovery code is refused after too many wrong tries (the same slowing as the app
+         * lock: free at first, then 30 seconds up to an hour). The count is kept with a synchronous
+         * write, so killing the app does not give the tries back, and the wait runs on the trusted clock.
+         */
+        fun recoveryWaitMs(context: Context): Long {
+            val p = recoveryPrefs(context)
+            return AppLockRules.waitRemaining(
+                p.getInt(KEY_RECOVERY_FAILURES, 0), p.getLong(KEY_RECOVERY_LAST_FAILURE, 0L),
+                io.github.warleysr.dechainer.clock.TrustedClock.now(context)
+            )
+        }
+
+        /** Checks [userInput] against the stored hash. An open recovery session counts as correct. A wrong try is counted; while a wait runs every try is refused, even the right code. */
         fun validateRecoveryCode(context: Context, userInput: String): Boolean {
             if (isSessionActive()) return true
 
             // Opening the session is now RecoveryGate's call, via beginUnlock, so the unlock
             // delay can sit between a correct code and changes unlocking.
             val stored = recoveryHash(context) ?: return false
-            return RecoveryCodeHash.verify(userInput, stored)
+            synchronized(RECOVERY_LOCK) {
+                if (recoveryWaitMs(context) > 0L) return false
+                val p = recoveryPrefs(context)
+                if (RecoveryCodeHash.verify(userInput, stored)) {
+                    if (p.getInt(KEY_RECOVERY_FAILURES, 0) != 0) p.edit(commit = true) { putInt(KEY_RECOVERY_FAILURES, 0); remove(KEY_RECOVERY_LAST_FAILURE) }
+                    return true
+                }
+                p.edit(commit = true) {
+                    putInt(KEY_RECOVERY_FAILURES, p.getInt(KEY_RECOVERY_FAILURES, 0) + 1)
+                    putLong(KEY_RECOVERY_LAST_FAILURE, io.github.warleysr.dechainer.clock.TrustedClock.now(context))
+                }
+                return false
+            }
         }
 
         private const val KEY_UNLOCK_DELAY_MIN = "unlock_delay_minutes"

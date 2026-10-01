@@ -55,7 +55,7 @@ object TrustedClock {
                 checkpoint = load(context)
                 loaded = true
             }
-            reading = TrustedClockMath.read(wall, elapsed, boot, checkpoint)
+            reading = TrustedClockMath.read(wall, elapsed, boot, checkpoint, autoTimeOn = autoTimeOn(context))
             checkpoint = reading.checkpoint
             val due = writeNow || reading.wallDistrusted || boot != lastWrittenBoot ||
                 elapsed - lastWriteElapsed >= Rules.CLOCK_CHECKPOINT_INTERVAL_MS
@@ -94,6 +94,13 @@ object TrustedClock {
         } catch (e: Exception) {
             Timber.w(e, "Clock checkpoint not saved")
         }
+    }
+
+    /** Whether the phone sets its own time from the network. Read as "on" when it cannot be read, so an unknown never distrusts the clock. */
+    private fun autoTimeOn(context: Context): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.AUTO_TIME, 1) != 0
+    } catch (_: Exception) {
+        true
     }
 
     /** Android's count of boots, so a reboot is noticed for certain; unknown if it can't be read. */

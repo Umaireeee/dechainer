@@ -150,4 +150,42 @@ class TrustedClockMathTest {
         // Agreeing clocks: unchanged.
         assertEquals(t0 + 7, TrustedClockMath.toWall(t0 + 7, t0, t0))
     }
+
+    @Test
+    fun aHandSetForwardIsIgnoredWhenAutomaticTimeIsOffAndFollowedWhenItIsOn() {
+        val first = read(t0, 1_000, 7, null)
+        // Ten minutes of running time, but the wall jumped a whole day.
+        val wall = t0 + 24 * hour
+        val ignored = TrustedClockMath.read(wall, 1_000 + 10 * minute, 7, first.checkpoint, autoTimeOn = false)
+        assertTrue(ignored.wallDistrusted)
+        assertEquals("time goes on by the running time only", t0 + 10 * minute, ignored.trustedMs)
+        val followed = TrustedClockMath.read(wall, 1_000 + 10 * minute, 7, first.checkpoint, autoTimeOn = true)
+        assertFalse(followed.wallDistrusted)
+        assertEquals("a network correction is believed", wall, followed.trustedMs)
+    }
+
+    @Test
+    fun theIgnoredJumpStaysIgnoredOnTheNextReading() {
+        val first = read(t0, 1_000, 7, null)
+        val wall = t0 + 24 * hour
+        val a = TrustedClockMath.read(wall, 1_000 + 10 * minute, 7, first.checkpoint, autoTimeOn = false)
+        val b = TrustedClockMath.read(wall + 5 * minute, 1_000 + 15 * minute, 7, a.checkpoint, autoTimeOn = false)
+        assertEquals(t0 + 15 * minute, b.trustedMs)
+    }
+
+    @Test
+    fun anOrdinaryClockWithAutomaticTimeOffIsStillFollowed() {
+        val first = read(t0, 1_000, 7, null)
+        val second = TrustedClockMath.read(t0 + 10 * minute + 3_000, 1_000 + 10 * minute, 7, first.checkpoint, autoTimeOn = false)
+        assertFalse("three seconds of drift is inside the tolerance", second.wallDistrusted)
+        assertEquals(t0 + 10 * minute + 3_000, second.trustedMs)
+    }
+
+    @Test
+    fun afterARebootAForwardJumpCannotBeTold() {
+        val first = read(t0, 1_000, 7, null)
+        val r = TrustedClockMath.read(t0 + 24 * hour, 30_000, 8, first.checkpoint, autoTimeOn = false)
+        assertFalse(r.wallDistrusted)
+        assertEquals(t0 + 24 * hour, r.trustedMs)
+    }
 }

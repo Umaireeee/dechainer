@@ -55,6 +55,9 @@ fun TodayScreen(modifier: Modifier = Modifier) {
             }
             Text(stringResource(R.string.today_goals), style = MaterialTheme.typography.titleLarge)
             if (goals.isEmpty()) Text(stringResource(R.string.today_no_goals))
+            // Goals are ticked from 20:00, never earlier: say so while they are still locked.
+            else if (goals.any { it.state == GoalState.OPEN && it.type == GoalType.MANUAL } && !DayWindow.inEvening(now, today, zone))
+                Text(stringResource(R.string.today_tick_locked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(goals, key = { it.id }) { g ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -74,8 +77,8 @@ fun TodayScreen(modifier: Modifier = Modifier) {
                     if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (g.state == GoalState.OPEN && g.type == GoalType.MANUAL) {
-                    if (DayWindow.canMarkDone(now, today, zone)) TextButton({ repo.setGoal(g.id, GoalState.DONE, ResolvedBy.USER); version++ }) { Text(stringResource(R.string.today_done)) }
-                    if (DayWindow.canMarkNotDone(now, today, zone)) TextButton({ repo.setGoal(g.id, GoalState.NOT_DONE, ResolvedBy.USER); version++ }) { Text(stringResource(R.string.today_not_done)) }
+                    if (DayWindow.canMarkDone(now, today, zone)) TextButton({ if (repo.markByOwner(g.id, GoalState.DONE, TrustedClock.now(ctx), zone)) version++ }) { Text(stringResource(R.string.today_done)) }
+                    if (DayWindow.canMarkNotDone(now, today, zone)) TextButton({ if (repo.markByOwner(g.id, GoalState.NOT_DONE, TrustedClock.now(ctx), zone)) version++ }) { Text(stringResource(R.string.today_not_done)) }
                 }
             }
         }
@@ -129,7 +132,7 @@ fun TodayScreen(modifier: Modifier = Modifier) {
                             val at = TrustedClock.now(ctx)
                             saveStatus = when {
                                 !DayWindow.canEditPlan(at, tomorrow, zone) -> SaveStatus.CLOSED
-                                repo.savePlan(tomorrow, drafts.filter { it.text.trim().isNotEmpty() }.map { it.toNew() }, at) -> {
+                                repo.savePlanByOwner(tomorrow, drafts.filter { it.text.trim().isNotEmpty() }.map { it.toNew() }, at, zone) -> {
                                     LockEngine.requestSync(ctx); version++; SaveStatus.SAVED
                                 }
                                 else -> SaveStatus.TOO_FEW
@@ -153,7 +156,7 @@ fun TodayScreen(modifier: Modifier = Modifier) {
             item {
                 val isRest = tomorrowRow?.kind == DayKind.REST
                 val allowed = isRest || DayWindow.canDeclareRest(now, tomorrow, repo.restDates(), zone)
-                OutlinedButton({ repo.setRest(tomorrow, !isRest); version++ }, enabled = allowed) {
+                OutlinedButton({ if (repo.setRestByOwner(tomorrow, !isRest, TrustedClock.now(ctx), zone)) version++ }, enabled = allowed) {
                     Text(stringResource(if (isRest) R.string.today_rest_cancel else R.string.today_rest_tomorrow))
                 }
             }

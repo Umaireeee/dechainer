@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Starts the ongoing urge path, with no question first (blueprint D2). -->
+    <!-- Opens the urge choice (ongoing or slipped). It cannot lock at once: the activity is exported, so this intent could be forged, and only the Quick Settings tile (which carries a one-time token) may start the lock without a question. -->
     <shortcut
         android:shortcutId="urge"
         android:enabled="true"

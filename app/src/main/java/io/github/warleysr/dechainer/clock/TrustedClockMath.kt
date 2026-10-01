@@ -22,7 +22,12 @@ data class ClockReading(val trustedMs: Long, val checkpoint: ClockCheckpoint, va
  * started again from zero, so only the time since boot is added: a lower bound, which can only make
  * a lock last longer than needed, never end it early.
  *
- * Moving the clock forward is not detected here. That is what the date and time lock is for.
+ * Moving the clock forward is caught only when it is certain to be a hand: automatic time is off
+ * ([autoTimeOn] false) and, within one boot, the wall clock gained more than the phone really ran. Then the
+ * jump is ignored and the time goes on from the last reading plus the running time. With automatic time
+ * on, a jump forward is a network correction and is followed, so a clock that was honestly wrong and got
+ * fixed is never left permanently behind. (After a reboot the two clocks cannot be compared; the Device
+ * Owner's date and time lock covers that.)
  */
 object TrustedClockMath {
     fun read(
@@ -30,7 +35,8 @@ object TrustedClockMath {
         elapsedNow: Long,
         bootCountNow: Int,
         last: ClockCheckpoint?,
-        toleranceMs: Long = Rules.CLOCK_BACKSTEP_TOLERANCE_MS
+        toleranceMs: Long = Rules.CLOCK_BACKSTEP_TOLERANCE_MS,
+        autoTimeOn: Boolean = true
     ): ClockReading {
         val distrusted: Boolean
         val trusted: Long
@@ -45,12 +51,22 @@ object TrustedClockMath {
                 nowElapsed = elapsedNow,
                 nowBootCount = bootCountNow
             )
+        } else if (!autoTimeOn && jumpedForward(wallNow, elapsedNow, bootCountNow, last, toleranceMs)) {
+            distrusted = true
+            trusted = last.trustedMs + (elapsedNow - last.elapsedMs)
         } else {
             distrusted = false
             // Inside the tolerance the wall may read a little earlier: hold the last reading.
             trusted = maxOf(wallNow, last.trustedMs)
         }
         return ClockReading(trusted, ClockCheckpoint(trusted, elapsedNow, bootCountNow), distrusted)
+    }
+
+    /** The wall gained more than the phone ran since the last reading, in the same boot. */
+    private fun jumpedForward(wallNow: Long, elapsedNow: Long, bootCountNow: Int, last: ClockCheckpoint, toleranceMs: Long): Boolean {
+        val sameBoot = bootCountNow != ForcedRemovalClock.UNKNOWN_BOOT && bootCountNow == last.bootCount && elapsedNow >= last.elapsedMs
+        if (!sameBoot) return false
+        return wallNow - last.trustedMs > (elapsedNow - last.elapsedMs) + toleranceMs
     }
 
     /**

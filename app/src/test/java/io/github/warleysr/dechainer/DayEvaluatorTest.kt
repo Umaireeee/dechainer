@@ -76,8 +76,12 @@ class DayEvaluatorTest {
         assertTrue(DayWindow.canMarkNotDone(ms(23, 59, 59), d, zone))
         assertFalse(DayWindow.canMarkNotDone(ms(0, 0, 0, tomorrow), d, zone))
         assertFalse(DayWindow.canMarkNotDone(ms(12, 0, 0), d, zone))
-        assertTrue(DayWindow.canMarkDone(ms(9, 0, 0), d, zone))
+        assertFalse("not during the day", DayWindow.canMarkDone(ms(9, 0, 0), d, zone))
+        assertFalse(DayWindow.canMarkDone(ms(19, 59, 59), d, zone))
+        assertTrue(DayWindow.canMarkDone(ms(20, 0, 0), d, zone))
+        assertTrue(DayWindow.canMarkDone(ms(23, 59, 59), d, zone))
         assertFalse(DayWindow.canMarkDone(ms(0, 0, 0, tomorrow), d, zone))
+        assertFalse("not the day before", DayWindow.canMarkDone(ms(21, 0, 0, d.minusDays(1)), d, zone))
     }
     @Test fun restLimitIsOnePerRollingSeven() {
         val now = d.atTime(21, 0).atZone(zone).toInstant().toEpochMilli()

@@ -101,4 +101,48 @@ class DayServiceTest {
         assertFalse(repo.savePlan(a, listOf(NewGoal("x"), NewGoal(" "), NewGoal("y")), 0L))
         assertTrue(repo.goals(a).isEmpty())
     }
+
+    @Test fun aManualGoalCanBeTickedOnlyInTheEveningWindowOfItsOwnDay() {
+        val day = a.plusDays(1)
+        repo.savePlan(day, List(3) { NewGoal("g$it") }, 0L)
+        val g = repo.goals(day)
+        fun at(h: Int, m: Int = 0, s: Int = 0, d: LocalDate = day) = d.atTime(h, m, s).atZone(zone).toInstant().toEpochMilli()
+
+        assertFalse("not in the morning", repo.markByOwner(g[0].id, GoalState.DONE, at(9), zone))
+        assertFalse("not at 19:59:59", repo.markByOwner(g[0].id, GoalState.DONE, at(19, 59, 59), zone))
+        assertFalse("not the evening before", repo.markByOwner(g[0].id, GoalState.DONE, at(21, d = day.minusDays(1)), zone))
+        assertEquals(GoalState.OPEN, repo.goals(day)[0].state)
+
+        assertTrue(repo.markByOwner(g[0].id, GoalState.DONE, at(20), zone))
+        assertFalse("only while open", repo.markByOwner(g[0].id, GoalState.NOT_DONE, at(21), zone))
+        assertTrue(repo.markByOwner(g[1].id, GoalState.NOT_DONE, at(23, 59, 59), zone))
+        assertFalse("not after midnight", repo.markByOwner(g[2].id, GoalState.DONE, at(0, d = day.plusDays(1)), zone))
+        assertEquals(listOf(GoalState.DONE, GoalState.NOT_DONE, GoalState.OPEN), repo.goals(day).map { it.state })
+        assertFalse("open is not a closing", repo.markByOwner(g[2].id, GoalState.OPEN, at(21), zone))
+    }
+
+    @Test fun aMeasuredGoalIsNeverClosedByTheOwner() {
+        val day = a.plusDays(1)
+        repo.savePlan(day, listOf(NewGoal("focus", GoalType.FOCUS_MINUTES, 60), NewGoal("clean", GoalType.NO_SLIP), NewGoal("by hand")), 0L)
+        val at = day.atTime(21, 0).atZone(zone).toInstant().toEpochMilli()
+        val g = repo.goals(day)
+        assertFalse(repo.markByOwner(g[0].id, GoalState.DONE, at, zone))
+        assertFalse(repo.markByOwner(g[1].id, GoalState.DONE, at, zone))
+        assertTrue(repo.markByOwner(g[2].id, GoalState.DONE, at, zone))
+    }
+
+    @Test fun thePlanAndTheRestDayAreRefusedOutsideTheEveningWindowByTheRepositoryItself() {
+        val day = a.plusDays(1)
+        fun at(h: Int, m: Int = 0, s: Int = 0, d: LocalDate = a) = d.atTime(h, m, s).atZone(zone).toInstant().toEpochMilli()
+        val goals = List(3) { NewGoal("g$it") }
+        assertFalse(repo.savePlanByOwner(day, goals, at(19, 59, 59), zone))
+        assertFalse(repo.savePlanByOwner(day, goals, at(0, d = day), zone))
+        assertTrue(repo.savePlanByOwner(day, goals, at(20), zone))
+        assertFalse(repo.setRestByOwner(day, true, at(12), zone))
+        assertTrue(repo.setRestByOwner(day, true, at(21), zone))
+        assertEquals(DayKind.REST, repo.day(day)?.kind)
+        assertFalse("withdrawing is also only in the window", repo.setRestByOwner(day, false, at(0, d = day), zone))
+        assertTrue(repo.setRestByOwner(day, false, at(22), zone))
+        assertEquals(DayKind.NORMAL, repo.day(day)?.kind)
+    }
 }

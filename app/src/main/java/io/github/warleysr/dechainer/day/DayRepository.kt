@@ -72,6 +72,47 @@ class DayRepository(private val database: DechainerDatabase) {
         return true
     }
 
+    /**
+     * The owner closes a manual goal. The rule is enforced here, not only in the screen: a goal can be
+     * ticked DONE or NOT_DONE only in the evening window of its own day ([DayWindow]), only while it is
+     * open, and only if the owner closes it (a measured goal closes itself). False when refused.
+     */
+    fun markByOwner(id: Long, state: GoalState, now: Long, zone: java.time.ZoneId): Boolean {
+        if (state == GoalState.OPEN) return false
+        val goal = goalWithDate(id) ?: return false
+        val (g, date) = goal
+        if (g.type != GoalType.MANUAL || g.state != GoalState.OPEN) return false
+        val allowed = if (state == GoalState.DONE) DayWindow.canMarkDone(now, date, zone) else DayWindow.canMarkNotDone(now, date, zone)
+        if (!allowed) return false
+        setGoal(id, state, ResolvedBy.USER)
+        return true
+    }
+
+    private fun goalWithDate(id: Long): Pair<Goal, LocalDate>? =
+        database.readableDatabase.query("goal", null, "id = ?", arrayOf(id.toString()), null, null, null).use { c ->
+            if (!c.moveToFirst()) null
+            else {
+                val date = runCatching { LocalDate.parse(c.getString(c.getColumnIndexOrThrow("day_date"))) }.getOrNull()
+                val goal = goalRow(c)
+                if (date == null || goal == null) null else goal to date
+            }
+        }
+
+    /** The owner writes or changes a plan. Refused outside the evening window before that day, whatever the screen thought. */
+    fun savePlanByOwner(date: LocalDate, goals: List<NewGoal>, now: Long, zone: java.time.ZoneId): Boolean =
+        DayWindow.canEditPlan(now, date, zone) && savePlan(date, goals, now)
+
+    /**
+     * The owner declares or withdraws a REST day. Both only in the evening window before it; declaring
+     * also keeps to one rest day in any seven. Enforced here, so a tap at 23:59:59 on a stale screen cannot slip through.
+     */
+    fun setRestByOwner(date: LocalDate, rest: Boolean, now: Long, zone: java.time.ZoneId): Boolean {
+        val allowed = if (rest) DayWindow.canDeclareRest(now, date, restDates(), zone) else DayWindow.canEditPlan(now, date, zone)
+        if (!allowed) return false
+        setRest(date, rest)
+        return true
+    }
+
     fun setGoal(id: Long, state: GoalState, by: ResolvedBy) {
         inTransaction { db ->
             db.update("goal", ContentValues().apply { put("state", state.name); put("resolved_by", by.name.takeIf { state != GoalState.OPEN }) },

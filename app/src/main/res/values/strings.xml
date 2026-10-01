@@ -582,6 +582,7 @@
     <string name="today_goals">Today\'s goals</string>
     <string name="today_no_goals">No goals for today.</string>
     <string name="today_done">Done</string>
+    <string name="today_tick_locked">You can tick today\'s goals from 20:00 until midnight, not before. Goals that the app measures close by themselves.</string>
     <string name="today_not_done">Not done</string>
     <string name="today_tomorrow">Tomorrow\'s plan</string>
     <string name="today_tomorrow_locked">Tomorrow\'s plan can be written from 20:00 to 23:59 tonight.</string>
@@ -708,6 +709,7 @@
     <string name="rules_understood">I have read this and I want these rules.</string>
     <string name="rules_confirm">Start the rules</string>
     <!-- App lock -->
+    <string name="recovery_wait">Too many wrong codes. Try again in %1$s.</string>
     <string name="applock_title">App lock</string>
     <string name="applock_explain">A PIN or pattern of its own, asked for when the app opens and after it has been out of sight for half a minute. Home, the Urge button and a running lock never wait behind it: an urge can always be started at once.</string>
     <string name="applock_state_off">Off</string>

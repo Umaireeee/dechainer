@@ -51,6 +51,13 @@ object AppStateKeys {
      */
     const val WEEK_ANCHOR = "weekAnchor"
 
+    /**
+     * The local date (YYYY-MM-DD) the daily evaluation first ran on this phone. The evaluation was built
+     * but never wired into the lock pass until this was added, so no day before it is judged: starting
+     * the rule must not punish a day that was never enforced. Not deletable.
+     */
+    const val DAY_ENGINE_LIVE_FROM = "dayEngineLiveFrom"
+
     /** Prefix of the flags that mark a one-off migration as done: `migrated:<name>`. */
     const val MIGRATED_PREFIX = "migrated:"
 }

@@ -33,8 +33,12 @@ object DayWindow {
     fun canEditPlan(now: Long, planDate: LocalDate, zone: ZoneId): Boolean =
         inEvening(now, planDate.minusDays(1), zone)
 
-    /** DONE on a manual goal: any time during its own day. */
-    fun canMarkDone(now: Long, goalDate: LocalDate, zone: ZoneId): Boolean = dateOf(now, zone) == goalDate
+    /**
+     * DONE on a manual goal: only in the evening window of its own day, the same window as NOT_DONE.
+     * Ticking a goal during the day let a goal be closed early to get around a lock (owner decision,
+     * after the blueprint's "any time during the day").
+     */
+    fun canMarkDone(now: Long, goalDate: LocalDate, zone: ZoneId): Boolean = inEvening(now, goalDate, zone)
 
     /** NOT_DONE: only in the evening window of the goal's own day. */
     fun canMarkNotDone(now: Long, goalDate: LocalDate, zone: ZoneId): Boolean = inEvening(now, goalDate, zone)
