@@ -12,6 +12,16 @@ One app, one lock engine, one store. The Urge Journal is merged in and its modul
 
 ---
 
+## Owner polish pass (after Phase 7)
+
+- **App lock:** a PIN or pattern of its own (Settings, App lock). Home, the Urge flow and running locks are never behind it.
+- **Deep dives you can read again:** menu, Deep dives; the rows in Your data now open the entry.
+- **Better questions and deep dives:** five purposeful questions, recent entries as context, a plan and your own reason at the end, and no invented details.
+- **Today:** Save plan now says what was saved or what is missing.
+- **Removed:** the saved "someone to call". The support card points to the phone app.
+
+---
+
 ## Déchaîner 1.2.0 + Schedules
 
 An unofficial personal build of [Déchaîner](https://github.com/warleysr/dechainer) by @warleysr,

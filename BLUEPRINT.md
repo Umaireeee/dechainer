@@ -218,7 +218,7 @@ Fixed questions (fallback, same for urge and slip):
 
 1. What was happening just before the urge started?
 2. How were you feeling, in a word or two?
-3. Where were you, and roughly what time was it?
+3. What was the urge offering you: a way to put something off, to get away from a feeling, or something else? (Changed in 1.2; the time is already stored with the entry.)
 
 ### 6.3 Focus sessions (scheduled Pomodoro = focus session in brick mode)
 
@@ -525,6 +525,16 @@ Claude Code must list which of these are still unchecked at the end of every pha
 - Unit tests cover every decision function: `LockEngine.plan`, `FocusFlow`, `DayEvaluator`, `WeekMath`, `TrustedClock`, AI request builders and parsers.
 - CI runs unit tests, `assembleDebug` and `assembleRelease` on every push.
 - The app has one module, one lock engine, one store, one design system, and three notification channels.
+
+---
+
+## 17A. Changes in 1.2 (owner's polish pass after Phase 7)
+
+- **D4 vetoed by the owner:** the saved crisis contact is gone (setting, storage, tests). The crisis card keeps its text and gets one button that opens the phone app. `Safety.needsSupport` and the AI risk shape are unchanged.
+- **App lock (new, section 9):** an optional PIN (4 to 12 digits, weak ones refused) or pattern (4 or more dots) that is separate from the phone's lock. Salted PBKDF2 hash, wrong tries counted with a synchronous write and slowed after the fourth (30 s, 1 min, 5 min, 15 min, 1 h), asked again after 30 s out of sight. Home, the Urge flow, the Quick Settings tile and a running brick are never behind it (principle: an urge can always be started at once). Changing it needs the current secret; removing it or "I forgot it" goes through the recovery code gate (loosening). All writes obey the settings freeze. This reverses the Phase 7 removal of the entry gate only for the screens behind Home, and only when the owner turns it on.
+- **Deep dives stay readable (6.2, 6.6):** new Deep dives screen and entry screen (menu, Reports, Your data). They are read only and stay open during a punishment day and an urge lock.
+- **AI prompts (section 8):** the questions follow five jobs (first link, the need, the pull, the turning point, the next step) and the deep dive has five sections (What happened, The earliest link, What helped and what didn't, Your plan, Hold on to this), still at most 250 words. Both prompts forbid invented details and guessing missing answers. The requests now also carry the time of day and up to four short "earliest link" lines from earlier deep dives of the last three weeks (derived lines the AI wrote, never a raw note); the weekly report is unchanged. The owner's reason is still never sent: it is shown under the deep dive on the phone. The third fixed question now asks what the urge was offering.
+- **Today:** Save plan gives feedback (saved, what is missing, window closed).
 
 ---
 

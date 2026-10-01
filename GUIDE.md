@@ -24,6 +24,9 @@ The code is what lets you *loosen* a rule later. Give it to someone you trust an
 ## Step 4: Confirm the checklist rules (once)
 The last setup screen explains the daily checklist in plain words and asks for one confirmation. Enforcement starts when you confirm. See Step 8.
 
+## Step 4b: App lock (optional, recommended)
+**Settings → App lock**. Choose a PIN or a pattern that is **not** your phone's own. The app asks for it when it opens and after it has been out of sight for half a minute. Home (the clock and the Urge button), the Urge flow and a running lock never wait behind it, so an urge can always be started at once. Five wrong tries in a row make the app wait (30 seconds, then longer). Changing it asks for the current one; turning it off or "I forgot it" needs the recovery code, with its unlock delay. Best: have someone you trust choose it.
+
 ## Step 5: Turn on adult-site blocking (2 minutes)
 **Settings → Private DNS**, then pick **CleanBrowsing Family** (strictest). This covers the whole phone, every browser and app. Also open **Settings → Protections** and switch on the ones you want, for example blocking factory reset, installing from unknown sources, and adding a VPN.
 
@@ -34,7 +37,11 @@ If you already slipped, tap **I slipped** instead: no lock, straight to writing.
 
 Add the tile: pull the notification shade down fully, tap the pencil or "Edit", find the Urge tile, and drag it to the top row.
 
-Set the **reason** you wrote on a calm day and one **person to call** in **Settings → Urge and AI**. The reason replaces the fifth breathing prompt; the person appears on a support card if a note shows risk. Neither is sent to the AI.
+Write your **reason** on a calm day in **Settings → Urge and AI**. It replaces the fifth breathing prompt and is shown again under every deep dive. It is never sent to the AI. If a note shows risk, a support card asks you to reach someone you trust and opens the phone app; the app stores no contact.
+
+The questions after your note are built from what you wrote: the first link, what the urge was offering, how strong the pull was, the turning point, and a rule for the next time. The deep dive ends with a short plan (an if-then rule) and your own reason. It only uses facts from your note and answers; if you skip a question it says nothing about it. Do the first line of the plan before you close it.
+
+Every deep dive is kept: **menu → Deep dives** (also **Reports → Read your deep dives**, and the rows in **Your data**) opens it again with the answers behind it.
 
 If the AI cannot be reached, the note stays on the phone, the entry waits for its deep dive, and the app retries in the background until it works or you delete the entry.
 

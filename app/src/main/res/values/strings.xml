@@ -453,7 +453,7 @@
 
     <!-- Writing and the questions -->
     <string name="urge_write_title">What happened?</string>
-    <string name="urge_write_hint">Write it plainly, in your own words. Once your deep dive is made, this note is deleted from the phone.</string>
+    <string name="urge_write_hint">Write it plainly, in your own words. A few details make the deep dive much sharper: where you were, what time it was, what you were meant to be doing, and what you felt. Once your deep dive is made, this note is deleted from the phone.</string>
     <string name="urge_write_label">Your note</string>
     <string name="urge_write_continue">Continue</string>
     <string name="urge_write_skip">Not now</string>
@@ -466,12 +466,14 @@
     <string name="urge_scale_high">Very strong</string>
     <string name="urge_fixed_q1">What was happening just before the urge started?</string>
     <string name="urge_fixed_q2">How were you feeling, in a word or two?</string>
-    <string name="urge_fixed_q3">Where were you, and roughly what time was it?</string>
+    <string name="urge_fixed_q3">What was the urge offering you: a way to put something off, to get away from a feeling, or something else?</string>
 
     <!-- The deep dive -->
     <string name="urge_dd_title">Your deep dive</string>
     <string name="urge_dd_writing">Writing your deep dive…</string>
-    <string name="urge_dd_deleted">Your note was deleted from this phone. Only the deep dive is kept.</string>
+    <string name="urge_dd_deleted">Your note was deleted from this phone. The deep dive and your answers are kept, and you can read them again under Deep dives in the menu.</string>
+    <string name="urge_dd_reason_label">Your reason</string>
+    <string name="urge_dd_first_step">Before you close this, do the first line of your plan. Within five minutes is when a plan holds.</string>
     <string name="urge_dd_pending_title">The deep dive is not made yet</string>
     <string name="urge_dd_pending_note">Your note is still saved on this phone. It is deleted once the deep dive exists, or when you delete it.</string>
     <string name="urge_dd_why_no_key">No AI key is set. Add one under Settings, Urge and AI, and the deep dive is made then.</string>
@@ -497,26 +499,19 @@
     <!-- The crisis card -->
     <string name="urge_support_title">Please reach someone now</string>
     <string name="urge_support_body">What you wrote worries me. You do not have to carry this alone. Call or message someone you trust, or your local emergency number or a crisis line.</string>
-    <string name="urge_support_call">Call %1$s</string>
-    <string name="urge_support_text">Text %1$s</string>
-    <string name="urge_support_nobody">You have not saved anyone yet. You can add a person under Settings, Urge and AI.</string>
-    <string name="urge_support_sms_body">Can you call me? I need someone right now.</string>
+    <string name="urge_support_phone">Open the phone app</string>
 
     <!-- Urge and AI settings -->
     <string name="urge_settings_title">Urge and AI</string>
-    <string name="urge_settings_desc">Your reason, someone to call, and the AI behind your deep dives</string>
+    <string name="urge_settings_desc">Your reason and the AI behind your deep dives</string>
     <string name="urge_frozen">Settings cannot be changed today.</string>
     <string name="urge_saved">Saved.</string>
     <string name="urge_save">Save</string>
     <string name="urge_reason_section">Your reason</string>
     <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone and is never sent to the AI.</string>
     <string name="urge_reason_field">Why you set this up</string>
-    <string name="urge_contact_section">Someone to call</string>
-    <string name="urge_contact_hint">Saved on this phone only and never sent to the AI. The crisis card offers to call or text this person.</string>
-    <string name="urge_contact_name">Name</string>
-    <string name="urge_contact_number">Phone number</string>
     <string name="ai_section">AI</string>
-    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive. The note is deleted from this phone once its deep dive exists. Nothing else about you is sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
+    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive, plus one short line from each of your last few deep dives so it can spot a pattern. The note is deleted from this phone once its deep dive exists. Your reason is never sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
     <string name="ai_provider">Provider</string>
     <string name="ai_key_label">API key</string>
     <string name="ai_key_none">No key is saved.</string>
@@ -582,7 +577,15 @@
     <string name="today_tomorrow_locked">Tomorrow\'s plan can be written from 20:00 to 23:59 tonight.</string>
     <string name="today_goal_hint">Goal %1$d</string>
     <string name="today_add_goal">Add a goal</string>
-    <string name="today_save_plan">Save plan (3 to 7 goals)</string>
+    <string name="today_save_plan">Save plan</string>
+    <plurals name="today_plan_saved">
+        <item quantity="one">Saved. Tomorrow\'s plan has %d goal. You can change it until midnight.</item>
+        <item quantity="other">Saved. Tomorrow\'s plan has %d goals. You can change it until midnight.</item>
+    </plurals>
+    <string name="today_save_need">Write at least %1$d goals to save the plan. You have %2$d so far.</string>
+    <string name="today_save_unsaved">You have changes that are not saved yet.</string>
+    <string name="today_save_too_few">Not saved. A plan needs between 3 and 7 goals with some text in them.</string>
+    <string name="today_save_closed">Not saved. The writing window has closed. Tomorrow\'s plan can only be written from 20:00 to 23:59.</string>
     <string name="today_rest_tomorrow">Make tomorrow a rest day</string>
     <string name="today_rest_cancel">Cancel tomorrow\'s rest day</string>
     <string name="info_today_what">Your daily checklist.</string>
@@ -592,6 +595,30 @@
     <!-- Reports and data tools (Phase 6) -->
     <string name="reports_tab">Reports</string>
     <string name="data_title">Your data</string>
+    <string name="data_open_hint">Tap to read it</string>
+    <string name="journal_label_deep_dive">deep dive saved</string>
+    <string name="journal_label_waiting">deep dive waiting</string>
+    <string name="journal_label_skipped">not written</string>
+    <string name="journal_label_unfinished">not finished</string>
+    <string name="journal_title">Deep dives</string>
+    <string name="entry_title">Deep dive</string>
+    <string name="journal_hint">Every urge and slip you have written down, newest first. Tap one to read its deep dive again.</string>
+    <string name="journal_empty">Nothing here yet. After your next urge or slip, its deep dive is kept here.</string>
+    <string name="journal_has_deep_dive">Deep dive saved</string>
+    <string name="journal_waiting">The deep dive is still being made</string>
+    <string name="journal_skipped">You chose not to write this one. It still counts.</string>
+    <string name="journal_unfinished">Not finished</string>
+    <string name="entry_missing">This entry is not here any more.</string>
+    <string name="entry_sat_through">You sat through the ten-minute lock before writing this.</string>
+    <string name="entry_answers">Your answers</string>
+    <string name="entry_no_answer">No answer</string>
+    <string name="entry_note">Your note</string>
+    <string name="entry_retry">Try the deep dive again now</string>
+    <string name="entry_retry_queued">Trying now. This page updates when it is ready.</string>
+    <string name="reports_deep_dives">Read your deep dives</string>
+    <string name="info_journal_what">Every deep dive you have been given.</string>
+    <string name="info_journal_does">Lists your urges and slips, newest first. A tap opens the deep dive and the answers it was built from.</string>
+    <string name="info_journal_how">Your note is deleted from the phone once its deep dive exists. The deep dive and your answers stay until you delete them under Your data.</string>
     <string name="report_channel">Weekly report</string>
     <string name="report_ready">Your weekly report is ready</string>
     <string name="reports_empty">The first report is made when your first week with something recorded has ended. It needs an AI key, your consent and a connection; if the phone was off, it is made the next time it is on and online.</string>
@@ -661,4 +688,47 @@
     <string name="rules_loosening">Making a rule stricter is one tap. Loosening anything needs your recovery code and the unlock delay, and never works on a running lock.</string>
     <string name="rules_understood">I have read this and I want these rules.</string>
     <string name="rules_confirm">Start the rules</string>
+    <!-- App lock -->
+    <string name="applock_title">App lock</string>
+    <string name="applock_explain">A PIN or pattern of its own, asked for when the app opens and after it has been out of sight for half a minute. Home, the Urge button and a running lock never wait behind it: an urge can always be started at once.</string>
+    <string name="applock_state_off">Off</string>
+    <string name="applock_state_pin">On, with a PIN</string>
+    <string name="applock_state_pattern">On, with a pattern</string>
+    <string name="applock_tip">Choose one that is not your phone\'s own PIN or pattern. It holds best when someone you trust chooses it and keeps it. If it is ever forgotten, the recovery code removes it.</string>
+    <string name="applock_set_pin">Set a PIN</string>
+    <string name="applock_set_pattern">Set a pattern</string>
+    <string name="applock_change">Change it</string>
+    <string name="applock_lock_now">Lock the app now</string>
+    <string name="applock_remove">Remove the app lock</string>
+    <string name="applock_removed">The app lock is off.</string>
+    <string name="applock_saved">The app lock is on.</string>
+    <string name="applock_enter_current_pin">Enter your current PIN</string>
+    <string name="applock_enter_current_pattern">Draw your current pattern</string>
+    <string name="applock_wrong_short">Wrong. Try again.</string>
+    <string name="applock_choose_new">Choose the new lock</string>
+    <string name="applock_new_pin">Choose a PIN</string>
+    <string name="applock_new_pattern">Draw a pattern</string>
+    <string name="applock_confirm_pin">Enter the PIN again</string>
+    <string name="applock_confirm_pattern">Draw the pattern again</string>
+    <string name="applock_pin_rules">4 to 12 digits. Not the PIN you use for your phone.</string>
+    <string name="applock_pattern_rules">Connect at least 4 dots. Not the pattern you use for your phone.</string>
+    <string name="applock_weak">That PIN is too easy to guess, like 1234 or 0000. Choose another.</string>
+    <string name="applock_mismatch">They did not match. Start again.</string>
+    <string name="applock_title_pin">Enter your PIN</string>
+    <string name="applock_title_pattern">Draw your pattern</string>
+    <string name="applock_hint">This is the app\'s own lock, not your phone\'s.</string>
+    <string name="applock_too_short">Connect at least 4 dots.</string>
+    <string name="applock_frozen">The lock cannot be changed on a punishment day.</string>
+    <string name="applock_wait">Too many wrong tries. Try again in %1$s.</string>
+    <string name="applock_wrong_last">Wrong. The next wrong try makes the app wait.</string>
+    <plurals name="applock_wrong">
+        <item quantity="one">Wrong. %d try left before the app makes you wait.</item>
+        <item quantity="other">Wrong. %d tries left before the app makes you wait.</item>
+    </plurals>
+    <string name="applock_forgot">I forgot it</string>
+    <string name="applock_not_now">Not now</string>
+    <string name="applock_pin_typed">%d digits entered</string>
+    <string name="applock_backspace">Delete the last digit</string>
+    <string name="applock_confirm">Confirm</string>
+    <string name="applock_pattern_area">Pattern area. Drag your finger across the dots.</string>
 </resources>

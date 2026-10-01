@@ -28,7 +28,7 @@ A focus block is a committed lock until an end time you pick (10 minutes to 8 ho
 Each evening, 20:00 to 23:59, you write tomorrow's 3 to 7 goals and close today. A missing plan, an unresolved goal, or fewer than half of the goals done makes the next day a **punishment day**: the phone is locked all day except calls and the alarm clock, and settings are frozen. A punishment day never follows a punishment day, and a declared rest day (one per week) never cancels one. Enforcement starts when you confirm the rules at the end of setup.
 
 ### Weekly report
-When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** also shows a progress line of your daily checklist results. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
+When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** also shows a progress line of your daily checklist results. **Deep dives** (in the menu) keeps every deep dive and its answers so you can read them again. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
 
 ### Blocking
 - **Apps:** suspend any app with one switch; suspended apps are greyed out and cannot open.
@@ -90,7 +90,7 @@ Locally: open the project in Android Studio, or run `./gradlew assembleDebug`.
 ---
 
 ## Privacy
-Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), and the weekly report gets numbers, answers, deep dives, sessions and checklist goals, never raw notes. Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
+Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted) and one short line from each of your last few deep dives so they can spot a pattern, and the weekly report gets numbers, answers, deep dives, sessions and checklist goals, never raw notes. The Private DNS setting hands your DNS lookups to the provider you choose.
 
 ---
 
