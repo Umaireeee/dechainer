@@ -588,6 +588,15 @@
     <string name="today_goal_hint">Goal %1$d</string>
     <string name="today_add_goal">Add a goal</string>
     <string name="today_save_plan">Save plan</string>
+    <string name="today_type_manual">By hand</string>
+    <string name="today_type_focus">Focus time</string>
+    <string name="today_type_noslip">No slips</string>
+    <string name="today_type_minutes_hint">Focus minutes to reach (5 to 720)</string>
+    <string name="today_type_focus_tag">%d focus minutes, counted by the app</string>
+    <string name="today_type_noslip_tag">Done if there is no slip today</string>
+    <string name="today_state_done">done</string>
+    <string name="today_state_not_done">not done</string>
+    <string name="today_save_minutes">A focus goal needs a target between 5 and 720 minutes.</string>
     <plurals name="today_plan_saved">
         <item quantity="one">Saved. Tomorrow\'s plan has %d goal. You can change it until midnight.</item>
         <item quantity="other">Saved. Tomorrow\'s plan has %d goals. You can change it until midnight.</item>
