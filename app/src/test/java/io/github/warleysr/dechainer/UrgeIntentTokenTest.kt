@@ -14,12 +14,13 @@ class UrgeIntentTokenTest {
         assertFalse("a replay fails", t.consume(a, 2_100))
     }
 
-    @Test fun aGuessedOrMissingTokenFailsAndUsesUpTheRealOne() {
+    @Test fun aGuessedOrMissingTokenFailsButDoesNotSpendTheRealOne() {
         val t = UrgeIntentToken()
         val a = t.issue(0)
         assertFalse(t.consume(null, 10))
-        assertFalse("a wrong guess spends the token, so a probe cannot be followed by the real one", t.consume(a, 20))
-        assertFalse(t.consume("deadbeef", 30))
+        assertFalse(t.consume("deadbeef", 15))
+        assertTrue("a forged request cannot cancel the genuine tap", t.consume(a, 20))
+        assertFalse(t.consume(a, 30))
     }
 
     @Test fun aStaleTokenFails() {

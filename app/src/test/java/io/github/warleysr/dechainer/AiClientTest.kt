@@ -224,18 +224,21 @@ class AiClientTest {
     }
 
     @Test
-    fun aReplyCutOffAtTheLengthLimitFailsInsteadOfBeingKeptHalfWritten() {
-        val failure = try {
-            Sse.read(sse("""data: {"choices":[{"delta":{"content":"## What happened\nYou sat"}}]}""", """data: {"choices":[{"delta":{},"finish_reason":"length"}]}""", "data: [DONE]")) { }
-            null
-        } catch (e: Sse.StreamFailure) {
-            e.message
-        }
-        assertEquals("The reply was cut off at the length limit.", failure)
+    fun aReplyThatDidNotEndOnPurposeFailsInsteadOfBeingKeptHalfWritten() {
+        fun failure(vararg lines: String) = try { Sse.read(sse(*lines)) { }; null } catch (e: Sse.StreamFailure) { e.message }
+        val piece = """data: {"choices":[{"delta":{"content":"## What happened\nYou sat"}}]}"""
+        assertEquals("The reply was cut off (length).", failure(piece, """data: {"choices":[{"delta":{},"finish_reason":"length"}]}""", "data: [DONE]"))
+        assertEquals("The reply was cut off (content_filter).", failure(piece, """data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}"""))
+        assertEquals("a connection that just closes is not a finished reply", "The reply ended before it was finished.", failure(piece))
+        // Ended on purpose, with [DONE] or with stop: kept.
+        assertEquals("## What happened\nYou sat", Sse.read(sse(piece, "data: [DONE]")) { })
+        assertEquals("## What happened\nYou sat", Sse.read(sse(piece, """data: {"choices":[{"delta":{},"finish_reason":"stop"}]}""")) { })
         assertEquals("length", Sse.finishReason("""data: {"choices":[{"finish_reason":"length"}]}"""))
         assertNull(Sse.finishReason("""data: {"choices":[{"delta":{"content":"x"},"finish_reason":null}]}"""))
-        assertEquals(AiResult.Failed(AiError.SERVER, "The reply was cut off at the length limit."),
+        assertEquals(AiResult.Failed(AiError.SERVER, "The reply was cut off or filtered."),
             AiClient.interpret(200, """{"choices":[{"message":{"content":"half"},"finish_reason":"length"}]}"""))
+        assertEquals(AiResult.Failed(AiError.SERVER, "The reply was cut off or filtered."),
+            AiClient.interpret(200, """{"choices":[{"message":{"content":"x"},"finish_reason":"content_filter"}]}"""))
         assertEquals(AiResult.Ok("whole"), AiClient.interpret(200, """{"choices":[{"message":{"content":"whole"},"finish_reason":"stop"}]}"""))
     }
 }

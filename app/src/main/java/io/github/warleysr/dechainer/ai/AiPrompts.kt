@@ -133,9 +133,12 @@ Exactly three specific actions, each aimed at a link you named.
 
 Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about three minutes. Write the whole reply in English, headings included."""
 
+    private val OWN_TAGS = Regex("<\\s*/?\\s*(" + listOf(NOTE_TAG, ANSWERS_TAG, WEEK_TAG, HISTORY_TAG, GOALS_TAG).joinToString("|") + ")\\s*>", RegexOption.IGNORE_CASE)
+
     /** Wraps [text] in `<tag>` ... `</tag>`, after removing any such tag the text itself carries, so it cannot close its own box. */
     fun delimit(tag: String, text: String): String {
-        val clean = text.replace(Regex("</?\\s*" + Regex.escape(tag) + "\\s*>", RegexOption.IGNORE_CASE), "")
+        // Every tag of ours is taken out, whatever spacing it has, so the text can neither close its own box nor open another.
+        val clean = text.replace(OWN_TAGS, "")
         return "<$tag>\n${clean.trim()}\n</$tag>"
     }
 

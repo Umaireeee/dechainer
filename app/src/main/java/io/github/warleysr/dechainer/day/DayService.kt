@@ -28,7 +28,10 @@ object DayService {
                     planGoalCount = repo.goals(d).size,
                     declaredRest = repo.day(d)?.kind == DayKind.REST
                 )
-                repo.saveEvaluation(d, verdict)
+                // A day judged late (the phone was off, so it was never lived) did not impose its punishment: it must
+                // not shield the day after it through the back-to-back guard, or switching the phone off would dodge it.
+                val kept = if (d.isBefore(today) && verdict.kind == DayKind.PUNISHMENT) verdict.copy(kind = DayKind.NORMAL) else verdict
+                repo.saveEvaluation(d, kept)
             }
             d = d.plusDays(1)
         }

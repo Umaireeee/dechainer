@@ -97,7 +97,7 @@ class ReportService(
     /** The ended periods that still need a report and have a data point, oldest first. */
     fun dueWithData(now: Long, zone: ZoneId): List<Int> {
         val anchor = anchor(zone) ?: return emptyList()
-        return WeekMath.due(anchor, now, zone, reports.reportedPeriods()).filter { load(anchor, it, zone).hasDataPoint }
+        return WeekMath.due(anchor, now, zone, reports.reportedPeriods()) { load(anchor, it, zone).hasDataPoint }
     }
 
     /** One attempt to build the report for period [k]. */

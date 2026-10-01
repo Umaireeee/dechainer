@@ -59,7 +59,7 @@ class ReportWorker(context: Context, private val params: WorkerParameters) : Wor
         val k = ReportScheduler.periodOf(params)
         if (k < 0) return Result.success()
         return when (ReportService(applicationContext).generate(k, TrustedClock.now(applicationContext), TrustedClock.zone())) {
-            ReportOutcome.RETRY, ReportOutcome.NOT_DUE -> Result.retry()
+            ReportOutcome.RETRY, ReportOutcome.NOT_DUE -> if (runAttemptCount >= 6) Result.success() else Result.retry()
             // Done, nothing to report, or waiting on the owner (key, consent): the job ends and is queued again when the app opens.
             else -> Result.success()
         }

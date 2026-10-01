@@ -44,9 +44,13 @@ object DeepDiveScheduler {
     }
 }
 
+private const val MAX_ATTEMPTS = 6
+
 class DeepDiveWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result = when (UrgeFlow(applicationContext).retryPending()) {
-        DeepDiveRetry.Outcome.RETRY -> Result.retry()
+        // After a few tries the job rests until the app is opened again: a reply that fails every time must not
+        // be sent (and paid for) for ever in the background.
+        DeepDiveRetry.Outcome.RETRY -> if (runAttemptCount >= MAX_ATTEMPTS) Result.success() else Result.retry()
         // Done, nothing waiting, or waiting on the owner (key, consent, a refused key): the job ends and is queued again when that changes.
         else -> Result.success()
     }

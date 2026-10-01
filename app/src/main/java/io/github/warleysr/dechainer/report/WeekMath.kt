@@ -51,6 +51,8 @@ object WeekMath {
      * Ended periods that have no report yet, oldest first, newest [MAX_CATCH_UP] only. [reported] are
      * the periods that already have a report row (a deleted report keeps its row, so it is not built again).
      */
-    fun due(anchor: LocalDate, now: Long, zone: ZoneId, reported: Set<Int>): List<Int> =
-        (0..lastEnded(anchor, now, zone)).filter { it !in reported }.takeLast(MAX_CATCH_UP)
+    fun due(anchor: LocalDate, now: Long, zone: ZoneId, reported: Set<Int>, hasData: (Int) -> Boolean = { true }): List<Int> =
+        // Empty weeks never get a row, so they are dropped before the newest few are taken: otherwise a run of
+        // empty weeks would push an older week that does have data out of the catch-up for good.
+        (0..lastEnded(anchor, now, zone)).filter { it !in reported && hasData(it) }.takeLast(MAX_CATCH_UP)
 }

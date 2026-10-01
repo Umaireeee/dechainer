@@ -37,7 +37,14 @@ object DayEngine {
         try {
             val state = Store.appState(ctx)
             if (state.get(AppStateKeys.ACTIVATED_ON) == null) {
-                state.set(AppStateKeys.ACTIVATED_ON, DayWindow.dateOf(TrustedClock.now(ctx), TrustedClock.zone()).toString())
+                val now = TrustedClock.now(ctx)
+                val zone = TrustedClock.zone()
+                val today = DayWindow.dateOf(now, zone)
+                // Confirming inside tonight's evening window would leave seconds or minutes to write the first plan
+                // and punish tomorrow for it. From the evening window on, the first day that counts is tomorrow: the
+                // first plan is then due tomorrow evening, with a whole day to prepare.
+                val start = if (DayWindow.inEvening(now, today, zone)) today.plusDays(1) else today
+                state.set(AppStateKeys.ACTIVATED_ON, start.toString())
             }
             LockEngine.requestSync(ctx.applicationContext)
         } catch (e: Exception) {
@@ -67,9 +74,14 @@ object DayEngine {
                     LockStateStore.setPunishment(ctx, PunishmentInput.wholeDay(today, zone), today.toString())
                 }
             }
-            arm(ctx, now, zone)
         } catch (e: Exception) {
             Timber.e(e, "Day evaluation failed; the lock pass goes on")
+        }
+        // The wake-ups are set even when the evaluation threw: losing the 20:00 and midnight alarms would be worse.
+        try {
+            arm(ctx, now, TrustedClock.zone())
+        } catch (e: Exception) {
+            Timber.e(e, "Day wake-up not armed")
         }
     }
 
@@ -84,7 +96,10 @@ object DayEngine {
             DayWindow.endOf(today, zone) + 1000
         ).first { it > now }
         val am = ctx.getSystemService(AlarmManager::class.java)
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, TrustedClock.toWall(next, ctx), pending(ctx))
+        val at = TrustedClock.toWall(next, ctx)
+        // Exact when the phone allows it, so a punishment day and the evening window start on the minute and not minutes late in Doze.
+        if (android.os.Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(ctx))
+        else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(ctx))
     }
 
     private fun pending(ctx: Context) = PendingIntent.getBroadcast(

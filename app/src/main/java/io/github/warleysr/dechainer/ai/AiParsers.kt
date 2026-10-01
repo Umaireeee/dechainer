@@ -19,6 +19,11 @@ sealed interface QuestionsReply {
 
 /** Reads the reply to [AiPrompts.questions]. Lenient about fences and stray text, strict about what it accepts. */
 object QuestionsParser {
+    /** A string field, or "" when it is missing or JSON null (Android's optString turns null into the text "null"). */
+    private fun str(o: JSONObject, key: String): String = if (o.isNull(key)) "" else o.optString(key)
+
+    private fun strAt(a: org.json.JSONArray, i: Int): String = if (a.isNull(i)) "" else a.optString(i)
+
     private const val MAX_PROMPT_CHARS = 300
     private const val MAX_OPTION_CHARS = 60
     private const val MAX_OPTIONS = 6
@@ -34,17 +39,17 @@ object QuestionsParser {
         val out = mutableListOf<Question>()
         for (i in 0 until arr.length()) {
             val q = arr.optJSONObject(i) ?: continue
-            val prompt = q.optString("prompt").trim().take(MAX_PROMPT_CHARS)
+            val prompt = str(q, "prompt").trim().take(MAX_PROMPT_CHARS)
             if (prompt.isEmpty()) continue
             val options = q.optJSONArray("options")?.let { a ->
-                (0 until a.length()).mapNotNull { a.optString(it).trim().take(MAX_OPTION_CHARS).takeIf { s -> s.isNotEmpty() } }
+                (0 until a.length()).mapNotNull { strAt(a, it).trim().take(MAX_OPTION_CHARS).takeIf { s -> s.isNotEmpty() } }
             }.orEmpty().distinct().take(MAX_OPTIONS)
-            val type = when (q.optString("type").trim().lowercase()) {
+            val type = when (str(q, "type").trim().lowercase()) {
                 "choice" -> if (options.size >= 2) QuestionType.CHOICE else QuestionType.TEXT
                 "scale" -> QuestionType.SCALE
                 else -> QuestionType.TEXT
             }
-            var id = q.optString("id").trim().take(40).ifEmpty { "q${out.size + 1}" }
+            var id = str(q, "id").trim().take(40).ifEmpty { "q${out.size + 1}" }
             if (id in seen) id = "q${out.size + 1}"
             while (id in seen) id += "x"
             seen += id
@@ -68,6 +73,9 @@ object MarkdownReply {
         if (t.isEmpty() || t.startsWith("{")) return null
         return t
     }
+
+    /** At least one "## " heading: the replies are asked to have sections, and a refusal or a one-line answer has none. */
+    fun hasSections(text: String): Boolean = text.lines().any { it.trimStart().startsWith("#") && it.trimStart().trimStart('#').startsWith(" ") }
 
     /** Words, not Markdown marks: a token counts when it has a letter or a digit in it. */
     fun wordCount(text: String): Int = text.trim().split(Regex("\\s+")).count { t -> t.any { it.isLetterOrDigit() } }

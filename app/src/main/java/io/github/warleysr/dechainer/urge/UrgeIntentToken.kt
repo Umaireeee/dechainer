@@ -24,9 +24,13 @@ class UrgeIntentToken(private val maxAgeMs: Long = MAX_AGE_MS) {
     /** True once, for the token just issued and not yet too old. Every other value, a replay and a stale token all fail. */
     @Synchronized
     fun consume(candidate: String?, now: Long): Boolean {
-        val expected = token
+        val expected = token ?: return false
+        if (now - issuedAt !in 0..maxAgeMs) { token = null; return false }
+        // A wrong value does not spend it: the token is 128 random bits, so a guess is hopeless, and a forged
+        // request must not be able to cancel the one the tile has just issued.
+        if (candidate == null || candidate != expected) return false
         token = null
-        return expected != null && candidate != null && candidate == expected && now - issuedAt in 0..maxAgeMs
+        return true
     }
 
     companion object {

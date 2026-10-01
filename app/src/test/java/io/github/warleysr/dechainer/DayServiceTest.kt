@@ -145,4 +145,12 @@ class DayServiceTest {
         assertTrue(repo.setRestByOwner(day, false, at(22), zone))
         assertEquals(DayKind.NORMAL, repo.day(day)?.kind)
     }
+
+    @Test fun aPunishmentThatWasNeverLivedBecausePhoneWasOffDoesNotShieldTheNextDay() {
+        // No plans at all; the phone is off for the first day and comes back on the second.
+        assertTrue("the day the phone is on again is punished", run(a.plusDays(2)))
+        assertEquals("the missed day is on record but was not lived", DayKind.NORMAL, repo.day(a.plusDays(1))?.kind)
+        assertEquals(Violation.PLAN_MISSING, repo.day(a.plusDays(1))?.violation)
+        assertEquals(DayKind.PUNISHMENT, repo.day(a.plusDays(2))?.kind)
+    }
 }

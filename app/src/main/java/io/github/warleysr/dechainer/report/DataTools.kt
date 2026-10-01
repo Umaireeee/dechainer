@@ -79,7 +79,13 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     }
 
     /** Whether the goal text of [date] may go: a report must cover the day (blueprint 6.4). */
-    fun canDeleteGoals(date: LocalDate): Boolean = ReportRules.canDeleteGoals(date, reports.latestEnd(), zone)
+    fun canDeleteGoals(date: LocalDate): Boolean {
+        if (!ReportRules.canDeleteGoals(date, reports.latestEnd(), zone)) return false
+        // The day after must have been judged first: judging reads these goals, and deleting them in the gap
+        // between midnight and the next pass would turn an unresolved or failed day into a clean one.
+        val activated = Store.appState(ctx).get(AppStateKeys.ACTIVATED_ON)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        return activated == null || date.plusDays(1) <= activated || days.day(date.plusDays(1))?.evaluated == true
+    }
 
     fun deleteGoals(date: LocalDate): DeleteResult {
         if (frozen("delete goal text")) return DeleteResult.FROZEN
@@ -159,9 +165,12 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
             }
 
             val newSessions = mutableSetOf<Long>()
+            // Only the past can be brought back. A session dated today or later would add focus minutes to a goal
+            // that is still open, so a file edited by hand could tick it.
+            val pastOnly = DayWindow.startOf(today, zone)
             for (r in rows("focus_session")) {
                 val id = r.optLong("id", -1)
-                if (id < 0 || exists(db, "focus_session", "id = ?", id.toString())) { skipped++; continue }
+                if (id < 0 || r.optLong("started_at", Long.MAX_VALUE) >= pastOnly || exists(db, "focus_session", "id = ?", id.toString())) { skipped++; continue }
                 db.insertOrThrow("focus_session", null, ContentValues().apply {
                     put("id", id); put("source", r.optString("source")); put("flavor", r.optString("flavor"))
                     put("purpose", r.optString("purpose", "")); put("started_at", r.getLong("started_at"))

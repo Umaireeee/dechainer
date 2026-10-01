@@ -158,15 +158,15 @@ object AiClient {
             code == 400 && detail.contains("api key", ignoreCase = true) -> AiResult.Failed(AiError.BAD_KEY, detail)
             code == 400 && detail.contains("model", ignoreCase = true) -> AiResult.Failed(AiError.BAD_MODEL, detail)
             code >= 500 -> AiResult.Failed(AiError.SERVER, detail)
-            code in 200..299 && finishedByLength(body) -> AiResult.Failed(AiError.SERVER, "The reply was cut off at the length limit.")
+            code in 200..299 && finishedIncomplete(body) -> AiResult.Failed(AiError.SERVER, "The reply was cut off or filtered.")
             code in 200..299 -> content(body)?.let { AiResult.Ok(it) } ?: AiResult.Failed(AiError.EMPTY)
             else -> AiResult.Failed(AiError.SERVER, detail)
         }
     }
 
-    /** Whether the model stopped because it hit its length cap, so the text it gave is incomplete. */
-    fun finishedByLength(json: String): Boolean = runCatching {
-        JSONObject(json).getJSONArray("choices").getJSONObject(0).optString("finish_reason") == "length"
+    /** Whether the model stopped because it hit its length cap or was filtered, so the text it gave is incomplete. */
+    fun finishedIncomplete(json: String): Boolean = runCatching {
+        JSONObject(json).getJSONArray("choices").getJSONObject(0).optString("finish_reason").let { it == "length" || it == "content_filter" }
     }.getOrDefault(false)
 
     fun content(json: String): String? = runCatching {
@@ -196,6 +196,9 @@ object Sse {
         val l = line.trim()
         return if (l.startsWith("data:")) l.removePrefix("data:").trim() else null
     }
+
+    /** The longest a streamed reply may take in all. */
+    const val OVERALL_DEADLINE_MS = 3 * 60_000L
 
     fun isDone(line: String): Boolean = payload(line) == "[DONE]"
 
@@ -233,17 +236,24 @@ object Sse {
     /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. A reply the model cut off at its length cap fails: half a deep dive is never kept. */
     fun read(reader: java.io.BufferedReader, onText: (String) -> Unit): String {
         val all = StringBuilder()
-        var cutOff = false
+        var finish: String? = null
+        var sawDone = false
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(OVERALL_DEADLINE_MS)
         while (true) {
+            // The read timeout is per read: keep-alive comments could hold a stream open for ever without this.
+            if (System.nanoTime() > deadline) throw StreamFailure("The reply took too long.")
             val line = reader.readLine() ?: break
-            if (isDone(line)) break
+            if (isDone(line)) { sawDone = true; break }
             error(line)?.let { throw StreamFailure(it) }
-            if (finishReason(line) == "length") cutOff = true
+            finishReason(line)?.let { finish = it }
             val piece = delta(line) ?: continue
             all.append(piece)
             onText(all.toString())
         }
-        if (cutOff) throw StreamFailure("The reply was cut off at the length limit.")
+        // Only a reply that ended on purpose is a finished one: a connection that closed part-way, a cut at the
+        // length cap or a filtered reply is a failed call, so the note is kept and tried again.
+        if (finish == "length" || finish == "content_filter") throw StreamFailure("The reply was cut off ($finish).")
+        if (!sawDone && finish != "stop") throw StreamFailure("The reply ended before it was finished.")
         return all.toString()
     }
 }

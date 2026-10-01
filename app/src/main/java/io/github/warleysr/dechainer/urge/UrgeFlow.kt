@@ -21,6 +21,7 @@ import io.github.warleysr.dechainer.ai.QuestionsOutcome
 import io.github.warleysr.dechainer.ai.QuestionsReply
 import io.github.warleysr.dechainer.ai.needsOwner
 import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.day.DayWindow
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockStateStore
 import io.github.warleysr.dechainer.store.Store
@@ -277,9 +278,14 @@ class UrgeFlow(
             }
             return when (val out = calls.deepDive(ai.config(), inputFor(entry), onText)) {
                 is MarkdownOutcome.Ok -> {
-                    if (stored) runCatching { repo.saveDeepDive(entry.id, out.markdown) }
-                        .onFailure { Timber.e(it, "Deep dive not saved") }
-                    DeepDiveResult.Saved(out.markdown)
+                    val saved = !stored || runCatching { repo.saveDeepDive(entry.id, out.markdown) }
+                        .onFailure { Timber.e(it, "Deep dive not saved") }.getOrDefault(false)
+                    if (saved) DeepDiveResult.Saved(out.markdown)
+                    else {
+                        // Not stored: the note is still on the phone, so do not say it was deleted. Try again later.
+                        enqueueRetry(true)
+                        DeepDiveResult.Pending(AiGateResult.OPEN, io.github.warleysr.dechainer.ai.AiError.SERVER)
+                    }
                 }
                 is MarkdownOutcome.Failed -> {
                     if (!out.error.needsOwner) enqueueRetry(true)
@@ -324,7 +330,8 @@ class UrgeFlow(
             waitedOutLock = e.kind == UrgeKind.URGE && e.lockStartedAt != null && e.lockEndedAt != null,
             history = recentHistory(e),
             language = language(),
-            goals = goalLines()
+            // Today's goals only belong to an entry made today: a retry days later must not shrink the wrong day's goal.
+            goals = if (DayWindow.dateOf(e.createdAt, TrustedClock.zone()) == DayWindow.dateOf(TrustedClock.now(ctx), TrustedClock.zone())) goalLines() else emptyList()
         )
     }
 

@@ -42,18 +42,22 @@ class AiCalls(
     /** The deep dive as Markdown. [onText] is told everything written so far while it arrives. */
     fun deepDive(config: AiConfig, input: DeepDiveInput, onText: (String) -> Unit = {}): MarkdownOutcome {
         val req = AiPrompts.deepDive(input)
-        return markdown(stream(config, req.system, req.user, AiLimits.DEEP_DIVE, onText))
+        // A refusal or an off-format reply has no "## " section. Unless the note was flagged as a crisis (the
+        // reply is then a short care message), it is a failed call: the note is kept and tried again.
+        return markdown(stream(config, req.system, req.user, AiLimits.DEEP_DIVE, onText), requireSections = !input.flagged)
     }
 
     /** The weekly report as Markdown, from derived data only. */
     fun weeklyReport(config: AiConfig, derivedInputs: String): MarkdownOutcome {
         val req = AiPrompts.weeklyReport(derivedInputs)
-        return markdown(chat(config, req.system, req.user, AiLimits.WEEKLY))
+        return markdown(chat(config, req.system, req.user, AiLimits.WEEKLY), requireSections = true)
     }
 
-    private fun markdown(r: AiResult): MarkdownOutcome = when (r) {
+    private fun markdown(r: AiResult, requireSections: Boolean): MarkdownOutcome = when (r) {
         // A reply that is not Markdown is a failed call, so the note is kept and tried again.
-        is AiResult.Ok -> MarkdownReply.clean(r.text)?.let { MarkdownOutcome.Ok(it) } ?: MarkdownOutcome.Failed(AiError.EMPTY)
+        is AiResult.Ok -> MarkdownReply.clean(r.text)
+            ?.takeIf { !requireSections || MarkdownReply.hasSections(it) }
+            ?.let { MarkdownOutcome.Ok(it) } ?: MarkdownOutcome.Failed(AiError.EMPTY)
         is AiResult.Failed -> MarkdownOutcome.Failed(r.error)
     }
 }

@@ -74,6 +74,12 @@ class AiCallsTest {
     fun aDeepDiveThatIsJsonOrEmptyIsAFailureSoTheNoteStays() {
         assertEquals(MarkdownOutcome.Failed(AiError.EMPTY), calls(reply = AiResult.Ok("{\"a\":1}")).deepDive(cfg, input))
         assertEquals(MarkdownOutcome.Failed(AiError.EMPTY), calls(reply = AiResult.Ok("  ")).deepDive(cfg, input))
+        // A refusal has no section: the note is kept and the call is tried again.
+        assertEquals(MarkdownOutcome.Failed(AiError.EMPTY), calls(reply = AiResult.Ok("I can't help with that.")).deepDive(cfg, input))
+        assertEquals(MarkdownOutcome.Failed(AiError.EMPTY), calls(reply = AiResult.Ok("I can't help with that.")).weeklyReport(cfg, "x"))
+        // Except for a note flagged as a crisis: the reply is then a short care message.
+        assertEquals(MarkdownOutcome.Ok("Please call someone you trust now."),
+            calls(reply = AiResult.Ok("Please call someone you trust now.")).deepDive(cfg, input.copy(flagged = true)))
         assertEquals(MarkdownOutcome.Failed(AiError.SERVER), calls(reply = AiResult.Failed(AiError.SERVER)).deepDive(cfg, input))
     }
 
