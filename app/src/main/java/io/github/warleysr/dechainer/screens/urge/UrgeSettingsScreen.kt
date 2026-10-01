@@ -40,9 +40,9 @@ import io.github.warleysr.dechainer.urge.UrgeSettings
 import kotlin.concurrent.thread
 
 /**
- * Urge and AI (blueprint D4, D5 and section 8): the personal reason, the one person to call, and the
- * AI provider, key, model and consent. Every write goes through the settings freeze, so on a
- * punishment day the screen reads but refuses to save, and says so.
+ * Urge and AI (blueprint D5 and section 8): the personal reason, and the AI provider, key, model and
+ * consent. Every write goes through the settings freeze, so on a punishment day the screen reads but
+ * refuses to save, and says so.
  */
 @Composable
 fun UrgeSettingsScreen() {
@@ -54,8 +54,6 @@ fun UrgeSettingsScreen() {
     val frozen = urge.frozen
 
     var reason by remember { mutableStateOf(urge.reason) }
-    var contactName by remember { mutableStateOf(urge.contact.name) }
-    var contactNumber by remember { mutableStateOf(urge.contact.number) }
 
     var provider by remember { mutableStateOf(ai.provider) }
     var keyInput by remember { mutableStateOf("") }
@@ -93,33 +91,6 @@ fun UrgeSettingsScreen() {
         SaveButton {
             message = if (urge.setReason(reason)) R.string.urge_saved else R.string.urge_frozen
             if (message == R.string.urge_saved) reason = urge.reason
-        }
-
-        // ---- the person to call ----
-        Spacer(Modifier.height(16.dp))
-        Header(R.string.urge_contact_section)
-        Hint(R.string.urge_contact_hint)
-        OutlinedTextField(
-            value = contactName,
-            onValueChange = { contactName = it },
-            label = { Text(stringResource(R.string.urge_contact_name)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = contactNumber,
-            onValueChange = { contactNumber = it },
-            label = { Text(stringResource(R.string.urge_contact_number)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            modifier = Modifier.fillMaxWidth()
-        )
-        SaveButton {
-            message = if (urge.setContact(contactName, contactNumber)) R.string.urge_saved else R.string.urge_frozen
-            if (message == R.string.urge_saved) {
-                contactName = urge.contact.name
-                contactNumber = urge.contact.number
-            }
         }
 
         // ---- the AI ----

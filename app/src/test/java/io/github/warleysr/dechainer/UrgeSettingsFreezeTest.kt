@@ -23,7 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The new settings of Phase 3 (the AI choices, the personal reason, the crisis contact) obey the
+ * The new settings of Phase 3 (the AI choices, the personal reason) obey the
  * settings freeze at the layer that writes them, and reading stays open on a punishment day.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -58,36 +58,28 @@ class UrgeSettingsFreezeTest {
     }
 
     @Test
-    fun theReasonAndTheContactAreSavedTrimmedAndCapped() {
+    fun theReasonIsSavedTrimmedAndCapped() {
         val s = UrgeSettings(ctx)
         assertTrue(s.setReason("  For my daughter\nand me  "))
         assertEquals("For my daughter and me", s.reason)
         assertTrue(s.setReason("x".repeat(1_000)))
         assertEquals(Rules.MAX_REASON_CHARS, s.reason.length)
-        assertTrue(s.setContact("  Sam ", "+1 (555) 010-2030"))
-        assertEquals("Sam", s.contact.name)
-        assertEquals("+15550102030", s.contact.number)
-        assertTrue(s.contact.usable)
     }
 
     @Test
-    fun noReasonAndNoContactByDefault() {
+    fun noReasonByDefault() {
         val s = UrgeSettings(ctx)
         assertEquals("", s.reason)
-        assertFalse(s.contact.usable)
     }
 
     @Test
-    fun theReasonAndTheContactCannotBeChangedOnAPunishmentDayButCanBeRead() {
+    fun theReasonCannotBeChangedOnAPunishmentDayButCanBeRead() {
         val s = UrgeSettings(ctx)
         s.setReason("before")
-        s.setContact("Sam", "123")
         startDay()
         assertTrue(s.frozen)
         assertFalse(s.setReason("after"))
-        assertFalse(s.setContact("Else", "999"))
         assertEquals("before", s.reason)
-        assertEquals("123", s.contact.number)
     }
 
     @Test

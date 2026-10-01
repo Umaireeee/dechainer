@@ -10,7 +10,6 @@ import io.github.warleysr.dechainer.ai.MarkdownOutcome
 import io.github.warleysr.dechainer.ai.Provider
 import io.github.warleysr.dechainer.ai.QuestionsOutcome
 import io.github.warleysr.dechainer.ai.QuestionsReply
-import io.github.warleysr.dechainer.urge.CrisisContact
 import io.github.warleysr.dechainer.urge.UrgeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -85,22 +84,5 @@ class AiCallsTest {
         assertEquals(MarkdownOutcome.Ok("## Week at a glance\n4 urges"), out)
         assertEquals(AiLimits.WEEKLY, seen.limits)
         assertTrue("urges: 4" in seen.user)
-    }
-
-    // ---- the crisis contact ----
-
-    @Test
-    fun aNumberKeepsItsDigitsAndALeadingPlus() {
-        assertEquals("+15550102030", CrisisContact.cleanNumber(" +1 (555) 010-2030 "))
-        assertEquals("5550102030", CrisisContact.cleanNumber("555-010 2030"))
-        assertEquals("1555", CrisisContact.cleanNumber("1+555"))
-        assertEquals("", CrisisContact.cleanNumber("call me"))
-    }
-
-    @Test
-    fun aContactNeedsANumberAndANameIsCapped() {
-        assertFalse(CrisisContact.of("Sam", "").usable)
-        assertTrue(CrisisContact.of("", "123").usable)
-        assertEquals(CrisisContact.MAX_NAME, CrisisContact.of("n".repeat(500), "1").name.length)
     }
 }

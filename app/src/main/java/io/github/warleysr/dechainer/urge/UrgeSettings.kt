@@ -6,18 +6,23 @@ import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.lock.SettingsFreeze
 
 /**
- * The owner's urge settings: the personal reason (D5, shown as a breathing prompt) and the crisis
- * contact (D4). Both stay on the phone. Writes are refused on a punishment day (blueprint 5.5);
- * reading is always allowed, so the breathing screen and the crisis card work on any day.
+ * The owner's urge settings: the personal reason (D5, shown as a breathing prompt and under every deep
+ * dive). It stays on the phone. Writes are refused on a punishment day (blueprint 5.5); reading is
+ * always allowed, so the breathing screen works on any day. The saved crisis contact (D4) was
+ * dropped on the owner's request: the support card now points to people and numbers the owner already has.
  */
 class UrgeSettings(context: Context) {
     private val ctx = context.applicationContext
     private val prefs = ctx.getSharedPreferences("urge_settings", Context.MODE_PRIVATE)
 
-    val reason: String get() = prefs.getString(KEY_REASON, "") ?: ""
+    init {
+        // The saved contact of earlier builds is dropped from the phone, not just hidden.
+        if (prefs.contains("contact_name") || prefs.contains("contact_number")) {
+            prefs.edit { remove("contact_name"); remove("contact_number") }
+        }
+    }
 
-    val contact: CrisisContact
-        get() = CrisisContact(prefs.getString(KEY_CONTACT_NAME, "") ?: "", prefs.getString(KEY_CONTACT_NUMBER, "") ?: "")
+    val reason: String get() = prefs.getString(KEY_REASON, "") ?: ""
 
     val frozen: Boolean get() = SettingsFreeze.isFrozen(ctx)
 
@@ -28,16 +33,7 @@ class UrgeSettings(context: Context) {
         return true
     }
 
-    fun setContact(name: String, number: String): Boolean {
-        if (!SettingsFreeze.allowWrite(ctx, "crisis contact")) return false
-        val c = CrisisContact.of(name, number)
-        prefs.edit { putString(KEY_CONTACT_NAME, c.name); putString(KEY_CONTACT_NUMBER, c.number) }
-        return true
-    }
-
     private companion object {
         const val KEY_REASON = "reason"
-        const val KEY_CONTACT_NAME = "contact_name"
-        const val KEY_CONTACT_NUMBER = "contact_number"
     }
 }
