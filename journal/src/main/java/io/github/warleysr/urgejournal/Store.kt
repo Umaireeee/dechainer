@@ -129,6 +129,17 @@ class JournalStore(context: Context) {
         prefs.edit(commit = true) { putString(DAYS, o.toString()) }
     }
 
+    // ---- Why they are doing this ----
+
+    /** The person's own reason, written for the version of them at 23:00; shown during every ride and after a slip. */
+    @Synchronized
+    fun reason(): String = prefs.getString(REASON, "") ?: ""
+
+    @Synchronized
+    fun setReason(text: String) {
+        prefs.edit(commit = true) { putString(REASON, text.trim().take(REASON_LIMIT)) }
+    }
+
     // ---- Deep dives the person chose to keep ----
 
     /** Newest first. */
@@ -173,7 +184,7 @@ class JournalStore(context: Context) {
         prefs.edit(commit = true) { putLong("dismissed_$card", time) }
 
     /** The whole journal as text, for a backup the person keeps: entries and their own rules. */
-    fun exportJson(): String = Backup.compose(all(), plans(), kept())
+    fun exportJson(): String = Backup.compose(all(), plans(), kept(), reason())
 
     /**
      * Adds entries and rules from a backup; returns how many were new. Nothing existing is
@@ -191,6 +202,11 @@ class JournalStore(context: Context) {
             }
         }
         incoming.kept.forEach { k -> if (!isKept(k.text) && keep(k.kind, k.text, k.id)) added++ }
+        // A reason already written here is never overwritten by a backup's.
+        if (incoming.reason.isNotBlank() && reason().isBlank()) {
+            setReason(incoming.reason)
+            added++
+        }
         if (incoming.plans.isNotEmpty()) {
             mutatePlans { before ->
                 val fresh = Backup.newPlans(before, incoming.plans)
@@ -225,6 +241,8 @@ class JournalStore(context: Context) {
         const val LIMIT = 2000
         const val PLAN_LIMIT = 30
         const val KEPT = "kept"
+        const val REASON = "reason"
+        const val REASON_LIMIT = 300
         const val KEPT_LIMIT = 200
     }
 }

@@ -38,7 +38,7 @@ object AppRepository {
                 AppItem(
                     name = appInfo.loadLabel(packageManager).toString(),
                     packageName = pkg,
-                    icon = appInfo.loadIcon(packageManager),
+                    iconLoader = { appInfo.loadIcon(packageManager) },
                     isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
                     isUninstallBlocked = try { dpm.isUninstallBlocked(adminName, pkg) } catch (_: Exception) { false },
                     isSuspended = try { dpm.isPackageSuspended(adminName, pkg) } catch (_: Exception) { false }

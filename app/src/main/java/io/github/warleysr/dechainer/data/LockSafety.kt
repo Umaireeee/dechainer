@@ -21,6 +21,16 @@ object LockSafety {
     ): Set<String> = launcher - protectedPkgs - alarms - allowed - EMERGENCY_APPS
 
     /**
+     * What no block of Déchaîner may ever suspend, before the launcher, the dialer and the keyboards
+     * are added: Déchaîner itself, the system UI, the phone, and the Urge Journal. The journal is the
+     * safety net for the worst moments, which come at night, inside a bedtime window; if a block
+     * could suspend it, its icon and its Quick Settings tile would be dead exactly then. It can only
+     * ever add blocking, so keeping it open loosens nothing.
+     */
+    fun neverBlocked(selfPackage: String): Set<String> =
+        setOf(selfPackage, "com.android.systemui", "com.android.phone", RideLock.JOURNAL_PACKAGE)
+
+    /**
      * Whether Device Owner may not be removed right now: a locked schedule, a focus block (brick) or
      * a ride lock is running. Forced removal, after its own four-day wait, is the only exit and
      * ignores all of them ([forced]).

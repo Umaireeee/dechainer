@@ -83,7 +83,15 @@ fun AppsScreen(viewModel: AppsViewModel = viewModel()) {
     // Back from the Usage access screen (or any time the screen returns): re-read the limits.
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshLimits() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshLimits()
+                // The list was only read once, when the tab was first made: a schedule that opened or
+                // closed since, or an app installed since, was missing until the app restarted. This
+                // is instant when nothing changed (the repository's copy is reused).
+                viewModel.load()
+            }
+        }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }

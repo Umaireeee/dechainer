@@ -313,11 +313,18 @@ enum class Area { SLEPT, STUDIED, MOVED, CONNECTED }
  * One evening check-in: how the day went against the plan, which parts of a good day happened,
  * and one line in their own words. A day saved by an older version is just its result.
  */
-data class DayLog(val result: DayResult, val areas: Set<Area> = emptySet(), val note: String = "") {
+data class DayLog(
+    val result: DayResult,
+    val areas: Set<Area> = emptySet(),
+    val note: String = "",
+    /** What they will do first tomorrow ("FAR ch. 6, questions 1 to 10"): shown on Home the next morning. */
+    val next: String = ""
+) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("r", result.name)
         if (areas.isNotEmpty()) put("a", JSONArray(areas.map { it.name }))
         if (note.isNotBlank()) put("n", note)
+        if (next.isNotBlank()) put("x", next)
     }
 
     companion object {
@@ -330,7 +337,8 @@ data class DayLog(val result: DayResult, val areas: Set<Area> = emptySet(), val 
                     raw.optJSONArray("a")?.let { a ->
                         (0 until a.length()).mapNotNull { i -> runCatching { Area.valueOf(a.getString(i)) }.getOrNull() }.toSet()
                     }.orEmpty(),
-                    raw.optString("n", "").trim().take(200)
+                    raw.optString("n", "").trim().take(200),
+                    raw.optString("x", "").trim().take(200)
                 )
             }.getOrNull()
             else -> null
@@ -530,21 +538,52 @@ object Insights {
      * several stretches tie, the one that starts on an hour with an urge wins, so it begins where
      * the trouble begins rather than hours earlier.
      */
-    fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? {
-        val recent = real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }
-        if (recent.size < 6) return null
-        val hours = recent.map { Instant.ofEpochMilli(it.time).atZone(zone).hour }
+    fun hotWindow(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): HotWindow? =
+        busiestWindow(real(entries).filter { it.time in (now - 30L * 24 * 60 * 60 * 1000)..now }, zone, minTotal = 6, minHits = 4)
+
+    /**
+     * The four-hour stretch of the day that holds most of [counted], when there is enough to say so:
+     * at least [minTotal] entries, at least [minHits] of them in the stretch and at least 40 percent.
+     * When several stretches tie, the one that starts on an hour with an urge wins, so it begins
+     * where the trouble begins rather than hours earlier.
+     */
+    fun busiestWindow(counted: List<Entry>, zone: ZoneId, minTotal: Int, minHits: Int): HotWindow? {
+        if (counted.size < minTotal) return null
+        val hours = counted.map { Instant.ofEpochMilli(it.time).atZone(zone).hour }
         fun inside(start: Int, hour: Int) = (hour - start + 24) % 24 < WINDOW_HOURS
         val best = (0 until 24).map { start ->
             val hit = hours.count { inside(start, it) }
             Triple(start, hit, if (hours.any { it == start }) 0 else 1)
         }.sortedWith(compareBy({ -it.second }, { it.third }, { it.first })).first()
         val (start, count, _) = best
-        if (count < 4 || count * 10 < recent.size * 4) return null
-        val feeling = recent.filter { inside(start, Instant.ofEpochMilli(it.time).atZone(zone).hour) }
+        if (count < minHits || count * 10 < counted.size * 4) return null
+        val feeling = counted.filter { inside(start, Instant.ofEpochMilli(it.time).atZone(zone).hour) }
             .mapNotNull { it.answers[Q.FEELING] }.groupingBy { it }.eachCount()
             .maxByOrNull { it.value }?.key
-        return HotWindow(start, count, recent.size, feeling)
+        return HotWindow(start, count, counted.size, feeling)
+    }
+
+    /** What the person's own record says about riding urges out, to show at the start of a ride. */
+    sealed interface Proof {
+        /** Of the last [rides] rides, [worked] ended with the urge passed or weaker. */
+        data class Rides(val worked: Int, val rides: Int) : Proof
+
+        /** They have ridden out [ridden] urges so far. */
+        data class Total(val ridden: Int) : Proof
+    }
+
+    /**
+     * Honest encouragement from their own record, never a promise: the last ten rides when most of
+     * them worked (and there are at least three), else the total of urges ridden out. Null until
+     * there is something true and good to say, so a hard start never opens with a poor ratio.
+     */
+    fun proof(entries: List<Entry>, limit: Int = 10): Proof? {
+        val counted = real(entries)
+        val rides = counted.filter { it.after != null }.sortedBy { it.time }.takeLast(limit)
+        val worked = rides.count { it.after == After.GONE || it.after == After.WEAKER }
+        if (rides.size >= 3 && worked * 2 >= rides.size) return Proof.Rides(worked, rides.size)
+        val ridden = counted.count { it.ridden }
+        return if (ridden >= 1) Proof.Total(ridden) else null
     }
 
     /** How the day went against the plan, answered in the evening. */
@@ -665,6 +704,79 @@ object Insights {
 }
 
 /**
+ * What the person's own entries say about their urges, counted on the phone with no AI: the usual
+ * run-up, where and when they land, where the slips happen and what has worked. Nothing is claimed
+ * from a handful of entries: every line needs a repeat.
+ */
+object Patterns {
+    /** Fewer entries than this say nothing about a pattern. */
+    const val MIN_ENTRIES = 5
+
+    /** A combination must have happened at least this often to be called usual. */
+    const val MIN_REPEAT = 3
+
+    /** [value] came up [count] times out of [of]. */
+    data class Share<T>(val value: T, val count: Int, val of: Int)
+
+    /** The usual run-up: what came just before the urge, and the feeling it came with. */
+    data class Chain(val before: Opt, val feeling: Opt, val count: Int, val of: Int)
+
+    data class Summary(
+        val entries: Int,
+        val chain: Chain?,
+        val place: Share<Opt>?,
+        val window: Insights.HotWindow?,
+        val slips: Int,
+        val slipPlace: Share<Opt>?,
+        val slipsLate: Int,
+        val works: List<Insights.StepResult>
+    ) {
+        /** True when there is at least one line worth showing. */
+        val hasLines: Boolean
+            get() = chain != null || place != null || window != null || slipPlace != null ||
+                slipsLate >= MIN_REPEAT || works.isNotEmpty()
+    }
+
+    /** The answer given most often among [values], ties going to the earlier option; null if none. */
+    private fun top(values: List<Opt>): Share<Opt>? =
+        values.groupingBy { it }.eachCount()
+            .maxWithOrNull(compareBy<Map.Entry<Opt, Int>> { it.value }.thenBy { -it.key.ordinal })
+            ?.let { Share(it.key, it.value, values.size) }
+
+    fun summary(entries: List<Entry>, zone: ZoneId = ZoneId.systemDefault()): Summary? {
+        val counted = Insights.real(entries)
+        if (counted.size < MIN_ENTRIES) return null
+
+        // The run-up needs both answers; "nothing in particular" says nothing, so it never leads.
+        val both = counted.filter {
+            val before = it.answers[Q.BEFORE]
+            before != null && before != Opt.BEFORE_NOTHING && it.answers[Q.FEELING] != null
+        }
+        val chain = both.groupingBy { it.answers.getValue(Q.BEFORE) to it.answers.getValue(Q.FEELING) }.eachCount()
+            .maxWithOrNull(
+                compareBy<Map.Entry<Pair<Opt, Opt>, Int>> { it.value }
+                    .thenBy { -it.key.first.ordinal }.thenBy { -it.key.second.ordinal }
+            )
+            ?.takeIf { it.value >= MIN_REPEAT }
+            ?.let { Chain(it.key.first, it.key.second, it.value, both.size) }
+
+        val placed = counted.mapNotNull { it.answers[Q.PLACE] }
+        val place = top(placed)?.takeIf { it.count >= MIN_REPEAT && it.count * 10 >= placed.size * 3 }
+
+        val window = Insights.busiestWindow(counted, zone, minTotal = MIN_ENTRIES, minHits = MIN_REPEAT)
+
+        val slipped = counted.filter { it.gaveIn }
+        val enoughSlips = slipped.size >= MIN_REPEAT
+        val slipPlace = if (enoughSlips) top(slipped.mapNotNull { it.answers[Q.PLACE] })?.takeIf { it.count >= MIN_REPEAT } else null
+        val slipsLate = if (enoughSlips) slipped.count { isLate(Instant.ofEpochMilli(it.time).atZone(zone).hour) } else 0
+
+        val works = Insights.stepEvidence(counted).filter { it.wins > 0 }.take(3)
+        return Summary(counted.size, chain, place, window, if (enoughSlips) slipped.size else 0, slipPlace, slipsLate, works)
+    }
+
+}
+
+/**
  * An if-then plan the person wrote or edited themselves. Plans they own work better than assigned
  * ones, so the coach only suggests wording; this is what they saved. [feeling] and [late] say when
  * it applies: a plan with neither applies whenever.
@@ -781,6 +893,16 @@ object Times {
         return at.toInstant().toEpochMilli()
     }
 
+    /** The next [day] at [minuteOfDay] minutes past local midnight, strictly after [now]. */
+    fun nextWeekly(day: java.time.DayOfWeek, minuteOfDay: Int, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
+        val nowAt = Instant.ofEpochMilli(now).atZone(zone)
+        var date = nowAt.toLocalDate()
+        while (date.dayOfWeek != day) date = date.plusDays(1)
+        var at = date.atStartOfDay(zone).plusMinutes(minuteOfDay.toLong())
+        if (!at.toInstant().isAfter(nowAt.toInstant())) at = at.plusWeeks(1)
+        return at.toInstant().toEpochMilli()
+    }
+
     /**
      * When the check-in should fire for a ride that started at [rideStart] and is still waiting, or
      * null if it is too old to ask about. Used to put the alarm back after a reboot: if the moment
@@ -836,13 +958,19 @@ fun composeStored(rows: List<JSONObject>, unreadable: List<Any>): String {
  * back. Backups made before rules were included (a bare list of entries) still read.
  */
 object Backup {
-    data class Contents(val entries: List<Entry>, val plans: List<MyPlan>, val kept: List<Kept> = emptyList())
+    data class Contents(
+        val entries: List<Entry>,
+        val plans: List<MyPlan>,
+        val kept: List<Kept> = emptyList(),
+        val reason: String = ""
+    )
 
-    fun compose(entries: List<Entry>, plans: List<MyPlan>, kept: List<Kept> = emptyList()): String = JSONObject()
+    fun compose(entries: List<Entry>, plans: List<MyPlan>, kept: List<Kept> = emptyList(), reason: String = ""): String = JSONObject()
         .put("version", 2)
         .put("entries", JSONArray(entries.map { it.toJson() }))
         .put("plans", JSONArray(plans.map { it.toJson() }))
         .put("kept", JSONArray(kept.map { it.toJson() }))
+        .put("reason", reason)
         .toString()
 
     fun parse(text: String): Contents {
@@ -852,7 +980,8 @@ object Backup {
         return Contents(
             Entry.listFromJson(o.optJSONArray("entries")?.toString()),
             MyPlan.listFromJson(o.optJSONArray("plans")?.toString()),
-            Kept.parseList(o.optJSONArray("kept")?.toString()).items
+            Kept.parseList(o.optJSONArray("kept")?.toString()).items,
+            o.optString("reason", "").trim().take(300)
         )
     }
 

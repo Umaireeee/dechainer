@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -106,7 +107,12 @@ fun AppPickerDialog(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                        items(filteredApps) { app ->
+                        items(filteredApps, key = { it.packageName }) { app ->
+                            // Decoded once per app and at the size it is drawn: an adaptive icon at its
+                            // full size is hundreds of KB, and this row redraws on every tick of a box.
+                            val icon = remember(app.packageName) {
+                                runCatching { app.icon.toBitmap(96, 96).asImageBitmap() }.getOrNull()
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -114,11 +120,11 @@ fun AppPickerDialog(
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Image(
-                                    bitmap = app.icon.toBitmap().asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp)
-                                )
+                                if (icon != null) {
+                                    Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(40.dp))
+                                } else {
+                                    Spacer(Modifier.size(40.dp))
+                                }
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)

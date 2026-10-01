@@ -218,7 +218,8 @@ private fun App(activity: MainActivity) {
                     Insights.summary(history, System.currentTimeMillis()),
                     about,
                     Prompt.extras(history, entry, store.plans().map { it.text }),
-                    Insights.lifeFacts(store.days(), LocalDate.now(), window = 3)
+                    Insights.lifeFacts(store.days(), LocalDate.now(), window = 3),
+                    store.reason()
                 )
                 var lastPush = 0L
                 AiClient.chatStream(provider, baseUrl, key, model, system, user) { text ->
@@ -270,7 +271,7 @@ private fun App(activity: MainActivity) {
                     val days = ((now - at) / (24L * 60 * 60 * 1000)).toInt()
                     if (days >= 3) Prompt.PreviousReview(days, text) else null
                 }
-                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous, days = store.days())) { text ->
+                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous, days = store.days(), reason = store.reason())) { text ->
                     val nowMs = System.currentTimeMillis()
                     if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
                         lastPush = nowMs

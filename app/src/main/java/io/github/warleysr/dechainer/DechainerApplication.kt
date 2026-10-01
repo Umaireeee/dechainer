@@ -39,12 +39,13 @@ class DechainerApplication : Application() {
             AppRepository.invalidateCache()
             // A new launcher or keyboard changes which apps must never be blocked.
             ScheduleEnforcer.invalidateProtectedPackages()
-            // Hiding or un-hiding a batch of apps fires one broadcast per app, and each reload
-            // reads every installed app with its icon. Reload once for the whole batch.
+            // A batch of installs or updates fires one broadcast per app. The app list itself is
+            // rebuilt the next time the Apps tab asks for it (the cache was just dropped), not here:
+            // updates arrive all day and nothing is looking at the list. Refresh the browser
+            // policies once for the whole batch.
             reloadJob?.cancel()
             reloadJob = applicationScope.launch {
                 delay(1000)
-                AppRepository.getApps()
                 // A newly installed browser gets the blocklist, SafeSearch and the secure-DNS lock
                 // at once, instead of browsing around the DNS filter until something else re-applies them.
                 try {
