@@ -13,6 +13,9 @@ import io.github.warleysr.dechainer.ai.AiGateResult
 import io.github.warleysr.dechainer.ai.AiResult
 import io.github.warleysr.dechainer.ai.AiSettings
 import io.github.warleysr.dechainer.ai.DeepDiveInput
+import io.github.warleysr.dechainer.ai.DeepDiveSections
+import io.github.warleysr.dechainer.ai.PastEntry
+import io.github.warleysr.dechainer.ai.PastEntries
 import io.github.warleysr.dechainer.ai.MarkdownOutcome
 import io.github.warleysr.dechainer.ai.QuestionsOutcome
 import io.github.warleysr.dechainer.ai.QuestionsReply
@@ -198,7 +201,8 @@ class UrgeFlow(
         val keywordHit = Safety.needsSupport(note)
         val fixed = fixedQuestions()
         if (gate() != AiGateResult.OPEN) return QuestionSet(fixed, fromAi = false, support = keywordHit)
-        return when (val out = calls.generateQuestions(ai.config(), entry.kind, note)) {
+        val at = Instant.ofEpochMilli(entry.createdAt).atZone(TrustedClock.zone())
+        return when (val out = calls.generateQuestions(ai.config(), entry.kind, note, at, recentHistory(entry))) {
             is QuestionsOutcome.Failed -> QuestionSet(fixed, false, keywordHit)
             is QuestionsOutcome.Reply -> when (val r = out.reply) {
                 QuestionsReply.Support -> QuestionSet(fixed, false, support = true)
@@ -267,13 +271,40 @@ class UrgeFlow(
             at = Instant.ofEpochMilli(e.createdAt).atZone(TrustedClock.zone()),
             note = note,
             answers = UrgeJson.answersFromJson(e.answersJson),
-            flagged = Safety.needsSupport(note)
+            flagged = Safety.needsSupport(note),
+            scaleQuestionIds = UrgeJson.questionsFromJson(e.questionsJson).orEmpty()
+                .filter { it.type == QuestionType.SCALE }.map { it.id }.toSet(),
+            waitedOutLock = e.kind == UrgeKind.URGE && e.lockStartedAt != null && e.lockEndedAt != null,
+            history = recentHistory(e)
         )
+    }
+
+    /**
+     * What the last few weeks looked like, as lines the AI itself wrote earlier (the "earliest link" of
+     * each finished deep dive). Never a raw note: those are deleted once their deep dive exists. A store
+     * that cannot be read gives no history, and the request goes out without it.
+     */
+    private fun recentHistory(current: UrgeEntry): List<PastEntry> = try {
+        val zone = TrustedClock.zone()
+        repo.between(current.createdAt - HISTORY_WINDOW_MS, current.createdAt)
+            .filter { it.id != current.id && it.status == UrgeStatus.DONE }
+            .mapNotNull { e ->
+                val link = e.deepDive?.let { DeepDiveSections.earliestLink(it) } ?: return@mapNotNull null
+                PastEntry(e.kind, Instant.ofEpochMilli(e.createdAt).atZone(zone), link)
+            }
+            .sortedByDescending { it.at.toInstant() }
+            .take(PastEntries.MAX)
+    } catch (e: Exception) {
+        Timber.w(e, "History for the AI not read")
+        emptyList()
     }
 
     private fun gate(): AiGateResult = ai.gate()
 
     companion object {
+        /** How far back the AI is told about earlier entries: three weeks. */
+        const val HISTORY_WINDOW_MS = 21L * 24 * 60 * 60 * 1000
+
         /** Shared by the screen and the retry job so one entry is never sent twice at once. */
         val inFlight = InFlight()
 

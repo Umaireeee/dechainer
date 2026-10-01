@@ -27,8 +27,11 @@ class AiCalls(
     private val stream: StreamCall = AiClient::chatStream
 ) {
     /** 3 to 5 questions about the note, the support reply, or a failure. */
-    fun generateQuestions(config: AiConfig, kind: UrgeKind, note: String): QuestionsOutcome {
-        val req = AiPrompts.questions(kind, note)
+    fun generateQuestions(
+        config: AiConfig, kind: UrgeKind, note: String,
+        at: java.time.ZonedDateTime? = null, history: List<PastEntry> = emptyList()
+    ): QuestionsOutcome {
+        val req = AiPrompts.questions(kind, note, at, history)
         return when (val r = chat(config, req.system, req.user, AiLimits.QUESTIONS)) {
             is AiResult.Ok -> QuestionsOutcome.Reply(QuestionsParser.parse(r.text))
             is AiResult.Failed -> QuestionsOutcome.Failed(r.error)

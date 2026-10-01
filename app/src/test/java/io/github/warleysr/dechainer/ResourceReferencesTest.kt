@@ -69,6 +69,6 @@ class ResourceReferencesTest {
     fun theFixedQuestionsAndTheLockedScreenTextMatchTheBlueprint() {
         assertTrue("What was happening just before the urge started?" in strings)
         assertTrue("How were you feeling, in a word or two?" in strings)
-        assertTrue("Where were you, and roughly what time was it?" in strings)
+        assertTrue("What was the urge offering you: a way to put something off, to get away from a feeling, or something else?" in strings)
     }
 }

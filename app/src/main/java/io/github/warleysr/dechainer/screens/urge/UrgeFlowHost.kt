@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer.screens.urge
 
 import android.content.Intent
-import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -79,7 +78,6 @@ import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.ui.theme.Motion
 import io.github.warleysr.dechainer.urge.Breathing
-import io.github.warleysr.dechainer.urge.CrisisContact
 import io.github.warleysr.dechainer.urge.Question
 import io.github.warleysr.dechainer.urge.QuestionType
 import io.github.warleysr.dechainer.urge.UrgeFlowRules
@@ -120,8 +118,8 @@ fun UrgeFlowHost(vm: UrgeViewModel, modifier: Modifier = Modifier) {
                     LaunchedEffect(entry.id, entry.status) { vm.writingShown() }
                     WritingScreen(vm)
                 }
-                UrgeScreen.QUESTIONS -> QuestionsScreen(vm, state.questions, state.support, settings.contact)
-                UrgeScreen.DEEP_DIVE -> DeepDiveScreen(vm, state.deepDive, state.support, settings.contact)
+                UrgeScreen.QUESTIONS -> QuestionsScreen(vm, state.questions, state.support)
+                UrgeScreen.DEEP_DIVE -> DeepDiveScreen(vm, state.deepDive, state.support, settings.reason)
                 UrgeScreen.FINISHED -> LaunchedEffect(entry.id) { vm.finish() }
             }
         }
@@ -299,10 +297,10 @@ private fun WritingScreen(vm: UrgeViewModel) {
 // ---- the questions ----
 
 @Composable
-private fun QuestionsScreen(vm: UrgeViewModel, ui: QuestionsUi, support: Boolean, contact: CrisisContact) {
+private fun QuestionsScreen(vm: UrgeViewModel, ui: QuestionsUi, support: Boolean) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         if (support) {
-            SupportCard(contact)
+            SupportCard()
             Spacer(Modifier.height(24.dp))
         }
         Text(stringResource(R.string.urge_questions_title), style = MaterialTheme.typography.headlineMedium)
@@ -380,11 +378,11 @@ private fun QuestionField(q: Question, vm: UrgeViewModel) {
 // ---- the deep dive ----
 
 @Composable
-private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, contact: CrisisContact) {
+private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, reason: String) {
     var confirmDelete by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         if (support) {
-            SupportCard(contact)
+            SupportCard()
             Spacer(Modifier.height(24.dp))
         }
         when (ui) {
@@ -407,6 +405,20 @@ private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, 
                 Spacer(Modifier.height(16.dp))
                 MarkdownText(ui.markdown)
                 Spacer(Modifier.height(24.dp))
+                // The owner's own words from a calm day: written locally, never sent to the AI.
+                if (reason.isNotBlank()) {
+                    CalmCard(modifier = Modifier.fillMaxWidth(), highlighted = true) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text(stringResource(R.string.urge_dd_reason_label), style = MaterialTheme.typography.labelLarge)
+                            Spacer(Modifier.height(8.dp))
+                            Text(reason, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+                // Acting within minutes is what makes a plan stick.
+                Text(stringResource(R.string.urge_dd_first_step), style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(R.string.urge_dd_deleted),
                     style = MaterialTheme.typography.bodySmall,
@@ -476,43 +488,23 @@ private fun pendingReason(gate: AiGateResult, error: AiError?): Int = when {
 // ---- the crisis card ----
 
 /**
- * Shown when the note looks like a crisis (blueprint 6.2): call or text the one person the owner
- * saved. The number lives on the phone only and is never part of any AI request.
+ * Shown when the note looks like a crisis (blueprint 6.2). It names no saved person (the owner
+ * dropped the stored contact): it asks the owner to reach someone they already have, and opens the
+ * phone app so the call is one tap away. Nothing here is sent anywhere.
  */
 @Composable
-fun SupportCard(contact: CrisisContact) {
+fun SupportCard() {
     val context = LocalContext.current
-    fun open(intent: Intent) {
-        runCatching { context.startActivity(intent) }
-    }
     CalmCard(modifier = Modifier.fillMaxWidth(), highlighted = true) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(stringResource(R.string.urge_support_title), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.urge_support_body), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(16.dp))
-            if (contact.usable) {
-                val who = contact.name.ifBlank { contact.number }
-                Button(
-                    onClick = { open(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(contact.number)))) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                ) { Text(stringResource(R.string.urge_support_call, who)) }
-                OutlinedButton(
-                    onClick = {
-                        open(
-                            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(contact.number)))
-                                .putExtra("sms_body", context.getString(R.string.urge_support_sms_body))
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp)
-                ) { Text(stringResource(R.string.urge_support_text, who)) }
-            } else {
-                Text(
-                    stringResource(R.string.urge_support_nobody),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Button(
+                onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_DIAL)) } },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            ) { Text(stringResource(R.string.urge_support_phone)) }
         }
     }
 }
