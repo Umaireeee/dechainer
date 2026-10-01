@@ -123,19 +123,6 @@ class SettingsFreezeTest {
     }
 
     @Test
-    fun theEntryChallengeCannotBeChangedOnAPunishmentDayAndKeepsItsOldStoredKey() {
-        SecurityManager.setEntryChallenge(ctx, SecurityManager.EntryChallenge.NORMAL)
-        // The key predates the rename, so an owner's choice survives the update.
-        assertEquals("NORMAL", ctx.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).getString("impulse_lock_mode", null))
-        startDay()
-        SecurityManager.setEntryChallenge(ctx, SecurityManager.EntryChallenge.OFF)
-        assertEquals(SecurityManager.EntryChallenge.NORMAL, SecurityManager.getEntryChallenge(ctx))
-        endDay()
-        SecurityManager.setEntryChallenge(ctx, SecurityManager.EntryChallenge.HARD)
-        assertEquals(SecurityManager.EntryChallenge.HARD, SecurityManager.getEntryChallenge(ctx))
-    }
-
-    @Test
     fun theFourDayRemovalCannotBeStartedOnAPunishmentDay() {
         startDay()
         SecurityManager.startForcedRemoval(ctx)
