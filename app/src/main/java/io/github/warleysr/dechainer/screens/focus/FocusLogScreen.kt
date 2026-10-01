@@ -554,11 +554,6 @@ private fun SessionRow(session: FocusSession, time: String, onDelete: () -> Unit
                     modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                // For a lecture finished outside a checkpoint (a quick one), or a slip to undo.
-                DropdownMenuItem(
-                    text = { Text(stringResource(if (session.lectures > 0) R.string.focus_lecture_unmark else R.string.focus_lecture_mark)) },
-                    onClick = { menuOpen = false; Pomodoro.setLectures(context, session.id, if (session.lectures > 0) 0 else 1) }
-                )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.focus_delete_confirm), color = MaterialTheme.colorScheme.error) },
                     onClick = { menuOpen = false; onDelete() }
