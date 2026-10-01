@@ -55,12 +55,6 @@ object DnsGuard {
         prefs(context).edit(commit = true) { remove(KEY_PINNED_HOST) }
     }
 
-    /** True when a filter has been chosen in the app and is the one actually in effect. */
-    fun isActive(context: Context): Boolean {
-        val pinned = pinnedHost(context) ?: return false
-        return !needsRestore(pinned, currentHost())
-    }
-
     /**
      * Whether the live setting has drifted from the pinned provider. Pure, so it's unit-tested.
      * Host names compare case-insensitively, as DNS names do. With nothing pinned there is

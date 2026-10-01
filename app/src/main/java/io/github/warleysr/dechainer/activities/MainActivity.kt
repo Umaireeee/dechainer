@@ -156,27 +156,6 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private val authenticated = mutableStateOf(false)
-
-    // When the app last left the screen (uptime), so a long absence asks to unlock again.
-    private var leftAt = 0L
-
-    override fun onStop() {
-        super.onStop()
-        leftAt = android.os.SystemClock.elapsedRealtime()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        // Unlocking once must not keep the app open for days: after a real absence the unlock
-        // (and the entry challenge) is asked again. A short trip to Settings keeps you in.
-        if (authenticated.value && leftAt > 0L &&
-            android.os.SystemClock.elapsedRealtime() - leftAt > RELOCK_AFTER_MS
-        ) {
-            authenticated.value = false
-        }
-    }
-
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -212,7 +191,7 @@ class MainActivity : ComponentActivity() {
                     LockEngine.requestSync(this@MainActivity)
                 }
             }
-            // Every urge lock gets its counted entry and its breathing, also one the journal's door started.
+            // Every urge lock gets its counted entry and its breathing, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
                 if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
             }
@@ -245,14 +224,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // An urge lock or a punishment day locks Déchaîner itself, also when you are already
-                // inside (the journal can start one from outside): the way in closes, and any open
-                // recovery session ends, so the code can't be used until the lock runs out.
+                // An urge lock or a punishment day ends any open recovery session, so the code can't
+                // be used until the lock runs out.
                 LaunchedEffect(lockedHome != null) {
-                    if (lockedHome != null) {
-                        authenticated.value = false
-                        SecurityManager.endSession()
-                    }
+                    if (lockedHome != null) SecurityManager.endSession()
                 }
 
                 var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -266,8 +241,7 @@ class MainActivity : ComponentActivity() {
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) {}
-                LaunchedEffect(authenticated.value) {
-                    if (!authenticated.value) return@LaunchedEffect
+                LaunchedEffect(Unit) {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
                     // The Pomodoro rings through a notification, so it needs this permission.
 
@@ -304,7 +278,7 @@ class MainActivity : ComponentActivity() {
                             actions = {
                                 // Nothing up here during a block: no info, no sign-out.
                                 if (!brick) {
-                                    if (authenticated.value) ScreenInfoButton(route)
+                                    ScreenInfoButton(route)
                                     if (SecurityManager.isSessionActive()) {
                                         val remaining = SecurityManager.sessionEndTime - currentTime
                                         val minutes = (remaining / 1000) / 60
@@ -356,11 +330,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        route.needsUnlock && !authenticated.value ->
-                            Box(modifier = Modifier.padding(innerPadding)) {
-                                LockScreen(onAuthenticated = { authenticated.value = true })
-                            }
-
                         else -> Box(modifier = Modifier.padding(innerPadding)) {
                             // A soft cross-fade between screens: it answers the tap without
                             // pulling attention.
@@ -385,7 +354,6 @@ class MainActivity : ComponentActivity() {
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()
                                     Route.SETTINGS -> ConfigTab()
                                     Route.RESTRICTIONS -> RestrictionsTab()
-                                    Route.ENTRY_CHALLENGE -> EntryChallengeScreen()
                                     Route.SETUP_DEVICE_OWNER -> SetupDeviceOwnerPrivileges()
                                     Route.URGE_SETTINGS -> UrgeSettingsScreen()
                                     Route.HOME -> Unit
@@ -409,8 +377,5 @@ class MainActivity : ComponentActivity() {
          * started the ongoing path. See [handleUrgeIntent].
          */
         const val EXTRA_URGE_SOURCE = "urge_source"
-
-        /** Away longer than this, and the app asks to be unlocked again. */
-        private const val RELOCK_AFTER_MS = 5 * 60 * 1000L
     }
 }

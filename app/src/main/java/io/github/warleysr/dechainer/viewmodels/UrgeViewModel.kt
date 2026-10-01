@@ -129,8 +129,7 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * An urge lock is running but this flow has no entry for it (the journal's door started it, or
-     * the app was reopened): every lock gets its counted entry, and the breathing runs for what is left of it.
+     * An urge lock is running but this flow has no entry for it (the app was reopened, say): every lock gets its counted entry, and the breathing runs for what is left of it.
      */
     fun adoptRunningLock() {
         val s = _state.value

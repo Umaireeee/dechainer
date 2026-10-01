@@ -15,15 +15,7 @@ import androidx.core.content.edit
 
 class SecurityManager {
 
-    /**
-     * The challenge in front of Déchaîner's own screens (the old "impulse lock" setting, whose stored
-     * key is unchanged): none, a maths problem, or typing a word. It is not a lock mode of the
-     * engine; it only slows the way in.
-     */
-    enum class EntryChallenge {
-        OFF, NORMAL, HARD;
-
-        companion object {
+    companion object {
             /** A stored mode that is missing or unknown (an older or damaged value) means OFF, never a crash. */
             fun parse(raw: String?): EntryChallenge =
                 runCatching { valueOf(raw ?: OFF.name) }.getOrDefault(OFF)
@@ -35,9 +27,6 @@ class SecurityManager {
 
         /** How long forced removal makes you wait, without the recovery code: four days. */
         const val FORCED_REMOVAL_WAIT_MS = 4L * 24 * 60 * 60 * 1000
-
-        /** Stored under its old name so an owner's choice survives the update. */
-        private const val ENTRY_CHALLENGE_KEY = "impulse_lock_mode"
 
         const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
 
@@ -109,28 +98,6 @@ class SecurityManager {
             if (!SettingsFreeze.allowWrite(context, "keyboard setting")) return
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
-        }
-
-        fun isBlockTorrentsEnabled(context: Context): Boolean {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getBoolean("block_torrents", false)
-        }
-
-        fun setBlockTorrentsEnabled(context: Context, enabled: Boolean) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putBoolean("block_torrents", enabled) }
-        }
-
-        fun getEntryChallenge(context: Context): EntryChallenge {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return EntryChallenge.parse(prefs.getString(ENTRY_CHALLENGE_KEY, null))
-        }
-
-        /** Frozen on a punishment day with the other settings. */
-        fun setEntryChallenge(context: Context, mode: EntryChallenge) {
-            if (!SettingsFreeze.allowWrite(context, "entry challenge")) return
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString(ENTRY_CHALLENGE_KEY, mode.name) }
         }
 
         fun generateRecoveryCode(length: Int = 16): String {

@@ -139,7 +139,7 @@ fun ConfigTab(
                 ) }
             }
             item {
-                GroupedRow(GroupPos.Middle) { ListItem(
+                GroupedRow(GroupPos.Bottom) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.protections)) },
                     supportingContent = { Text(stringResource(R.string.protections_desc)) },
@@ -152,16 +152,6 @@ fun ConfigTab(
                         }
                         navViewModel.navigateTo(Route.RESTRICTIONS)
                     }
-                ) }
-            }
-            item {
-                GroupedRow(GroupPos.Bottom) { ListItem(
-                    colors = groupedRowColors(),
-                    headlineContent = { Text(stringResource(R.string.entry_challenge)) },
-                    supportingContent = { Text(stringResource(R.string.entry_challenge_desc)) },
-                    leadingContent = { IconTile(Icons.Outlined.LockClock) },
-                    trailingContent = { Chevron() },
-                    modifier = Modifier.clickable { navViewModel.navigateTo(Route.ENTRY_CHALLENGE) }
                 ) }
             }
             item { SectionHeader(stringResource(R.string.config_section_security)) }

@@ -222,8 +222,6 @@ object ScheduleEnforcer : AppBlockEngine() {
         return activeBlocks[pkg]
     }
 
-    fun isHeldBySchedule(context: Context, pkg: String): Boolean = activeBlockFor(context, pkg) != null
-
     /** True while any schedule is inside a window it was told to lock. */
     fun isAnyScheduleLocked(context: Context): Boolean =
         ScheduleRepository.getSchedules(context).any { ScheduleRepository.isLockedNow(it) }

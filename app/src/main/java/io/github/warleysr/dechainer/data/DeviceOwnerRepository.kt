@@ -61,9 +61,6 @@ object DeviceOwnerRepository {
     /** Removes device-owner status, or requests it via Shizuku's `dpm set-device-owner` — returns the resulting state. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false): Boolean {
         if (remove && dpm.isAdminActive(adminName)) {
-            // Android does not un-hide apps when a Device Owner goes away, and nothing could
-            // afterwards. Bring back everything Déchaîner hid first.
-            Blocker.releaseAllHidden(context, dpm, adminName)
             // Same for the brick's home-screen takeover: undo it while it still can be undone,
             // so your own launcher is the home screen afterwards, not the timer.
             try {
@@ -112,9 +109,8 @@ object DeviceOwnerRepository {
      * other app are out of reach.
      */
     fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
-        // Déchaîner, the dialers, the apps you allowed and the urge journal (opened from its Quick
-        // Settings tile when an urge hits mid-block): a pinned phone opens only these.
-        val pkgs = mutableSetOf(context.packageName, JournalLink.PACKAGE)
+        // Déchaîner, the dialers, and the apps you allowed: a pinned phone opens only these.
+        val pkgs = mutableSetOf(context.packageName)
         pkgs += allowed
         // The alarm clock is allowed by every brick, so it may also run pinned (D3).
         try { pkgs += ScheduleEnforcer.alarmApps(context) } catch (_: Exception) { }

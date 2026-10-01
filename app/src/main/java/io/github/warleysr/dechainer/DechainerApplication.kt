@@ -9,10 +9,8 @@ import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.BrowserRestrictionsManager
-import io.github.warleysr.dechainer.data.Blocker
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
-import io.github.warleysr.dechainer.data.LegacyCleanup
 import io.github.warleysr.dechainer.guard.CrashHandler
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.store.Store
@@ -22,7 +20,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import io.github.warleysr.dechainer.utils.LocaleUtils
 import timber.log.Timber
 
 class DechainerApplication : Application() {
@@ -129,22 +126,6 @@ class DechainerApplication : Application() {
             Timber.w(e, "Store unavailable; one-off steps will be tried again next start")
             return
         }
-        // The app is English-only now. Anyone who had picked Portuguese gets a clean reset, so the
-        // stored choice can't linger. (Only "en" is offered now, so nobody can pick one again.)
-        state.runOnce("locale_reset_v1") {
-            try {
-                if (LocaleUtils.hasExplicitLocale(this)) LocaleUtils.clearLocale(this)
-                true
-            } catch (e: Exception) {
-                Timber.w(e, "Could not clear the old app language")
-                false
-            }
-        }
-        // Older builds hid blocked apps; un-hide them. The engine's sync suspends whatever should
-        // still be blocked.
-        state.runOnce("release_hidden_apps_v1") { Blocker.migrateFromHiding(this) }
-        // Frees anything held by removed features (it keeps its own flag).
-        LegacyCleanup.runOnce(this)
         // Repairs browser policies on phones that already had them: SafeSearch used to be wiped by
         // the first update after install, and the secure-DNS lock is new. Every later change
         // (an install, a schedule, the DNS filter) refreshes them itself.

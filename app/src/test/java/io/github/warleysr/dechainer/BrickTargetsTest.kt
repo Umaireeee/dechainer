@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer
 
-import io.github.warleysr.dechainer.data.JournalLink
 import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.lock.LockAllow
 import io.github.warleysr.dechainer.lock.PhoneFacts
@@ -47,13 +46,10 @@ class BrickTargetsTest {
         )
     }
 
-    // The Urge Journal is the safety net for the worst moments (night, inside a bedtime window), so
-    // no block may ever suspend it.
+    // The app itself, the system UI and the phone are never blocked by anything.
     @Test
-    fun theUrgeJournalIsNeverBlockedByAnything() {
+    fun theAppTheSystemUiAndThePhoneAreNeverBlockedByAnything() {
         val never = LockSafety.neverBlocked("io.github.warleysr.dechainer")
-        assertTrue(JournalLink.PACKAGE in never)
-        assertEquals("io.github.warleysr.urgejournal", JournalLink.PACKAGE)
         assertTrue("io.github.warleysr.dechainer" in never)
         assertTrue("com.android.systemui" in never)
         assertTrue("com.android.phone" in never)

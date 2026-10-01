@@ -14,13 +14,10 @@ object LockSafety {
 
     /**
      * What no block of Déchaîner may ever suspend, before the launcher, the dialer and the keyboards
-     * are added: Déchaîner itself, the system UI, the phone, and the Urge Journal. The journal is the
-     * safety net for the worst moments, which come at night, inside a bedtime window; if a block
-     * could suspend it, its icon and its Quick Settings tile would be dead exactly then. It can only
-     * ever add blocking, so keeping it open loosens nothing.
+     * are added: Déchaîner itself, the system UI and the phone.
      */
     fun neverBlocked(selfPackage: String): Set<String> =
-        setOf(selfPackage, "com.android.systemui", "com.android.phone", JournalLink.PACKAGE)
+        setOf(selfPackage, "com.android.systemui", "com.android.phone")
 
     /**
      * Whether Device Owner may not be removed right now: a locked schedule is open, or a brick is
