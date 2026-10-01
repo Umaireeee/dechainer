@@ -54,7 +54,7 @@ object PastEntries {
     fun line(p: PastEntry): String {
         val day = p.at.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
         val what = if (p.kind == UrgeKind.SLIP) "slip" else "urge"
-        return "- $day %02d:%02d, %s. Earliest link then: %s".format(p.at.hour, p.at.minute, what, p.earliestLink)
+        return "- $day ${p.at.toLocalDate()} %02d:%02d, %s. Earliest link then: %s".format(p.at.hour, p.at.minute, what, p.earliestLink)
     }
 
     /** The block for a request, or null when there is nothing to say. The newest [MAX] entries only. */

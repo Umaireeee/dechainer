@@ -29,9 +29,10 @@ class AiCalls(
     /** 3 to 5 questions about the note, the support reply, or a failure. */
     fun generateQuestions(
         config: AiConfig, kind: UrgeKind, note: String,
-        at: java.time.ZonedDateTime? = null, history: List<PastEntry> = emptyList()
+        at: java.time.ZonedDateTime? = null, history: List<PastEntry> = emptyList(),
+        language: String? = null, goals: List<String> = emptyList()
     ): QuestionsOutcome {
-        val req = AiPrompts.questions(kind, note, at, history)
+        val req = AiPrompts.questions(kind, note, at, history, language, goals)
         return when (val r = chat(config, req.system, req.user, AiLimits.QUESTIONS)) {
             is AiResult.Ok -> QuestionsOutcome.Reply(QuestionsParser.parse(r.text))
             is AiResult.Failed -> QuestionsOutcome.Failed(r.error)

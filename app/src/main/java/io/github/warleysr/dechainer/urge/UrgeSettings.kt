@@ -24,6 +24,17 @@ class UrgeSettings(context: Context) {
 
     val reason: String get() = prefs.getString(KEY_REASON, "") ?: ""
 
+    /** The language the AI answers in. Blank means "the language of my note". English by default. */
+    val replyLanguage: String get() = prefs.getString(KEY_LANGUAGE, DEFAULT_LANGUAGE) ?: DEFAULT_LANGUAGE
+
+    fun setReplyLanguage(text: String): Boolean {
+        if (!SettingsFreeze.allowWrite(ctx, "reply language")) return false
+        // Letters, spaces and hyphens only: it goes into a request, so nothing else is let through.
+        val clean = text.filter { it.isLetter() || it == ' ' || it == '-' }.trim().take(30)
+        prefs.edit { putString(KEY_LANGUAGE, clean) }
+        return true
+    }
+
     val frozen: Boolean get() = SettingsFreeze.isFrozen(ctx)
 
     /** One line the owner writes on a calm day. Returns false if a punishment day refused it. */
@@ -35,5 +46,7 @@ class UrgeSettings(context: Context) {
 
     private companion object {
         const val KEY_REASON = "reason"
+        const val KEY_LANGUAGE = "reply_language"
+        const val DEFAULT_LANGUAGE = "English"
     }
 }

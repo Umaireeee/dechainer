@@ -54,6 +54,7 @@ fun UrgeSettingsScreen() {
     val frozen = urge.frozen
 
     var reason by remember { mutableStateOf(urge.reason) }
+    var language by remember { mutableStateOf(urge.replyLanguage) }
 
     var provider by remember { mutableStateOf(ai.provider) }
     var keyInput by remember { mutableStateOf("") }
@@ -91,6 +92,22 @@ fun UrgeSettingsScreen() {
         SaveButton {
             message = if (urge.setReason(reason)) R.string.urge_saved else R.string.urge_frozen
             if (message == R.string.urge_saved) reason = urge.reason
+        }
+
+        // ---- the language ----
+        Spacer(Modifier.height(16.dp))
+        Header(R.string.urge_language_section)
+        Hint(R.string.urge_language_hint)
+        OutlinedTextField(
+            value = language,
+            onValueChange = { language = it.take(30) },
+            label = { Text(stringResource(R.string.urge_language_field)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        SaveButton {
+            message = if (urge.setReplyLanguage(language)) R.string.urge_saved else R.string.urge_frozen
+            if (message == R.string.urge_saved) language = urge.replyLanguage
         }
 
         // ---- the AI ----

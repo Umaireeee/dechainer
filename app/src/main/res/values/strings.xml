@@ -510,8 +510,11 @@
     <string name="urge_reason_section">Your reason</string>
     <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone and is never sent to the AI.</string>
     <string name="urge_reason_field">Why you set this up</string>
+    <string name="urge_language_section">Reply language</string>
+    <string name="urge_language_hint">The language of the questions and the deep dive, whatever language you write your note in. Leave it empty to answer in the language of each note.</string>
+    <string name="urge_language_field">Language, for example English</string>
     <string name="ai_section">AI</string>
-    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive, plus one short line from each of your last few deep dives so it can spot a pattern. The note is deleted from this phone once its deep dive exists. Your reason is never sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
+    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive, plus one short line from each of your last few deep dives so it can spot a pattern, and today\'s checklist goals so the plan can name them. The note is deleted from this phone once its deep dive exists. Your reason is never sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
     <string name="ai_provider">Provider</string>
     <string name="ai_key_label">API key</string>
     <string name="ai_key_none">No key is saved.</string>

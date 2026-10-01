@@ -41,6 +41,8 @@ Write your **reason** on a calm day in **Settings → Urge and AI**. It replaces
 
 The questions after your note are built from what you wrote: the first link, what the urge was offering, how strong the pull was, the turning point, and a rule for the next time. The deep dive ends with a short plan (an if-then rule) and your own reason. It only uses facts from your note and answers; if you skip a question it says nothing about it. Do the first line of the plan before you close it.
 
+Under **Settings → Urge and AI → Reply language** choose the language of the questions and the deep dive (English by default; empty follows the language of each note).
+
 Every deep dive is kept: **menu → Deep dives** (also **Reports → Read your deep dives**, and the rows in **Your data**) opens it again with the answers behind it.
 
 If the AI cannot be reached, the note stays on the phone, the entry waits for its deep dive, and the app retries in the background until it works or you delete the entry.

@@ -77,7 +77,11 @@ class UrgeFlow(
     private val ai: AiAccess = DeviceAiAccess(context),
     private val repository: () -> UrgeEntryRepository = { Store.urgeEntries(context) },
     /** Queues the retry job; `replace` starts a fresh one. Replaced in tests. */
-    private val enqueueRetry: (replace: Boolean) -> Unit = { replace -> DeepDiveScheduler.enqueue(context, replace) }
+    private val enqueueRetry: (replace: Boolean) -> Unit = { replace -> DeepDiveScheduler.enqueue(context, replace) },
+    /** The language the AI replies in, or null to follow the note. Replaced in tests. */
+    private val language: () -> String? = { UrgeSettings(context).replyLanguage.ifBlank { null } },
+    /** Today's checklist as short lines, for the AI's context. Replaced in tests. */
+    private val goalLines: () -> List<String> = { todaysGoalLines(context) }
 ) {
     private val ctx = context.applicationContext
 
@@ -202,7 +206,7 @@ class UrgeFlow(
         val fixed = fixedQuestions()
         if (gate() != AiGateResult.OPEN) return QuestionSet(fixed, fromAi = false, support = keywordHit)
         val at = Instant.ofEpochMilli(entry.createdAt).atZone(TrustedClock.zone())
-        return when (val out = calls.generateQuestions(ai.config(), entry.kind, note, at, recentHistory(entry))) {
+        return when (val out = calls.generateQuestions(ai.config(), entry.kind, note, at, recentHistory(entry), language(), goalLines())) {
             is QuestionsOutcome.Failed -> QuestionSet(fixed, false, keywordHit)
             is QuestionsOutcome.Reply -> when (val r = out.reply) {
                 QuestionsReply.Support -> QuestionSet(fixed, false, support = true)
@@ -275,7 +279,9 @@ class UrgeFlow(
             scaleQuestionIds = UrgeJson.questionsFromJson(e.questionsJson).orEmpty()
                 .filter { it.type == QuestionType.SCALE }.map { it.id }.toSet(),
             waitedOutLock = e.kind == UrgeKind.URGE && e.lockStartedAt != null && e.lockEndedAt != null,
-            history = recentHistory(e)
+            history = recentHistory(e),
+            language = language(),
+            goals = goalLines()
         )
     }
 
@@ -304,6 +310,12 @@ class UrgeFlow(
     companion object {
         /** How far back the AI is told about earlier entries: three weeks. */
         const val HISTORY_WINDOW_MS = 21L * 24 * 60 * 60 * 1000
+
+        /** Today's goals with their state, as the lines the AI is shown. A store that cannot be read gives none. */
+        fun todaysGoalLines(context: Context): List<String> = try {
+            val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(context), TrustedClock.zone())
+            Store.days(context).goals(today).map { g -> g.text + " (" + g.state.name.lowercase().replace('_', ' ') + ")" }
+        } catch (e: Exception) { emptyList() }
 
         /** Shared by the screen and the retry job so one entry is never sent twice at once. */
         val inFlight = InFlight()
