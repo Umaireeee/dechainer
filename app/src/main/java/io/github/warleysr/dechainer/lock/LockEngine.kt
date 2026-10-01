@@ -116,8 +116,13 @@ object LockEngine {
             var plan = plan(now, zone, gathered.state)
             if (plan.expiredFocusBlock) {
                 // The end alarm never closed this block (R1). Close it from the time, then plan again
-                // with it gone, so one pass both ends the block and releases what it held.
-                Pomodoro.closeExpiredBlock(ctx, now)
+                // with it gone, so one pass both ends the block and releases what it held. If closing
+                // the record fails, the plan still drops the expired hold, so the apps are released anyway.
+                try {
+                    Pomodoro.closeExpiredBlock(ctx, now)
+                } catch (e: Throwable) {
+                    Timber.e(e, "Expired block record not closed; releasing what it held anyway")
+                }
                 gathered = gather(ctx, now)
                 plan = plan(now, zone, gathered.state)
             }
