@@ -446,7 +446,7 @@
     <string name="focus_block_none_allowed">No allowed apps yet: during each session everything except calls, SMS, alarms, the camera and Settings will be paused. Add them in timer settings (the sliders icon) → Allowed apps.</string>
     <string name="focus_chime_sound">Chime sound (focus blocks)</string>
     <string name="focus_block_tap_to_change">Tap the time to change it</string>
-    <string name="focus_block_too_long">A block can last up to 12 hours</string>
+    <string name="focus_block_too_long">A block can last up to 8 hours</string>
     <string name="focus_breaks_none">no breaks</string>
     <string name="focus_breaks_one">1 break</string>
     <string name="focus_breaks_many">%1$d breaks</string>
@@ -518,4 +518,41 @@
     <string name="focus_allowed_hint">These apps stay open during a block, with calls, your alarm clock and Quick Settings. Everything else is paused.</string>
     <string name="focus_block_allowed_line">Apps you allowed stay open: %1$d</string>
     <string name="forced_removal_cancel_action">Cancel forced removal</string>
+
+    <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
+    <string name="focus_default_purpose">Focus</string>
+    <string name="focus_flow_prompt_title">Focus session started</string>
+    <string name="focus_flow_prompt_text">Usual day or something special today?</string>
+    <string name="focus_flow_checkin_title">Focus done. Did you do the work?</string>
+    <string name="focus_flow_final_title">Focus time is over. Did you do the work?</string>
+    <string name="focus_flow_usual">Usual</string>
+    <string name="focus_flow_special">Special</string>
+    <string name="focus_flow_usual_hint">Focus sessions and breaks, with a check-in after each session.</string>
+    <string name="focus_flow_special_hint">One continuous session with one question at the end.</string>
+    <string name="focus_flow_purpose_label">What is this session for?</string>
+    <string name="focus_flow_purpose_hint">At least 3 characters</string>
+    <string name="focus_flow_start">Start</string>
+    <string name="focus_flow_prompt_countdown">With no answer in %1$s, this session runs as special.</string>
+    <string name="focus_flow_purpose_line">For: %1$s</string>
+    <string name="focus_flow_special_title">Special session</string>
+    <string name="focus_flow_plain_title">Focus time</string>
+    <string name="focus_flow_reset_meditation_title">Reset: breathe</string>
+    <string name="focus_flow_reset_outside_title">Go outside or do something physical</string>
+    <string name="focus_flow_reset_outside_body">Move. Air, water, a short walk. The phone stays locked, and the block ends when it ends.</string>
+    <string name="focus_flow_ready_title">Are you ready now?</string>
+    <string name="focus_flow_ready_yes">Yes, I am ready</string>
+    <string name="focus_flow_ready_no">No</string>
+    <string name="focus_flow_not_ready">Okay. The phone stays locked until your focus time ends. Your call.</string>
+    <string name="focus_flow_final_hint">The lock has ended. One question is left.</string>
+    <string name="focus_flow_reset_prompt_1">Let your shoulders drop. You only have to get through this minute.</string>
+    <string name="focus_flow_reset_prompt_2">Find where the tension sits in your body. Watch it, don\'t fight it.</string>
+    <string name="focus_flow_reset_prompt_3">Distraction rises, peaks and passes. This one is already changing.</string>
+    <string name="focus_flow_reset_prompt_4">Breathe out slower than you breathe in.</string>
+    <string name="focus_flow_reset_prompt_5">You don\'t have to decide anything for the next few minutes.</string>
+    <string name="schedule_type_label">Type</string>
+    <string name="schedule_type_block">Block apps</string>
+    <string name="schedule_type_focus">Focus session</string>
+    <string name="schedule_focus_desc">When the window opens, a focus block starts and locks the phone until the window ends. You choose usual or special when it starts. If you do not answer in 2 minutes it runs as special.</string>
+    <string name="schedule_error_focus_short">A focus window is at least 10 minutes long</string>
+    <string name="schedule_error_focus_long">A focus window is at most 8 hours long</string>
 </resources>

@@ -47,6 +47,12 @@ data class BlockSchedule(
 ) {
     val isFocus: Boolean get() = type == ScheduleType.FOCUS
 
+    /** A FOCUS entry as stored: its name trimmed, and nothing a block entry would carry (it holds nothing itself). */
+    fun cleanedForFocus(): BlockSchedule = copy(
+        name = name.trim(), packages = emptySet(), restrictions = emptySet(), websites = emptySet(),
+        allowOnly = false, lockWhileActive = false
+    )
+
     val crossesMidnight: Boolean get() = endMinute <= startMinute
 
     /** Length of one window in minutes (1440 when start == end). */

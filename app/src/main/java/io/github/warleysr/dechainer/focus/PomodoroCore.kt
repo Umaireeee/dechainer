@@ -101,6 +101,9 @@ object PomodoroCore {
     fun start(state: PomodoroState, now: Long, settings: PomodoroSettings): PomodoroState = when {
         state.isRunning -> state
         state.isPaused -> state.copy(endsAt = now + state.pausedRemaining, pausedRemaining = 0L)
+        // A block with no phase running (it runs as one stretch, or its plan is used up): a plain start
+        // must not begin a session in it. [startPhasesInBlock] is the deliberate way.
+        state.inBlock -> state
         else -> state.copy(
             endsAt = now + settings.minutesFor(state.phase) * 60_000L,
             pausedRemaining = 0L,
@@ -127,8 +130,26 @@ object PomodoroCore {
      * long block that is already running.
      */
     fun beginBlockIfIdle(state: PomodoroState, endsAt: Long, now: Long, firstSessionMinutes: Int): PomodoroState =
-        if (!state.isIdle) state
+        if (!state.isIdle || state.inBlock) state
         else startFor(PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt), now, firstSessionMinutes)
+
+    /**
+     * The state that starts a block that runs as one stretch to [endsAt] (a special day, or a scheduled
+     * block still waiting at its prompt): no phase runs. [state] itself when the timer is not idle or
+     * already in a block, for the same reason as [beginBlockIfIdle].
+     */
+    fun beginContinuousBlockIfIdle(state: PomodoroState, endsAt: Long): PomodoroState =
+        if (!state.isIdle || state.inBlock) state
+        else PomodoroState(phase = Phase.FOCUS, blockEndsAt = endsAt)
+
+    /** The usual phases begin inside a block that ran as one stretch: the first session now, [minutes] long. Anything else is left alone. */
+    fun startPhasesInBlock(state: PomodoroState, now: Long, minutes: Int): PomodoroState =
+        if (!state.inBlock || !state.isIdle) state else startFor(state.copy(phase = Phase.FOCUS), now, minutes)
+
+    /** The phases end and the block runs on to its end as one stretch (the plain timer, or a plan used up). */
+    fun dropPhasesInBlock(state: PomodoroState): PomodoroState =
+        if (!state.inBlock) state
+        else PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = state.focusDoneInCycle, blockEndsAt = state.blockEndsAt)
 
     /** Back to an idle focus session, keeping the cycle count. */
     fun stop(state: PomodoroState): PomodoroState =

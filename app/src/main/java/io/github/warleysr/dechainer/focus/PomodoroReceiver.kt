@@ -17,6 +17,12 @@ class PomodoroReceiver : BroadcastReceiver() {
                     Pomodoro.answer(ctx, id, intent.getBooleanExtra(Pomodoro.EXTRA_DONE, false))
                 }
             }
+            // Yes or No on a focus-flow notification (a check-in, or the last question).
+            FocusRunner.ACTION_ANSWER -> {
+                if (intent.hasExtra(Pomodoro.EXTRA_DONE)) {
+                    FocusRunner.answer(ctx, intent.getBooleanExtra(Pomodoro.EXTRA_DONE, false))
+                }
+            }
             Pomodoro.ACTION_START_NEXT -> {
                 Pomodoro.ensureLoaded(ctx)
                 if (Pomodoro.state.value.isIdle) Pomodoro.start(ctx) else Pomodoro.dismissAlarm(ctx)

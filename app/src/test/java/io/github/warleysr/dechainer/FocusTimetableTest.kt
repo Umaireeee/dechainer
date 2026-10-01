@@ -135,4 +135,28 @@ class FocusTimetableTest {
         val d = due(at(15), listOf(focus("a", 14 * 60, 16 * 60), focus("b", 14 * 60 + 30, 17 * 60)))!!
         assertEquals("b", d.window.scheduleId)
     }
+
+    @Test
+    fun aFocusWindowMustBeBetweenTenMinutesAndEightHours() {
+        assertEquals(-1, FocusTimetable.checkWindow(9))
+        assertNull(FocusTimetable.checkWindow(10))
+        assertNull(FocusTimetable.checkWindow(480))
+        assertEquals(1, FocusTimetable.checkWindow(481))
+        assertEquals("a window with equal start and end runs 24 hours, which is too long", 1,
+            FocusTimetable.checkWindow(focus("x", 540, 540).windowMinutes))
+    }
+
+    @Test
+    fun aFocusEntryIsStoredWithNothingABlockEntryWouldCarry() {
+        val dirty = focus("x", 540, 600).copy(
+            name = "  Study  ", packages = setOf("games"), restrictions = setOf("no_config_wifi"),
+            websites = setOf("example.com"), allowOnly = true, lockWhileActive = true
+        )
+        val clean = dirty.cleanedForFocus()
+        assertEquals("Study", clean.name)
+        assertTrue(clean.packages.isEmpty() && clean.restrictions.isEmpty() && clean.websites.isEmpty())
+        assertFalse(clean.allowOnly)
+        assertFalse(clean.lockWhileActive)
+        assertEquals(ScheduleType.FOCUS, clean.type)
+    }
 }

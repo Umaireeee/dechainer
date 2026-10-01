@@ -19,6 +19,8 @@ import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.activities.PomodoroEndActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.store.Store
+import io.github.warleysr.dechainer.store.StoredSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,6 +89,10 @@ object Pomodoro {
     private const val RC_START = 25
     private const val RC_STOP = 27
     private const val RC_QUESTION = 26
+    private const val ID_FLOW = 8103
+    private const val RC_FLOW_OPEN = 31
+    private const val RC_FLOW_YES = 32
+    private const val RC_FLOW_NO = 33
 
     private val lock = Any()
     @Volatile private var loaded = false
@@ -176,7 +182,7 @@ object Pomodoro {
                 plannedMinutes = p.getInt(K_PLANNED, 0),
                 blockEndsAt = p.getLong(K_BLOCK, 0L)
             )
-            _log.value = FocusLogMath.decode(p.getString(K_LOG, null))
+            _log.value = loadLog(context, p)
             _pending.value = p.getLong(K_PENDING, 0L).takeIf { it > 0L }
             _tags.value = (p.getString(K_TAGS, null) ?: "").split('\n').mapNotNull { FocusLogMath.cleanTag(it) }.distinct()
             _tag.value = p.getString(K_TAG, null)?.takeIf { it in _tags.value }
@@ -202,23 +208,46 @@ object Pomodoro {
      * apps lock during each session, and leaving early takes the recovery code. False if the
      * timer is busy or there isn't room for even one session.
      */
-    fun startBlock(context: Context, endsAt: Long): Boolean {
+    fun startBlock(context: Context, endsAt: Long, phases: Boolean = true): Boolean {
         ensureLoaded(context)
         // A punishment day is no time to start another lock; the Focus screen is not one of the things that stay available (6.4).
         if (LockStateStore.punishment(context).activeAt(now())) return false
-        val total = ((endsAt - now()) / 60_000L).toInt()
+        val left = endsAt - now()
+        // Blueprint 5.2: a block is at least ten minutes and at most eight hours.
+        if (left < Rules.FOCUS_BLOCK_MIN_MS || left > Rules.FOCUS_BLOCK_MAX_MS) return false
+        val total = (left / 60_000L).toInt()
         val first = BlockPlanner.plan(total, _settings.value).firstOrNull() ?: return false
         var started = false
         // The idle check is made inside the change, under the lock: a second request that arrives
         // a moment later sees the block the first one started and leaves it alone.
         change(context) { current ->
-            val next = PomodoroCore.beginBlockIfIdle(current, endsAt, now(), first.second)
+            val next =
+                if (phases) PomodoroCore.beginBlockIfIdle(current, endsAt, now(), first.second)
+                else PomodoroCore.beginContinuousBlockIfIdle(current, endsAt)
             started = next != current
             next
         }
         if (started) dismissAlarm(context)
         return started
     }
+
+    /**
+     * The usual phases begin in a block that has been running as one stretch (a scheduled block whose
+     * prompt was answered "usual"): the first session now, sized to what is left. Nothing happens if
+     * there is no such block, or too little of it left for a session (it then stays one stretch).
+     */
+    fun startPhases(context: Context) {
+        ensureLoaded(context)
+        change(context) { current ->
+            val left = ((current.blockEndsAt - now()) / 60_000L).toInt()
+            val first = BlockPlanner.plan(left, _settings.value, current.focusDoneInCycle).firstOrNull()
+                ?: return@change current
+            PomodoroCore.startPhasesInBlock(current, now(), first.second)
+        }
+    }
+
+    /** The phases end and the block runs on to its end as one stretch (the plain timer). */
+    fun dropPhases(context: Context) = change(context) { PomodoroCore.dropPhasesInBlock(it) }
 
     fun pause(context: Context) = change(context) { PomodoroCore.pause(it, now()) }
 
@@ -241,7 +270,13 @@ object Pomodoro {
         // so a block can end before its end time after a long absence. Deliberate.
         val remaining = ((current.blockEndsAt - now()) / 60_000L).toInt()
         val step = BlockPlanner.next(current.phase, doneAfter, remaining, _settings.value)
-            ?: return PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = doneAfter)   // block complete
+            ?: return when {
+                // The plan is used up but the block's end has not come: it runs on as one stretch. The end
+                // time never moves, and the phone is not released early (blueprint 5.2).
+                now() < current.blockEndsAt - 1_000L ->
+                    PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = doneAfter, blockEndsAt = current.blockEndsAt)
+                else -> PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = doneAfter)   // block complete
+            }
         return PomodoroCore.startFor(
             PomodoroState(phase = step.first, focusDoneInCycle = doneAfter, blockEndsAt = current.blockEndsAt),
             now(), step.second
@@ -284,19 +319,69 @@ object Pomodoro {
     fun answer(context: Context, id: Long, done: Boolean) {
         ensureLoaded(context)
         val ctx = context.applicationContext
+        recordAnswer(ctx, id, done)
         synchronized(lock) {
-            _log.value = _log.value.map { if (it.id == id) it.copy(done = done) else it }
             if (_pending.value == id) _pending.value = null
             if (_lectureAsk.value == id) {
                 _lectureAsk.value = null
                 prefs(ctx).edit { remove(K_LECTURE_ASK) }
             }
             prefs(ctx).edit(commit = true) {
-                putString(K_LOG, FocusLogMath.encode(_log.value))
                 if (_pending.value == null) remove(K_PENDING)
             }
         }
         notificationManager(ctx).cancel(ID_ALARM)
+    }
+
+    /** Stores the yes or no for session [id] as a check-in row and brings the log up to date. */
+    private fun recordAnswer(ctx: Context, id: Long, yes: Boolean) {
+        try {
+            Store.focus(ctx).addCheckin(id, now(), if (yes) CheckinAnswer.YES else CheckinAnswer.NO, ResetResult.NONE)
+        } catch (e: Exception) {
+            Timber.e(e, "Answer not stored")
+        }
+        reloadLog(ctx)
+    }
+
+    /**
+     * Reads the log again from the store. A store that cannot be read leaves the log as it is: the
+     * store is only ever written to one session at a time, so nothing is lost by this.
+     */
+    internal fun reloadLog(ctx: Context) {
+        try {
+            val fresh = Store.focus(ctx).log().takeLast(LOG_LIMIT)
+            synchronized(lock) { _log.value = fresh }
+        } catch (e: Exception) {
+            Timber.w(e, "Focus log not reloaded")
+        }
+    }
+
+    /** The log from the store. The first time, the old log in the preferences is imported (blueprint 13) and left where it is, unwritten from then on. */
+    private fun loadLog(ctx: Context, p: android.content.SharedPreferences): List<FocusSession> = try {
+        val repo = Store.focus(ctx)
+        Store.appState(ctx).runOnce("focus_log_import") {
+            repo.importLegacy(FocusLogMath.decode(p.getString(K_LOG, null)))
+            true
+        }
+        repo.log().takeLast(LOG_LIMIT)
+    } catch (e: Exception) {
+        Timber.e(e, "Focus log not readable; showing none for now")
+        emptyList()
+    }
+
+    /** A session that ran outside a flow (a plain Pomodoro phase) goes in the store as one finished row. */
+    private fun storeFinished(ctx: Context, entry: FocusSession) {
+        try {
+            Store.focus(ctx).insert(
+                StoredSession(
+                    id = entry.id, source = FocusSource.MANUAL, flavor = Flavor.USUAL, purpose = entry.intention.orEmpty(),
+                    startedAt = entry.id, plannedEndAt = entry.id + entry.minutes * 60_000L,
+                    endedAt = entry.id + entry.minutes * 60_000L, focusedMinutes = entry.minutes, outcome = SessionOutcome.COMPLETED
+                )
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Finished session not stored")
+        }
     }
 
     // ---- Subjects ----
@@ -374,8 +459,8 @@ object Pomodoro {
     }
 
     /**
-     * Adds the sessions in the CSV at [uri] that aren't in the log yet, and any subjects they use.
-     * Nothing already in the log is changed. Returns how many were added, or -1 if unreadable.
+     * Adds the sessions in the CSV at [uri] that aren't in the log yet. Subjects and lecture counts
+     * are not stored any more, so they are dropped. Nothing already in the log is changed. Returns how many were added, or -1 if unreadable.
      */
     fun importFrom(context: Context, uri: android.net.Uri): Int {
         ensureLoaded(context)
@@ -386,15 +471,14 @@ object Pomodoro {
             Timber.w(e, "Import failed")
             return -1
         }
-        synchronized(lock) {
-            val before = _log.value.size
-            _log.value = FocusLogMath.merge(_log.value, incoming).takeLast(LOG_LIMIT)
-            val newTags = incoming.mapNotNull { it.tag }.distinct().filter { t -> _tags.value.none { it.equals(t, true) } }
-            _tags.value = (_tags.value + newTags).take(TAG_LIMIT)
-            prefs(context).edit(commit = true) { putString(K_LOG, FocusLogMath.encode(_log.value)) }
-            saveTags(context)
-            return (_log.value.size - before).coerceAtLeast(0)
+        val added = try {
+            Store.focus(context.applicationContext).importLegacy(incoming)
+        } catch (e: Exception) {
+            Timber.w(e, "Import not stored")
+            return -1
         }
+        reloadLog(context.applicationContext)
+        return added
     }
 
     /**
@@ -404,22 +488,15 @@ object Pomodoro {
     fun answerLecture(context: Context, id: Long, answer: LectureAnswer) {
         ensureLoaded(context)
         val ctx = context.applicationContext
+        val session = synchronized(lock) { _log.value.firstOrNull { it.id == id } } ?: return
+        recordAnswer(ctx, id, answer != LectureAnswer.PROCRASTINATING)
         synchronized(lock) {
-            val session = _log.value.firstOrNull { it.id == id } ?: return
             val key = session.tag ?: ""
-            _log.value = _log.value.map {
-                if (it.id != id) it
-                else it.copy(
-                    done = answer != LectureAnswer.PROCRASTINATING,
-                    lectures = if (answer == LectureAnswer.DONE) 1 else it.lectures
-                )
-            }
             val updated = LectureMath.answer(_progress.value[key] ?: LectureProgress(), answer, session.minutes)
             _progress.value = _progress.value + (key to updated)
             if (_pending.value == id) _pending.value = null
             if (_lectureAsk.value == id) _lectureAsk.value = null
             prefs(ctx).edit(commit = true) {
-                putString(K_LOG, FocusLogMath.encode(_log.value))
                 putString(K_PROGRESS, LectureMath.encode(_progress.value))
                 if (_pending.value == null) remove(K_PENDING)
                 remove(K_LECTURE_ASK)
@@ -428,24 +505,21 @@ object Pomodoro {
         notificationManager(ctx).cancel(ID_ALARM)
     }
 
-    /** How many lectures session [id] finished. Settable any time from the log. */
-    fun setLectures(context: Context, id: Long, lectures: Int) {
-        ensureLoaded(context)
-        synchronized(lock) {
-            _log.value = _log.value.map { if (it.id == id) it.copy(lectures = lectures.coerceIn(0, 20)) else it }
-            prefs(context).edit(commit = true) { putString(K_LOG, FocusLogMath.encode(_log.value)) }
-        }
-    }
-
     /** Removes one session from the log for good (a test run, a mistaken start). */
     fun deleteSession(context: Context, id: Long) {
         ensureLoaded(context)
+        val ctx = context.applicationContext
+        try {
+            Store.focus(ctx).delete(id)
+        } catch (e: Exception) {
+            Timber.e(e, "Session not deleted")
+            return
+        }
         synchronized(lock) {
             _log.value = _log.value.filterNot { it.id == id }
             if (_pending.value == id) _pending.value = null
             if (_lectureAsk.value == id) _lectureAsk.value = null
-            prefs(context).edit(commit = true) {
-                putString(K_LOG, FocusLogMath.encode(_log.value))
+            prefs(ctx).edit(commit = true) {
                 if (_pending.value == null) remove(K_PENDING)
                 if (_lectureAsk.value == null) remove(K_LECTURE_ASK)
             }
@@ -494,6 +568,8 @@ object Pomodoro {
     fun onPhaseAlarm(context: Context, silent: Boolean = false, requestSync: Boolean = true) {
         ensureLoaded(context)
         val ctx = context.applicationContext
+        // Outside every lock: the flow's own state is read inside the change below.
+        FocusRunner.ensureLoaded(ctx)
         val finished: PomodoroState
         synchronized(lock) {
             finished = _state.value
@@ -502,9 +578,11 @@ object Pomodoro {
             if (!blockOver && (!finished.isRunning || finished.endsAt > now() + 1_000L)) return
         }
         var loggedId: Long? = null
+        var flowedMinutes: Int? = null
+        var stored: FocusSession? = null
         change(ctx, requestSync) { current ->
             if (current != finished) return@change current
-            // A block that ran out while paused just ends: the paused session wasn't finished.
+            // A block that ran out while paused (or running as one stretch) just ends: nothing was finished.
             if (current.inBlock && !current.isRunning) {
                 return@change PomodoroState(phase = Phase.FOCUS, focusDoneInCycle = current.focusDoneInCycle)
             }
@@ -513,33 +591,47 @@ object Pomodoro {
                 // focus) and not today's setting (which could have changed since). Older saved
                 // sessions from before this was recorded fall back to the setting.
                 val minutes = current.plannedMinutes.takeIf { it > 0 } ?: _settings.value.focusMinutes
-                val entry = FocusSession(
-                    id = current.phaseStartedAt.takeIf { it > 0 } ?: now(),
-                    minutes = minutes,
-                    tag = _tag.value,
-                    intention = FocusLogMath.cleanIntention(_intention.value)
-                )
-                // A fresh intention for the next session.
-                _intention.value = ""
-                _log.value = (_log.value + entry).takeLast(LOG_LIMIT)
-                _pending.value = entry.id
-                loggedId = entry.id
-                val key = entry.tag ?: ""
-                val progressed = LectureMath.afterSession(_progress.value[key] ?: LectureProgress(), entry.minutes)
-                _progress.value = _progress.value + (key to progressed)
-                _lectureAsk.value = if (LectureMath.shouldAsk(progressed, _settings.value.lectureMinutes)) entry.id else null
-                prefs(ctx).edit(commit = true) {
-                    putString(K_LOG, FocusLogMath.encode(_log.value))
-                    putLong(K_PENDING, entry.id)
-                    putString(K_PROGRESS, LectureMath.encode(_progress.value))
-                    if (_lectureAsk.value != null) putLong(K_LECTURE_ASK, entry.id) else remove(K_LECTURE_ASK)
-                    remove(K_INTENTION)
+                if (current.inBlock && FocusRunner.hasFlow()) {
+                    // A block with a flow (blueprint 6.3): the session is the block's, and the flow asks the
+                    // question and logs the answer. Nothing goes in the log per phase.
+                    flowedMinutes = minutes
+                } else {
+                    val entry = FocusSession(
+                        id = current.phaseStartedAt.takeIf { it > 0 } ?: now(),
+                        minutes = minutes,
+                        tag = _tag.value,
+                        intention = FocusLogMath.cleanIntention(_intention.value)
+                    )
+                    // A fresh intention for the next session.
+                    _intention.value = ""
+                    _log.value = (_log.value + entry).takeLast(LOG_LIMIT)
+                    _pending.value = entry.id
+                    loggedId = entry.id
+                    stored = entry
+                    val key = entry.tag ?: ""
+                    val progressed = LectureMath.afterSession(_progress.value[key] ?: LectureProgress(), entry.minutes)
+                    _progress.value = _progress.value + (key to progressed)
+                    _lectureAsk.value = if (LectureMath.shouldAsk(progressed, _settings.value.lectureMinutes)) entry.id else null
+                    prefs(ctx).edit(commit = true) {
+                        putLong(K_PENDING, entry.id)
+                        putString(K_PROGRESS, LectureMath.encode(_progress.value))
+                        if (_lectureAsk.value != null) putLong(K_LECTURE_ASK, entry.id) else remove(K_LECTURE_ASK)
+                        remove(K_INTENTION)
+                    }
                 }
             }
             nextState(current, completed = true)
         }
+        stored?.let { storeFinished(ctx, it) }
         val next = _state.value
+        flowedMinutes?.let { FocusRunner.onFocusPhaseEnded(ctx, it) }
         if (silent) {
+            Unit
+        } else if (finished.inBlock && finished.isIdle) {
+            // A block that ran as one stretch (a special day, or the plain timer): no chimes, no questions.
+            Unit
+        } else if (finished.inBlock && flowedMinutes != null) {
+            // The flow rings the check-in itself, with its own buttons.
             Unit
         } else if (finished.inBlock) {
             // Inside a block nothing waits for you: a soft chime, and the question on the
@@ -643,7 +735,10 @@ object Pomodoro {
     private fun now(): Long = appContext?.let { TrustedClock.now(it) } ?: TrustedClock.now()
 
     /** For tests: forget what was loaded, so the next call reads the preferences again. */
-    internal fun resetForTests() = synchronized(lock) { loaded = false }
+    internal fun resetForTests() {
+        synchronized(lock) { loaded = false }
+        FocusRunner.resetForTests()
+    }
 
     private inline fun change(context: Context, requestSync: Boolean = true, transform: (PomodoroState) -> PomodoroState) {
         ensureLoaded(context)
@@ -932,6 +1027,73 @@ object Pomodoro {
             ring(ctx, b)
         } catch (e: Exception) {
             Timber.w(e, "Break alarm not shown")
+        }
+    }
+
+    // ---- What the focus flow asks (blueprint 6.3, 10) ----
+
+    private fun flowOpenIntent(ctx: Context) = PendingIntent.getActivity(
+        ctx, RC_FLOW_OPEN,
+        Intent(ctx, io.github.warleysr.dechainer.activities.FocusFlowActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    private fun flowAnswerIntent(ctx: Context, yes: Boolean) = PendingIntent.getBroadcast(
+        ctx, if (yes) RC_FLOW_YES else RC_FLOW_NO,
+        Intent(ctx, PomodoroReceiver::class.java).setAction(FocusRunner.ACTION_ANSWER).putExtra(EXTRA_DONE, yes),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    /**
+     * A question from the flow: the prompt, a check-in or the final yes/no. [loud] chimes once (the
+     * Focus channel); otherwise it is silent, as a special session's last question is (blueprint 10).
+     * It stays until answered or until the flow cancels it ([cancelFlowQuestion]); the full-screen
+     * activity is started by the caller, and [fullScreen] only lets the notification carry it too.
+     */
+    internal fun postFlowQuestion(ctx: Context, title: String, text: String?, yesNo: Boolean, loud: Boolean, fullScreen: Boolean) {
+        try {
+            ensureChannels(ctx)
+            if (loud) ensureChimeChannel(ctx)
+            val b = NotificationCompat.Builder(ctx, if (loud) CHANNEL_CHIME else CHANNEL_TIMER)
+                .setSmallIcon(R.drawable.ic_notification_time_warning)
+                .setContentTitle(title)
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(false)
+                .setContentIntent(flowOpenIntent(ctx))
+            if (loud) b.setCategory(NotificationCompat.CATEGORY_ALARM).setPriority(NotificationCompat.PRIORITY_HIGH)
+            else b.setSilent(true).setPriority(NotificationCompat.PRIORITY_LOW)
+            if (text != null) b.setContentText(text)
+            if (fullScreen && io.github.warleysr.dechainer.data.FullScreenAlerts.isAllowed(ctx)) {
+                b.setFullScreenIntent(flowOpenIntent(ctx), true)
+            }
+            if (yesNo) {
+                b.addAction(0, ctx.getString(R.string.focus_answer_yes), flowAnswerIntent(ctx, true))
+                b.addAction(0, ctx.getString(R.string.focus_answer_no), flowAnswerIntent(ctx, false))
+            }
+            notificationManager(ctx).notify(ID_FLOW, b.build())
+        } catch (e: Exception) {
+            Timber.w(e, "Flow question not shown")
+        }
+    }
+
+    internal fun cancelFlowQuestion(ctx: Context) {
+        try {
+            notificationManager(ctx).cancel(ID_FLOW)
+        } catch (e: Exception) {
+            Timber.w(e, "Flow question not cleared")
+        }
+    }
+
+    /** Opens the full-screen flow page over everything, as the old question screen is. Falls back to the notification. */
+    internal fun showFlowScreen(ctx: Context) {
+        try {
+            ctx.startActivity(
+                Intent(ctx, io.github.warleysr.dechainer.activities.FocusFlowActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        } catch (e: Exception) {
+            Timber.w(e, "Flow screen not opened; the notification asks instead")
         }
     }
 

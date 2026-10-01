@@ -397,4 +397,11 @@ class FocusFlowTest {
         assertEquals(FlowStep(done), FocusFlow.tick(done, end + 100 * minute))
         assertNull(FocusFlow.nextWake(done))
     }
+
+    @Test
+    fun aSessionThatBeganAMomentAfterItsWindowOpenedStillCountsTheWholeWindow() {
+        val late = FocusFlow.begin(FocusSource.MANUAL, Flavor.SPECIAL, "Mock exam", t0 + 400, end)!!.state
+        val step = FocusFlow.tick(late, end)
+        assertTrue(FlowEffect.EndSession(end, SessionOutcome.COMPLETED, 120) in step.effects)
+    }
 }

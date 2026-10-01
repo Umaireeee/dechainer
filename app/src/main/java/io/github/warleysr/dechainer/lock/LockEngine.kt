@@ -13,6 +13,7 @@ import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.ScheduleRepository
 import io.github.warleysr.dechainer.data.TimeLimits
+import io.github.warleysr.dechainer.focus.FocusRunner
 import io.github.warleysr.dechainer.focus.Pomodoro
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,6 +128,13 @@ object LockEngine {
             // The wake-up reading is written down before anything is decided on it.
             val now = TrustedClock.checkpoint(ctx)
             val zone = TrustedClock.zone()
+            // The focus session's own clock first (prompt and check-in timeouts, the reset, a FOCUS
+            // timetable entry that is due): it can start or end a block, which the plan below must see.
+            try {
+                FocusRunner.advance(ctx, now)
+            } catch (e: Throwable) {
+                Timber.e(e, "Focus flow not advanced; the lock is planned without it")
+            }
             var gathered = gather(ctx, now)
             var plan = plan(now, zone, gathered.state)
             if (plan.expiredFocusBlock) {
@@ -180,7 +188,7 @@ object LockEngine {
                 LockState(
                     deviceOwner = false, schedules = schedules, phone = none,
                     // Only so an ended block gets closed; without Device Owner nothing is applied.
-                    focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L),
+                    focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L, wakeAt = FocusRunner.nextWake(ctx)),
                     urge = urge, punishment = punishment
                 ),
                 ScheduleEnforcer.ApplyExtras(emptySet(), null, ::label)
@@ -201,7 +209,8 @@ object LockEngine {
         val focus = FocusInput(
             brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L,
             sessionLockEndsAt = if (Pomodoro.sessionLockActive()) (if (st.isRunning) st.endsAt else Long.MAX_VALUE) else 0L,
-            allowedApps = Pomodoro.allowedApps.value
+            allowedApps = Pomodoro.allowedApps.value,
+            wakeAt = FocusRunner.nextWake(ctx)
         )
 
         // Daily time limits, measured from Android's own usage log (see TimeLimits).
@@ -308,6 +317,8 @@ object LockEngine {
             Timber.e(e, "Abort: block state")
         }
         _status.value = null
+        // The session is closed on record as ended by the system, so it is not taken for the owner's doing.
+        bounded("focus session record") { FocusRunner.abort(ctx) }
         // The urge lock is dropped and a punishment day is ended on record (by the system, so it is not
         // taken for the owner's doing). Without that the next pass would put the brick straight back.
         bounded("urge lock and punishment records") {

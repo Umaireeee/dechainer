@@ -8,7 +8,9 @@ import android.content.Intent
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.UrgeActions
+import io.github.warleysr.dechainer.focus.Flavor
 import io.github.warleysr.dechainer.focus.FocusLogMath
+import io.github.warleysr.dechainer.focus.FocusRunner
 import io.github.warleysr.dechainer.focus.Pomodoro
 import timber.log.Timber
 
@@ -36,10 +38,11 @@ class UrgeActionReceiver : BroadcastReceiver() {
                     UrgeActions.Kind.IMPULSE_BLOCK, UrgeActions.Kind.RIDE_LOCK -> LockEngine.startUrgeLock(ctx)
                     UrgeActions.Kind.FOCUS_BLOCK -> {
                         Pomodoro.ensureLoaded(ctx)
-                        val started = Pomodoro.startBlock(ctx, TrustedClock.now(ctx) + minutes * 60_000L)
-                        // Only a block this request started: the plan made the evening before is what the
-                        // first session is for, and the question at its end asks about exactly that.
-                        if (started && intention != null) Pomodoro.setIntention(ctx, intention)
+                        // The plan made the evening before is what the block is for, and the question at its
+                        // end asks about exactly that. A request without one is for "Focus".
+                        val purpose = intention?.takeIf { it.length >= Rules.FOCUS_PURPOSE_MIN_CHARS }
+                            ?: ctx.getString(R.string.focus_default_purpose)
+                        FocusRunner.startManual(ctx, TrustedClock.now(ctx) + minutes * 60_000L, Flavor.USUAL, purpose)
                     }
                 }
                 LockEngine.sync(ctx)

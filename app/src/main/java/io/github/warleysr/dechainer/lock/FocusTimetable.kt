@@ -55,6 +55,16 @@ object FocusTimetable {
         return FocusDue(window, decision)
     }
 
+    /**
+     * Whether a window of [minutes] can be a FOCUS entry: null if so, a negative number if it is shorter
+     * than a block may be, a positive one if it is longer.
+     */
+    fun checkWindow(minutes: Int): Int? = when {
+        minutes < Rules.FOCUS_BLOCK_MIN_MS / 60_000L -> -1
+        minutes > Rules.FOCUS_BLOCK_MAX_MS / 60_000L -> 1
+        else -> null
+    }
+
     /** The end a deferred start ([FocusStart.At]) or an immediate one runs to. */
     fun blockEnd(window: FocusWindow): Long = window.endsAt
 }

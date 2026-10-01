@@ -28,6 +28,18 @@ class MigrationsTest {
     }
 
     @Test
+    fun theFocusTablesArriveInSchemaVersionTwoAndVersionOneIsNotEdited() {
+        val v1 = Migrations.statementsBetween(0, 1).joinToString(" ").lowercase()
+        assertTrue("app_state" in v1)
+        assertFalse("focus_session" in v1)
+        val v2 = Migrations.statementsBetween(1, 2).joinToString(" ").lowercase()
+        assertTrue("focus_session" in v2)
+        assertTrue("focus_checkin" in v2)
+        assertTrue("planned_end_at" in v2)
+        assertTrue("reset_result" in v2)
+    }
+
+    @Test
     fun aFreshDatabaseRunsEveryStepInOrder() {
         assertEquals(listOf("a1", "a2", "b1", "c1", "c2"), Migrations.statementsBetween(0, 3, chain))
     }

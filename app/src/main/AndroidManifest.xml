@@ -77,6 +77,16 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
 
+        <!-- The focus flow's question screen (blueprint 6.3): the prompt, the check-in, the reset. Over the lock screen too. -->
+        <activity
+            android:name=".activities.FocusFlowActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+
         <receiver
             android:name=".focus.PomodoroReceiver"
             android:exported="false" />

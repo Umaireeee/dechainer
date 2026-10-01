@@ -309,7 +309,8 @@ object FocusFlow {
     /** The block's end time has come. */
     private fun endBlock(s: FlowState): FlowStep {
         val end = s.plannedEndAt
-        val wholeWindow = ((end - s.startedAt) / 60_000L).toInt().coerceAtLeast(0)
+        // To the nearest minute: a block that began a moment after its window opened still counts the whole window.
+        val wholeWindow = ((end - s.startedAt + 30_000L) / 60_000L).toInt().coerceAtLeast(0)
         return when (s.stage) {
             // The window ended before anyone answered: it ran as special after all.
             FlowStage.PROMPT, FlowStage.SPECIAL -> FlowStep(
