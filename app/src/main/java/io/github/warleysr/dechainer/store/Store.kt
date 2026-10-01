@@ -23,6 +23,17 @@ object Store {
             database ?: DechainerDatabase(context).also { database = it }
         }
 
+    /**
+     * For tests: empties every table through the open database, without closing or deleting the file.
+     * The real Application's startup work opens the same file on its own thread, so a test that
+     * deletes the file under it races with that thread.
+     */
+    internal fun clearForTests(context: Context) {
+        val db = database(context).writableDatabase
+        db.execSQL("DELETE FROM urge_entry")
+        db.execSQL("DELETE FROM app_state")
+    }
+
     /** For tests: close and forget the database so the next call opens a fresh one. */
     internal fun resetForTests() = synchronized(this) {
         database?.close()

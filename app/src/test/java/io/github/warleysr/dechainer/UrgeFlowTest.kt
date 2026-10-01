@@ -105,8 +105,7 @@ class UrgeFlowTest {
         ).forEach { ctx.getSharedPreferences(it, Context.MODE_PRIVATE).edit(commit = true) { clear() } }
         queued.clear()
         Pomodoro.resetForTests()
-        Store.resetForTests()
-        ctx.deleteDatabase(DechainerDatabase.FILE_NAME)
+        Store.clearForTests(ctx)
         LockStateStore.resetForTests()
         dpm = ctx.getSystemService(DevicePolicyManager::class.java)
         admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
@@ -125,8 +124,6 @@ class UrgeFlowTest {
 
     @After
     fun tearDown() {
-        Store.resetForTests()
-        ctx.deleteDatabase(DechainerDatabase.FILE_NAME)
         LockStateStore.resetForTests()
     }
 
