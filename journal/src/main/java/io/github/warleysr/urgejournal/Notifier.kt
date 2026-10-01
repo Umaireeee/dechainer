@@ -14,7 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
 
-/** The two reminders, both off the moment you turn them off. Kept here so a receiver can read them. */
+/** The reminders, each off the moment you turn it off. Kept here so a receiver can read them. */
 class ReminderSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("reminders", Context.MODE_PRIVATE)
 
@@ -33,6 +33,10 @@ class ReminderSettings(context: Context) {
         get() = prefs.getInt("evening", -1)
         set(v) = prefs.edit { putInt("evening", v) }
 
+    /** Minutes from midnight, on Sundays, of "your week is ready to look at", or -1 for off. */
+    var weeklyMinute: Int
+        get() = prefs.getInt("weekly", -1)
+        set(v) = prefs.edit { putInt("weekly", v) }
 }
 
 /**
@@ -44,6 +48,7 @@ object Notifier {
     const val ACTION_NUDGE = "io.github.warleysr.urgejournal.NUDGE"
     const val ACTION_BLOCK = "io.github.warleysr.urgejournal.BLOCK_NOW"
     const val ACTION_EVENING = "io.github.warleysr.urgejournal.EVENING"
+    const val ACTION_WEEKLY = "io.github.warleysr.urgejournal.WEEKLY"
 
     /** How long after a ride starts the check-in comes. */
     const val CHECKIN_DELAY_MS = 20L * 60 * 1000
@@ -55,6 +60,7 @@ object Notifier {
     private const val ID_CHECKIN = 11
     private const val ID_NUDGE = 12
     private const val ID_EVENING = 13
+    private const val ID_WEEKLY = 14
     private const val REQ_EVENING_ALARM = 26
     private const val REQ_OPEN_EVENING = 27
     private const val REQ_CHECKIN_ALARM = 21
@@ -62,6 +68,8 @@ object Notifier {
     private const val REQ_BLOCK = 23
     private const val REQ_OPEN_CHECKIN = 24
     private const val REQ_OPEN_NUDGE = 25
+    private const val REQ_WEEKLY_ALARM = 28
+    private const val REQ_OPEN_WEEKLY = 29
 
     /** True when Android would actually show a notification from this app right now. */
     fun canPost(ctx: Context): Boolean = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
@@ -110,6 +118,28 @@ object Notifier {
             if (minute < 0) alarmManager(ctx).cancel(pi)
             else alarmManager(ctx).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, Times.nextDaily(minute, System.currentTimeMillis()), pi)
         }
+    }
+
+    /** Arms (or clears) the next weekly look back: the saved time, on the next Sunday. */
+    fun rearmWeekly(ctx: Context) {
+        val minute = ReminderSettings(ctx).weeklyMinute
+        val pi = alarmIntent(ctx, ACTION_WEEKLY, REQ_WEEKLY_ALARM)
+        runCatching {
+            if (minute < 0) alarmManager(ctx).cancel(pi)
+            else alarmManager(ctx).setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                Times.nextWeekly(java.time.DayOfWeek.SUNDAY, minute, System.currentTimeMillis()),
+                pi
+            )
+        }
+    }
+
+    fun postWeekly(ctx: Context) {
+        post(
+            ctx, ID_WEEKLY,
+            base(ctx, R.string.notif_weekly_title, R.string.notif_weekly_text)
+                .setContentIntent(openApp(ctx, MainActivity.ACTION_REVIEW, REQ_OPEN_WEEKLY))
+        )
     }
 
     fun postEvening(ctx: Context) {
@@ -198,6 +228,12 @@ class ReminderReceiver : BroadcastReceiver() {
                 if (ReminderSettings(ctx).eveningMinute >= 0) Notifier.postEvening(ctx)
                 Notifier.rearmEvening(ctx)
             }
+            Notifier.ACTION_WEEKLY -> {
+                // Only when there is a week to look at: an empty look back would be a nag.
+                val ready = Insights.reviewReady(JournalStore(ctx).all(), System.currentTimeMillis())
+                if (ReminderSettings(ctx).weeklyMinute >= 0 && ready) Notifier.postWeekly(ctx)
+                Notifier.rearmWeekly(ctx)
+            }
             Notifier.ACTION_BLOCK -> {
                 Door.send(ctx, DoorAction(DoorAction.IMPULSE_BLOCK, NUDGE_BLOCK_MINUTES))
                 Notifier.cancelNudge(ctx)
@@ -205,6 +241,7 @@ class ReminderReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 Notifier.rearmNudge(ctx)
                 Notifier.rearmEvening(ctx)
+                Notifier.rearmWeekly(ctx)
                 // Alarms do not survive a reboot: put the check-in back if a ride is still waiting for it.
                 if (ReminderSettings(ctx).checkIn) {
                     Times.checkInAt(

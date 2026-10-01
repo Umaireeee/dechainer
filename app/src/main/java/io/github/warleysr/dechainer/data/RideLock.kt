@@ -15,6 +15,10 @@ object RideLock {
     /** The companion journal, which must stay usable: the ride happens in it. */
     const val JOURNAL_PACKAGE = "io.github.warleysr.urgejournal"
 
+    /** The journal starts a ride (after its own five-second countdown) when launched with this extra. */
+    const val JOURNAL_RIDE_EXTRA = "action"
+    const val JOURNAL_RIDE_VALUE = "ride"
+
     /** Never locked, so a real emergency can always be handled. Calls are protected elsewhere. */
     val ALWAYS_OPEN = setOf(JOURNAL_PACKAGE, "com.android.emergency", "com.google.android.apps.safetyhub")
 

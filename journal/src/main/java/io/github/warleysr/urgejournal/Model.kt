@@ -176,8 +176,11 @@ enum class Rule {
 /** Why it is probably happening. Text is `reason_<name lowercase>`. */
 enum class Reason { TIRED_LATE, STRESS_ESCAPE, BORED_AVOIDING, LONELY, ANXIOUS, THOUGHT_TRAP, GENERAL }
 
-/** A command for Déchaîner. [kind] is one of its `URGE_ACTION` kinds. */
-data class DoorAction(val kind: String, val minutes: Int) {
+/**
+ * A command for Déchaîner. [kind] is one of its `URGE_ACTION` kinds. A focus block can carry
+ * [intention], what the first session is for, so the end-of-session question asks about exactly that.
+ */
+data class DoorAction(val kind: String, val minutes: Int, val intention: String = "") {
     companion object {
         const val IMPULSE_BLOCK = "IMPULSE_BLOCK"
         const val FOCUS_BLOCK = "FOCUS_BLOCK"
@@ -328,6 +331,9 @@ data class DayLog(
     }
 
     companion object {
+        /** The longest first move: the length of an intention in Déchaîner, which it is handed to. */
+        const val NEXT_LIMIT = 80
+
         /** Reads a stored day: an object from this version, or a bare result name from an older one. */
         fun fromStored(raw: Any?): DayLog? = when (raw) {
             is String -> runCatching { DayLog(DayResult.valueOf(raw)) }.getOrNull()
@@ -338,7 +344,7 @@ data class DayLog(
                         (0 until a.length()).mapNotNull { i -> runCatching { Area.valueOf(a.getString(i)) }.getOrNull() }.toSet()
                     }.orEmpty(),
                     raw.optString("n", "").trim().take(200),
-                    raw.optString("x", "").trim().take(200)
+                    raw.optString("x", "").trim().take(NEXT_LIMIT)
                 )
             }.getOrNull()
             else -> null
@@ -457,6 +463,12 @@ object Insights {
 
     /** The entries that count: without the empty notes a ride leaves before it has been answered. */
     fun real(entries: List<Entry>): List<Entry> = entries.filterNot { it.isStub }
+
+    /** The weekly deep dive needs something to read: this many real entries in the last 30 days. */
+    const val REVIEW_MIN = 3
+
+    fun reviewReady(entries: List<Entry>, now: Long): Boolean =
+        real(entries).count { it.time >= now - 30L * 24 * 60 * 60 * 1000 } >= REVIEW_MIN
 
     fun week(entries: List<Entry>, now: Long, zone: ZoneId = ZoneId.systemDefault()): Week {
         val recent = real(entries).filter { it.time in (now - WEEK_MS)..now }
@@ -981,7 +993,7 @@ object Backup {
             Entry.listFromJson(o.optJSONArray("entries")?.toString()),
             MyPlan.listFromJson(o.optJSONArray("plans")?.toString()),
             Kept.parseList(o.optJSONArray("kept")?.toString()).items,
-            o.optString("reason", "").trim().take(300)
+            o.optString("reason", "").trim().take(REASON_LIMIT)
         )
     }
 

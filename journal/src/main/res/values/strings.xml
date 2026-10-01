@@ -169,7 +169,7 @@
     <string name="note_continue">Continue</string>
 
     <string name="consent_title">Send this to an AI?</string>
-    <string name="consent_body">To write your deep dive, your answers, the note you wrote, your goals text, the rules you saved and counts from your own history are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
+    <string name="consent_body">To write your deep dive, your answers, the note you wrote, your goals text, the reason you wrote, the rules you saved and counts from your own history are sent to %1$s, the AI service you chose. Your name, contacts and other data are not sent. You can turn this off in Settings.</string>
     <string name="consent_yes">Send</string>
     <string name="consent_no">Not now</string>
 
@@ -223,7 +223,7 @@
     <string name="settings_privacy">Your data</string>
     <string name="settings_privacy_body">Entries are stored only on this phone. The AI deep dive is the only thing that leaves it, and only when you use it. Your key is kept encrypted in this app\'s private storage. Turn the option above off if you want to take screenshots.</string>
     <string name="delete_title">Delete all my entries</string>
-    <string name="delete_body">This removes every entry, rule and deep dive from this phone. Your AI key and settings stay. It can\'t be undone.</string>
+    <string name="delete_body">This removes every entry, rule and deep dive from this phone. Your AI key, your reason and your settings stay. It can\'t be undone.</string>
     <string name="delete_yes">Delete</string>
     <string name="delete_no">Cancel</string>
 
@@ -253,7 +253,7 @@
     <string name="review_intro">Every entry of your last seven days, your evening check-ins and your history, read together: the patterns behind your urges, what worked, and what to change next week.</string>
     <string name="review_loading">Looking at your week…</string>
     <string name="review_refresh">Write it again</string>
-    <string name="review_consent_body">To write your weekly deep dive, your entries from the last seven days (with their notes), your evening check-in counts and patterns from your history are sent to %1$s, the AI service you chose. Your evening lines are never sent. You can turn this off in Settings.</string>
+    <string name="review_consent_body">To write your weekly deep dive, your entries from the last seven days (with their notes), your evening check-in counts, the reason you wrote and patterns from your history are sent to %1$s, the AI service you chose. Your evening lines are never sent. You can turn this off in Settings.</string>
     <string name="recent_more">Show more</string>
     <string name="deep_more">Show the rest</string>
     <string name="deep_less">Show less</string>
@@ -349,7 +349,7 @@
 
     <!-- Reminders settings -->
     <string name="reminders_title">Reminders</string>
-    <string name="reminders_body">Both are plain notifications that never mention what this app is for.</string>
+    <string name="reminders_body">They are plain notifications that never mention what this app is for.</string>
     <string name="reminders_checkin">Check in about 20 minutes after an urge</string>
     <string name="reminders_nudge">Daily heads-up before your tough time of day</string>
     <string name="reminders_off">Off</string>
@@ -360,7 +360,7 @@
     <string name="shortcut_ride_long">I feel an urge: start a ride</string>
 
     <!-- The full log -->
-    <string name="log_open">See every entry (%1$d)</string>
+    <string name="log_open">Every entry and your patterns (%1$d)</string>
     <string name="log_title">Your log</string>
     <string name="log_total">%1$d entries in all, every one you have logged.</string>
     <string name="log_14_days">14 days</string>
@@ -388,7 +388,7 @@
     <string name="week_plan_days">Went to plan: %1$d of the last %2$d days you checked in.</string>
     <string name="reminders_evening">Evening check-in: how was today?</string>
     <string name="notif_evening_title">Evening check-in</string>
-    <string name="notif_evening_text">Sleep, study, body, people: thirty seconds.</string>
+    <string name="notif_evening_text">Sleep, study, body, people and tomorrow\'s first move: a minute.</string>
 
     <string name="starting_title">Starting your ride in %1$d…</string>
     <string name="starting_body">This locks your other apps. If you didn\'t mean to start it, cancel now.</string>
@@ -433,4 +433,36 @@
     <string name="entry_delete">Delete this entry</string>
     <string name="entry_delete_title">Delete this entry?</string>
     <string name="entry_delete_body">It\'s removed from your journal for good, with its deep dive. Your counts and patterns update without it.</string>
+    <!-- Why they are doing this, the proof from their own record, and the first move -->
+    <string name="reason_title">Why you\'re doing this</string>
+    <string name="reason_body">Write it now, on a calm day, for the version of you at 23:00. It shows during every ride and after a slip, and your coach brings it back once. It is sent to the AI with your deep dives, like the text about you below.</string>
+    <string name="reason_label">In your own words</string>
+    <string name="ride_why_title">You wrote this for now</string>
+    <string name="ride_record_title">Your record</string>
+    <string name="proof_rides">In %1$d of your last %2$d rides, the urge passed or got weaker.</string>
+    <string name="proof_total">Urges you\'ve ridden out so far: %1$d.</string>
+    <string name="slip_why_title">What you wrote</string>
+    <string name="slip_why_note">A slip is one event. This didn\'t stop being true.</string>
+    <string name="setup_reason">Write why you\'re doing this (Settings). It shows up when you ride an urge.</string>
+    <string name="setup_contact">Save someone to call (Settings), so a hard moment is one tap from a person.</string>
+    <string name="setup_open_settings">Open settings</string>
+    <string name="setup_hide">Hide this</string>
+    <string name="day_next_label">Tomorrow\'s first move</string>
+    <string name="day_next_hint">One small, specific thing (optional)</string>
+    <string name="first_move_title">Your first move for today</string>
+    <string name="first_move_start">Start a %1$d-minute focus block with this</string>
+    <string name="first_move_done">Done, or not today</string>
+    <!-- What the entries show -->
+    <string name="patterns_title">What your entries show</string>
+    <string name="patterns_intro">Counted from your %1$d entries on this phone, nothing guessed. A line only appears once it has repeated at least three times.</string>
+    <string name="patterns_chain">The usual run-up: “%1$s”, then “%2$s” (%3$d of %4$d entries that named both).</string>
+    <string name="patterns_place">Where it lands most: “%1$s” (%2$d of %3$d entries that named a place).</string>
+    <string name="patterns_window">When it lands most: between %1$s and %2$s (%3$d of %4$d entries).</string>
+    <string name="patterns_slip_place">Where slips happen most: “%1$s” (%2$d of %3$d slips).</string>
+    <string name="patterns_slips_late">When slips happen: %1$d of %2$d came late at night (22:00 to 05:00).</string>
+    <string name="patterns_works">What helped: “%1$s”. The urge passed or got weaker in %2$d of the %3$d rides where you tried it.</string>
+    <!-- The weekly look back -->
+    <string name="reminders_weekly">Weekly look back, on Sundays</string>
+    <string name="notif_weekly_title">Weekly look back</string>
+    <string name="notif_weekly_text">Your week is ready to look at. It takes a couple of minutes.</string>
 </resources>

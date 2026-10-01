@@ -72,6 +72,15 @@ internal fun Page(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+/** The first move's focus block: as short as Déchaîner allows, so starting is easy. */
+private const val FIRST_MOVE_MINUTES = 25
+
+private fun focusResultRes(r: Door.Result): Int = when (r) {
+    Door.Result.SENT -> R.string.focus_sent
+    Door.Result.NOT_INSTALLED -> R.string.door_not_installed
+    Door.Result.NO_PERMISSION -> R.string.door_no_permission
+}
+
 private fun greetingRes(hour: Int): Int = when {
     hour < 5 -> R.string.greeting_night
     hour < 12 -> R.string.greeting_morning
@@ -83,9 +92,14 @@ private fun greetingRes(hour: Int): Int = when {
 data class SetupState(
     val dechainerInstalled: Boolean,
     val canReachDechainer: Boolean,
-    val aiReady: Boolean
+    val aiReady: Boolean,
+    /** They have written why they are doing this. */
+    val reasonWritten: Boolean,
+    /** They have saved someone to call. */
+    val contactSet: Boolean
 ) {
-    val complete: Boolean get() = dechainerInstalled && canReachDechainer && aiReady
+    val complete: Boolean
+        get() = dechainerInstalled && canReachDechainer && aiReady && reasonWritten && contactSet
 }
 
 @Composable
@@ -118,7 +132,13 @@ data class HomeCards(
     /** It is evening and today has not been answered yet. */
     val askDay: Boolean,
     /** Days that went to plan out of the days checked in over the last week, or null. */
-    val planDays: Pair<Int, Int>?
+    val planDays: Pair<Int, Int>?,
+    /** What they said last night they would do first today, until they tick it off; null if nothing is waiting. */
+    val firstMove: String?,
+    /** They hid the "getting set up" card. */
+    val setupHidden: Boolean,
+    /** There are enough entries for a weekly deep dive. */
+    val reviewReady: Boolean
 )
 
 @Composable
@@ -141,9 +161,11 @@ fun HomeScreen(
     onShare: () -> Unit,
     onLog: () -> Unit,
     onDay: (DayLog) -> Unit,
-    onFocus: (Int) -> Door.Result,
+    onFocus: (Int, String) -> Door.Result,
     onKept: () -> Unit,
-    keptCount: Int
+    keptCount: Int,
+    onDismissMove: () -> Unit,
+    onHideSetup: () -> Unit
 ) {
     val now = System.currentTimeMillis()
     val week = Insights.week(entries, now)
@@ -165,7 +187,7 @@ fun HomeScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(25, 50, 90).forEach { minutes ->
                         TextButton(onClick = {
-                            focusResult = onFocus(minutes)
+                            focusResult = onFocus(minutes, "")
                             askFocus = false
                         }) { Text(stringResource(R.string.focus_minutes, minutes)) }
                     }
@@ -174,7 +196,6 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = { askFocus = false }) { Text(stringResource(R.string.delete_no)) } }
         )
     }
-    val recentCount = entries.count { !it.isStub && it.time >= now - 30L * 24 * 60 * 60 * 1000 }
     Page {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -212,13 +233,7 @@ fun HomeScreen(
             }
             focusResult?.let {
                 Text(
-                    stringResource(
-                        when (it) {
-                            Door.Result.SENT -> R.string.focus_sent
-                            Door.Result.NOT_INSTALLED -> R.string.door_not_installed
-                            Door.Result.NO_PERMISSION -> R.string.door_no_permission
-                        }
-                    ),
+                    stringResource(focusResultRes(it)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -230,6 +245,7 @@ fun HomeScreen(
             // The evening check-in: the parts of a good day, one line, then how it went against the plan.
             var areas by remember { mutableStateOf(emptySet<Area>()) }
             var note by remember { mutableStateOf("") }
+            var next by remember { mutableStateOf("") }
             Panel {
                 Text(stringResource(R.string.day_title), style = MaterialTheme.typography.titleLarge)
                 Text(
@@ -256,8 +272,17 @@ fun HomeScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // The first move for tomorrow, written while today is fresh: it comes back on Home in the morning.
+                OutlinedTextField(
+                    value = next,
+                    onValueChange = { next = it.replace('\n', ' ').take(DayLog.NEXT_LIMIT) },
+                    label = { Text(stringResource(R.string.day_next_label)) },
+                    placeholder = { Text(stringResource(R.string.day_next_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 DayResult.entries.forEach { r ->
-                    OutlinedButton(onClick = { onDay(DayLog(r, areas, note.trim())) }, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { onDay(DayLog(r, areas, note.trim(), next.trim())) }, modifier = Modifier.fillMaxWidth()) {
                         Text(label("day_", r))
                     }
                 }
@@ -273,6 +298,23 @@ fun HomeScreen(
                     Text(stringResource(R.string.checkin_card_button))
                 }
                 TextButton(onClick = onDropRide) { Text(stringResource(R.string.checkin_card_drop)) }
+            }
+        }
+
+        // Last night's plan, one tap from a locked focus block that already knows what it is for.
+        if (cards.firstMove != null && !cards.askDay) {
+            Panel(highlight = true) {
+                Text(stringResource(R.string.first_move_title), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "\u201C${cards.firstMove}\u201D",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+                )
+                Button(
+                    onClick = { focusResult = onFocus(FIRST_MOVE_MINUTES, cards.firstMove) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.first_move_start, FIRST_MOVE_MINUTES)) }
+                focusResult?.let { Text(stringResource(focusResultRes(it)), style = MaterialTheme.typography.bodyMedium) }
+                TextButton(onClick = onDismissMove) { Text(stringResource(R.string.first_move_done)) }
             }
         }
 
@@ -304,14 +346,20 @@ fun HomeScreen(
             }
         }
 
-        if (!setup.complete) {
+        if (!setup.complete && !cards.setupHidden) {
             Eyebrow(stringResource(R.string.setup_title))
             Panel {
                 SetupRow(setup.dechainerInstalled, stringResource(R.string.setup_dechainer))
                 if (setup.dechainerInstalled) {
                     SetupRow(setup.canReachDechainer, stringResource(R.string.setup_permission))
                 }
+                SetupRow(setup.reasonWritten, stringResource(R.string.setup_reason))
+                SetupRow(setup.contactSet, stringResource(R.string.setup_contact))
                 SetupRow(setup.aiReady, stringResource(R.string.setup_ai))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = onSettings) { Text(stringResource(R.string.setup_open_settings)) }
+                    TextButton(onClick = onHideSetup) { Text(stringResource(R.string.setup_hide)) }
+                }
             }
         }
 
@@ -336,7 +384,7 @@ fun HomeScreen(
                 TextButton(onClick = onShare) { Text(stringResource(R.string.share_week)) }
             }
         }
-        if (recentCount >= 3) {
+        if (cards.reviewReady) {
             OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.review_button))
             }
@@ -388,7 +436,7 @@ fun HomeScreen(
                 }
             }
             OutlinedButton(onClick = onLog, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.log_open, entries.size))
+                Text(stringResource(R.string.log_open, entries.count { !it.isStub }))
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -404,6 +452,8 @@ fun RideScreen(
     statusChecked: Boolean,
     step: Step,
     myPlan: MyPlan?,
+    reason: String,
+    proof: Insights.Proof?,
     onDone: () -> Unit,
     onLonger: () -> Unit,
     onLeave: () -> Unit
@@ -455,6 +505,28 @@ fun RideScreen(
         )
         Eyebrow(stringResource(R.string.ride_one_thing))
         Panel(highlight = true) { Text(stringResource(stepRes(step)), style = MaterialTheme.typography.bodyLarge) }
+        // Their own words first, then what their own record says. Nothing here is the app's opinion.
+        if (reason.isNotBlank() || proof != null) {
+            Eyebrow(stringResource(if (reason.isNotBlank()) R.string.ride_why_title else R.string.ride_record_title))
+            Panel {
+                if (reason.isNotBlank()) {
+                    Text(
+                        "\u201C${reason.trim()}\u201D",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+                    )
+                }
+                proof?.let {
+                    Text(
+                        when (it) {
+                            is Insights.Proof.Rides -> stringResource(R.string.proof_rides, it.worked, it.rides)
+                            is Insights.Proof.Total -> stringResource(R.string.proof_total, it.ridden)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
         myPlan?.let {
             Eyebrow(stringResource(R.string.ride_your_rule))
             Panel { Text(it.text, style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)) }
@@ -657,6 +729,7 @@ fun PlanScreen(
     plans: List<MyPlan>,
     ai: AiState,
     providerLabel: String,
+    reason: String,
     onSavePlan: (String) -> Unit,
     onConsent: (Boolean) -> Unit,
     onRetry: () -> Unit,
@@ -823,6 +896,21 @@ fun PlanScreen(
         }
 
         if (entry.slipped) {
+            // The lapse is one event; what they wrote on a calm day did not stop being true.
+            if (reason.isNotBlank() && !crisis) {
+                Eyebrow(stringResource(R.string.slip_why_title))
+                Panel {
+                    Text(
+                        "\u201C${reason.trim()}\u201D",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+                    )
+                    Text(
+                        stringResource(R.string.slip_why_note),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Text(
                 stringResource(R.string.slip_outro),
                 style = MaterialTheme.typography.bodyLarge,
@@ -1199,6 +1287,8 @@ fun SettingsScreen(
     var checkIn by remember { mutableStateOf(reminders.checkIn) }
     var nudge by remember { mutableIntStateOf(reminders.nudgeMinute) }
     var evening by remember { mutableIntStateOf(reminders.eveningMinute) }
+    var weekly by remember { mutableIntStateOf(reminders.weeklyMinute) }
+    var reason by remember { mutableStateOf(store.reason()) }
     var editingPlan by remember { mutableStateOf<MyPlan?>(null) }
     var planText by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -1284,6 +1374,24 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium)
 
+        // Written on a calm day for the hard one: it is shown during every ride and after a slip. Saved as it is typed.
+        Eyebrow(stringResource(R.string.reason_title))
+        Panel {
+            Text(
+                stringResource(R.string.reason_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = reason,
+                onValueChange = { reason = it.take(REASON_LIMIT); store.setReason(reason) },
+                label = { Text(stringResource(R.string.reason_label)) },
+                minLines = 2,
+                maxLines = 5,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         // Set on a calm day, so on a hard one the person is a tap away. Saved as it is typed.
         Eyebrow(stringResource(R.string.contact_title))
         Panel {
@@ -1364,6 +1472,31 @@ fun SettingsScreen(
                                 evening = minute
                                 reminders.eveningMinute = minute
                                 Notifier.rearmEvening(context)
+                            }
+                        },
+                        label = { Text(Times.clock(minute)) }
+                    )
+                }
+            }
+            Text(stringResource(R.string.reminders_weekly), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = weekly < 0,
+                    onClick = {
+                        weekly = -1
+                        reminders.weeklyMinute = -1
+                        Notifier.rearmWeekly(context)
+                    },
+                    label = { Text(stringResource(R.string.reminders_off)) }
+                )
+                listOf(17 * 60, 18 * 60, 19 * 60, 20 * 60, 21 * 60).forEach { minute ->
+                    FilterChip(
+                        selected = weekly == minute,
+                        onClick = {
+                            onNeedNotifications {
+                                weekly = minute
+                                reminders.weeklyMinute = minute
+                                Notifier.rearmWeekly(context)
                             }
                         },
                         label = { Text(Times.clock(minute)) }

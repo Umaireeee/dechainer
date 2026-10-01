@@ -1299,5 +1299,27 @@ class JournalLogicTest {
         assertTrue("Never use it as a stick" in Prompt.systemFor(true))
         assertTrue("never as a stick" in WEEKLY_SYSTEM)
     }
+
+    @Test
+    fun theWeeklyLookBackWaitsForSomethingToLookAt() {
+        val now = ms(30, 20)
+        val e = { day: Int -> Entry(ms(day, 12), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED) }
+        assertFalse(Insights.reviewReady(emptyList(), now))
+        // An empty ride note is not an entry.
+        assertFalse(Insights.reviewReady(listOf(e(28), e(29), Entry(ms(30, 1), false, emptyMap(), null)), now))
+        assertTrue(Insights.reviewReady(listOf(e(27), e(28), e(29)), now))
+        // Entries from over a month ago are not something to look back at.
+        assertFalse(Insights.reviewReady(listOf(e(1), e(2), e(3)), ms(30, 20) + 20L * 24 * 60 * 60 * 1000))
+    }
+
+    @Test
+    fun aFirstMoveIsOneShortLineAndTravelsToDechainerAsAnIntention() {
+        val long = "x".repeat(200)
+        assertEquals(DayLog.NEXT_LIMIT, DayLog.fromStored(org.json.JSONObject("""{"r":"PLANNED","x":"$long"}"""))!!.next.length)
+        assertEquals(80, DayLog.NEXT_LIMIT)
+        // The door carries it only when there is one.
+        assertEquals("", DoorAction(DoorAction.FOCUS_BLOCK, 25).intention)
+        assertEquals("FAR ch. 6", DoorAction(DoorAction.FOCUS_BLOCK, 25, "FAR ch. 6").intention)
+    }
 }
 

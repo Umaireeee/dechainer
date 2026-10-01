@@ -7,6 +7,7 @@ import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.RideLock
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.UrgeActions
+import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.security.SecurityManager
 import timber.log.Timber
@@ -21,6 +22,7 @@ class UrgeActionReceiver : BroadcastReceiver() {
         if (intent.action != UrgeActions.ACTION) return
         val kind = UrgeActions.parseKind(intent.getStringExtra(UrgeActions.EXTRA_KIND)) ?: return
         val minutes = UrgeActions.clampMinutes(kind, intent.getIntExtra(UrgeActions.EXTRA_MINUTES, 0))
+        val intention = FocusLogMath.cleanIntention(intent.getStringExtra(UrgeActions.EXTRA_INTENTION))
         val ctx = context.applicationContext
         // Blocking needs Device Owner; without it there is nothing this could honestly do.
         if (!DeviceOwnerRepository.isDeviceOwner()) return
@@ -43,7 +45,10 @@ class UrgeActionReceiver : BroadcastReceiver() {
                     }
                     UrgeActions.Kind.FOCUS_BLOCK -> {
                         Pomodoro.ensureLoaded(ctx)
-                        Pomodoro.startBlock(ctx, System.currentTimeMillis() + minutes * 60_000L)
+                        val started = Pomodoro.startBlock(ctx, System.currentTimeMillis() + minutes * 60_000L)
+                        // Only a block this request started: the plan made the evening before is what the
+                        // first session is for, and the question at its end asks about exactly that.
+                        if (started && intention != null) Pomodoro.setIntention(ctx, intention)
                     }
                 }
                 ScheduleEnforcer.sync(ctx)

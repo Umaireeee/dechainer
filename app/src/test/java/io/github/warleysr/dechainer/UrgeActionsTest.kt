@@ -3,6 +3,7 @@ package io.github.warleysr.dechainer
 import io.github.warleysr.dechainer.data.RideLock
 import io.github.warleysr.dechainer.data.UrgeActions
 import io.github.warleysr.dechainer.data.UrgeActions.Kind
+import io.github.warleysr.dechainer.focus.FocusLogMath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -55,9 +56,22 @@ class UrgeActionsTest {
         assertEquals(30 * 60_000L, RideLock.remaining(now + 10 * 60 * 60_000L, now))
     }
 
+    // The journal's "first move" rides along with a focus block as the intention of its first session.
+    @Test
+    fun aFirstMoveArrivesAsAShortSingleLineIntention() {
+        assertEquals("intention", UrgeActions.EXTRA_INTENTION)
+        assertEquals("FAR ch. 6 Q1 to 10", FocusLogMath.cleanIntention("FAR ch. 6\nQ1 to 10"))
+        assertEquals(80, FocusLogMath.cleanIntention("x".repeat(200))!!.length)
+        assertNull(FocusLogMath.cleanIntention("  \n "))
+        assertNull(FocusLogMath.cleanIntention(null))
+    }
+
     @Test
     fun theJournalAndEmergencyAppsStayOpenDuringARideLock() {
         assertTrue(RideLock.JOURNAL_PACKAGE in RideLock.ALWAYS_OPEN)
+        // A ride is asked for from the brick screen with these two, as the journal's tile does.
+        assertEquals("action", RideLock.JOURNAL_RIDE_EXTRA)
+        assertEquals("ride", RideLock.JOURNAL_RIDE_VALUE)
         assertTrue("com.android.emergency" in RideLock.ALWAYS_OPEN)
     }
 }

@@ -166,6 +166,9 @@ class AiSettings(context: Context) {
 
 const val ABOUT_LIMIT = 600
 
+/** The longest reason a person can write for themselves: shown during every ride, and sent with the deep dives. */
+const val REASON_LIMIT = 300
+
 /** AES-GCM with a key held in the Android Keystore, so the AI key is not readable from a backup or a copy of the files. */
 object SecretBox {
     private const val ALIAS = "urge_journal_ai_key"
@@ -653,7 +656,7 @@ Reply with ONLY one JSON object: no code fences, no text before or after it, no 
         life: List<String> = emptyList(), reason: String = ""
     ): String = buildString {
         if (about.isNotBlank()) appendLine("About them (their own words): ${about.trim().take(ABOUT_LIMIT)}")
-        if (reason.isNotBlank()) appendLine("Their reason, written for hard moments (their own words): ${reason.trim().take(300)}")
+        if (reason.isNotBlank()) appendLine("Their reason, written for hard moments (their own words): ${reason.trim().take(REASON_LIMIT)}")
         appendLine(if (entry.slipped) "This person just SLIPPED (acted on the urge)." else "This person is having an urge right now.")
         appendLine("Local hour: ${java.time.Instant.ofEpochMilli(entry.time).atZone(java.time.ZoneId.systemDefault()).hour}:00")
         Q.entries.forEach { q ->
@@ -745,7 +748,7 @@ Reply with ONLY one JSON object: no code fences, no text before or after it, no 
         val before = Insights.week(entries, now - WEEK_MS, zone)
         return buildString {
             if (about.isNotBlank()) appendLine("About them (their own words): ${about.trim().take(ABOUT_LIMIT)}")
-            if (reason.isNotBlank()) appendLine("Their reason, written for hard moments (their own words): ${reason.trim().take(300)}")
+            if (reason.isNotBlank()) appendLine("Their reason, written for hard moments (their own words): ${reason.trim().take(REASON_LIMIT)}")
             appendLine("Last 7 days: ${week.total} entries, ${week.resisted} ridden out, ${week.gaveIn} given in to or slipped.")
             if (Insights.real(entries).any { it.time < now - WEEK_MS }) {
                 appendLine("The 7 days before that: ${before.total} entries, ${before.resisted} ridden out, ${before.gaveIn} given in to or slipped.")

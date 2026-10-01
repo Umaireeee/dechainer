@@ -10,6 +10,9 @@ import androidx.core.content.edit
 class JournalStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("journal", Context.MODE_PRIVATE)
 
+    /** Small and separate: the reason is saved as it is typed, and that must not rewrite the whole journal each time. */
+    private val whyPrefs = context.applicationContext.getSharedPreferences("why", Context.MODE_PRIVATE)
+
     @Synchronized
     fun all(): List<Entry> = Entry.parseList(prefs.getString(KEY, null)).items.sortedBy { it.time }
 
@@ -131,13 +134,16 @@ class JournalStore(context: Context) {
 
     // ---- Why they are doing this ----
 
-    /** The person's own reason, written for the version of them at 23:00; shown during every ride and after a slip. */
+    /**
+     * The person's own reason, written for the version of them at 23:00; shown during every ride and
+     * after a slip. A setting like the "about me" text: "delete all my entries" leaves it.
+     */
     @Synchronized
-    fun reason(): String = prefs.getString(REASON, "") ?: ""
+    fun reason(): String = whyPrefs.getString(REASON, "") ?: ""
 
     @Synchronized
     fun setReason(text: String) {
-        prefs.edit(commit = true) { putString(REASON, text.trim().take(REASON_LIMIT)) }
+        whyPrefs.edit { putString(REASON, text.trim().take(REASON_LIMIT)) }
     }
 
     // ---- Deep dives the person chose to keep ----
@@ -242,7 +248,6 @@ class JournalStore(context: Context) {
         const val PLAN_LIMIT = 30
         const val KEPT = "kept"
         const val REASON = "reason"
-        const val REASON_LIMIT = 300
         const val KEPT_LIMIT = 200
     }
 }
@@ -292,6 +297,7 @@ object Door {
                 component = ComponentName(PKG, RECEIVER)
                 putExtra("kind", action.kind)
                 putExtra("minutes", action.minutes)
+                if (action.intention.isNotBlank()) putExtra("intention", action.intention.trim().take(DayLog.NEXT_LIMIT))
             }
         )
         return Result.SENT

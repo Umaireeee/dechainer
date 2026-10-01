@@ -93,6 +93,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.RideLock
 import io.github.warleysr.dechainer.focus.FocusLogMath
 import io.github.warleysr.dechainer.focus.Phase
 import io.github.warleysr.dechainer.focus.Pomodoro
@@ -350,6 +351,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 AllowedAppsRow(allowedApps)
             }
+            RideItOutButton()
         } else {
             // Only reachable for a single session left running by an older version.
             IconButton(onClick = { confirmStop = true }) {
@@ -758,6 +760,36 @@ private fun DialogSection(text: String) {
         style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+    )
+}
+
+/**
+ * An urge during a block: the phone is bricked, so the journal's ten-minute ride is one tap away
+ * from here, with its five-second countdown to cancel. Shown only when the journal is installed.
+ */
+@Composable
+private fun RideItOutButton() {
+    val context = LocalContext.current
+    val installed = remember {
+        runCatching { context.packageManager.getPackageInfo(RideLock.JOURNAL_PACKAGE, 0) }.isSuccess
+    }
+    if (!installed) return
+    Spacer(Modifier.height(24.dp))
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                context.packageManager.getLaunchIntentForPackage(RideLock.JOURNAL_PACKAGE)?.let {
+                    context.startActivity(it.putExtra(RideLock.JOURNAL_RIDE_EXTRA, RideLock.JOURNAL_RIDE_VALUE))
+                }
+            }
+        },
+        modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
+    ) { Text(stringResource(R.string.focus_ride_out)) }
+    Text(
+        stringResource(R.string.focus_ride_out_note),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 6.dp)
     )
 }
 

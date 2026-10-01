@@ -504,6 +504,8 @@
     <string name="focus_next_subject">Next session is for:</string>
     <string name="focus_block_start">Start focus block</string>
     <string name="focus_block_no_way_out">Bricked until the end. No way out.</string>
+    <string name="focus_ride_out">Urge hit? Ride it out</string>
+    <string name="focus_ride_out_note">Opens the Urge Journal\'s ten-minute ride, after a five-second countdown you can cancel. The Home button brings you back here.</string>
     <string name="focus_block_irreversible">Once you commit, nothing ends this block early. Not Stop, not your recovery code. Only the end time.</string>
     <string name="limit_source">Daily limit</string>
     <string name="limit_title">Daily limit · %1$s</string>
