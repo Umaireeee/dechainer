@@ -22,7 +22,10 @@ enum class SkipReason {
     REST_DAY,
 
     /** The urge lock outlasts the window, so there is nothing left to start. */
-    URGE_LOCK_OUTLASTS_WINDOW
+    URGE_LOCK_OUTLASTS_WINDOW,
+
+    /** Less than a block's minimum is left of the window, so it is not worth starting (blueprint 6.3). */
+    TOO_LITTLE_LEFT
 }
 
 /**
@@ -31,12 +34,20 @@ enum class SkipReason {
  * after the urge lock ends is not worth a block.
  */
 object FocusStartRule {
-    fun decide(now: Long, windowEndsAt: Long, punishmentActive: Boolean, restDay: Boolean, urgeEndsAt: Long): FocusStart = when {
+    fun decide(
+        now: Long, windowEndsAt: Long, punishmentActive: Boolean, restDay: Boolean, urgeEndsAt: Long,
+        minLeftMs: Long = 0L
+    ): FocusStart = when {
         windowEndsAt <= now -> FocusStart.Skip(SkipReason.WINDOW_OVER)
         punishmentActive -> FocusStart.Skip(SkipReason.PUNISHMENT_DAY)
         restDay -> FocusStart.Skip(SkipReason.REST_DAY)
         urgeEndsAt > now ->
-            if (urgeEndsAt < windowEndsAt) FocusStart.At(urgeEndsAt) else FocusStart.Skip(SkipReason.URGE_LOCK_OUTLASTS_WINDOW)
+            when {
+                urgeEndsAt >= windowEndsAt -> FocusStart.Skip(SkipReason.URGE_LOCK_OUTLASTS_WINDOW)
+                windowEndsAt - urgeEndsAt < minLeftMs -> FocusStart.Skip(SkipReason.TOO_LITTLE_LEFT)
+                else -> FocusStart.At(urgeEndsAt)
+            }
+        windowEndsAt - now < minLeftMs -> FocusStart.Skip(SkipReason.TOO_LITTLE_LEFT)
         else -> FocusStart.Now
     }
 }

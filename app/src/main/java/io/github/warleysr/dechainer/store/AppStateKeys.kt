@@ -33,6 +33,15 @@ object AppStateKeys {
     /** Set when the crash-loop breaker cut a punishment day short, so the day is on record as ended by the system. */
     const val PUNISHMENT_ABORTED_AT = "punishmentAbortedAt"
 
+    /** The running focus block's story, as [io.github.warleysr.dechainer.focus.FlowState] JSON. Absent when none runs. */
+    const val FOCUS_FLOW = "focusFlow"
+
+    /**
+     * The FOCUS timetable windows already started or skipped, as `scheduleId@windowStart` keys joined by
+     * newlines, newest last, so a window is acted on once however many wake-ups see it.
+     */
+    const val FOCUS_SETTLED = "focusSettled"
+
     /** Prefix of the flags that mark a one-off migration as done: `migrated:<name>`. */
     const val MIGRATED_PREFIX = "migrated:"
 }

@@ -7,8 +7,9 @@ class Migration(val from: Int, val to: Int, val statements: List<String>)
  * The schema history (blueprint section 7). Every change to the database is a new entry at the end;
  * an entry that has shipped is never edited. Pure, so the chain can be tested without a database.
  *
- * Version 1 is the skeleton: only `app_state`. The other tables of section 7 arrive with the phase
- * that first needs them, each as its own step here.
+ * Version 1 is the skeleton: only `app_state`. Version 2 (Phase 4) adds `focus_session` and
+ * `focus_checkin`. The other tables of section 7 arrive with the phase that first needs them, each
+ * as its own step here.
  */
 object Migrations {
     val ALL: List<Migration> = listOf(
@@ -16,6 +17,33 @@ object Migrations {
             from = 0, to = 1,
             statements = listOf(
                 "CREATE TABLE app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"
+            )
+        ),
+        Migration(
+            from = 1, to = 2,
+            statements = listOf(
+                // `id` is the start time in epoch millis (bumped by one on a clash), so a session keeps the
+                // identity the old log gave it: notifications, the log screen and the import all name it.
+                """CREATE TABLE focus_session (
+                    id INTEGER PRIMARY KEY NOT NULL,
+                    source TEXT NOT NULL,
+                    flavor TEXT NOT NULL,
+                    purpose TEXT NOT NULL DEFAULT '',
+                    started_at INTEGER NOT NULL,
+                    planned_end_at INTEGER NOT NULL,
+                    ended_at INTEGER,
+                    focused_minutes INTEGER NOT NULL DEFAULT 0,
+                    outcome TEXT
+                )""",
+                """CREATE TABLE focus_checkin (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    session_id INTEGER NOT NULL,
+                    at INTEGER NOT NULL,
+                    answer TEXT NOT NULL,
+                    reset_result TEXT NOT NULL DEFAULT 'NONE'
+                )""",
+                "CREATE INDEX focus_checkin_session ON focus_checkin (session_id)",
+                "CREATE INDEX focus_session_started ON focus_session (started_at)"
             )
         )
     )

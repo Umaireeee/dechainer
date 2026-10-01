@@ -82,4 +82,37 @@ class BlockScheduleTest {
         val sixDays = permanent.copy(days = allDays - DayOfWeek.SUNDAY)
         assertEquals(1440, LockSafety.longestUnlockedGapMinutes(listOf(sixDays)))
     }
+
+    // ---- The entry type (blueprint D12, 13) ----
+
+    @Test
+    fun anEntryStoredBeforeTheTypeExistedIsABlockSchedule() {
+        val old = org.json.JSONObject().put("id", "x").put("name", "n").put("start", 540).put("end", 1020)
+        val parsed = BlockSchedule.fromJson(old)
+        assertEquals(io.github.warleysr.dechainer.models.ScheduleType.BLOCK, parsed.type)
+        assertFalse(parsed.isFocus)
+    }
+
+    @Test
+    fun theTypeSurvivesBeingStoredAndReadBack() {
+        val focus = BlockSchedule("f", "Study", startMinute = 540, endMinute = 660, type = io.github.warleysr.dechainer.models.ScheduleType.FOCUS)
+        assertEquals(focus, BlockSchedule.fromJson(focus.toJson()))
+        assertTrue(BlockSchedule.fromJson(focus.toJson()).isFocus)
+    }
+
+    @Test
+    fun anUnknownStoredTypeFallsBackToBlock() {
+        val odd = BlockSchedule("f", "n").toJson().put("type", "SOMETHING_NEW")
+        assertEquals(io.github.warleysr.dechainer.models.ScheduleType.BLOCK, BlockSchedule.fromJson(odd).type)
+    }
+
+    @Test
+    fun theWindowStartIsTheDayItBeganOn() {
+        val s = BlockSchedule("1", "t", days = setOf(DayOfWeek.MONDAY), startMinute = 22 * 60, endMinute = 6 * 60)
+        assertEquals(at(0, 22, 0), s.currentWindowStart(at(0, 23, 0)))
+        assertEquals(at(0, 22, 0), s.currentWindowStart(at(1, 5, 59)))
+        assertNull(s.currentWindowStart(at(1, 6, 0)))
+        val day = BlockSchedule("2", "t", days = setOf(DayOfWeek.MONDAY), startMinute = 9 * 60, endMinute = 17 * 60)
+        assertEquals(at(0, 9, 0), day.currentWindowStart(at(0, 12, 0)))
+    }
 }

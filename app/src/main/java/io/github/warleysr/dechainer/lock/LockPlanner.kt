@@ -36,14 +36,17 @@ object LockPlanner {
                 desiredRestrictions = emptySet(), desiredSites = emptySet(), brick = false, brickStatus = null,
                 punishmentActive = punishmentActive, holdClock = false,
                 expiredFocusBlock = state.focus.brickEndsAt in 1..now,
-                nextWakeAt = (schedulesNext + listOfNotNull(punishmentStart)).minOrNull()
+                nextWakeAt = (schedulesNext + listOfNotNull(punishmentStart, state.focus.wakeAt.takeIf { it > now }))
+                    .filter { it > now }.minOrNull()
             )
         }
 
         val holds = mutableListOf<Hold>()
         // The bricks that run, with the owner's apps each lets through (for the pin).
         val running = mutableListOf<RunningBrick>()
-        val activeSchedules = state.schedules.filter { it.isActiveAt(local) }
+        // A FOCUS entry holds nothing by itself: when its window opens it starts a focus block, which
+        // is the hold (see FocusTimetable). Its boundaries are still wake-ups, in schedulesNext above.
+        val activeSchedules = state.schedules.filter { !it.isFocus && it.isActiveAt(local) }
 
         // What each open window takes away: its own list, or with "allow only" on, every app with an
         // icon that isn't on its list.
@@ -111,7 +114,8 @@ object LockPlanner {
             punishmentActive = punishmentActive,
             holdClock = true,
             expiredFocusBlock = expiredFocusBlock,
-            nextWakeAt = (schedulesNext + holdEnds + listOfNotNull(punishmentStart)).filter { it > now }.minOrNull()
+            nextWakeAt = (schedulesNext + holdEnds + listOfNotNull(punishmentStart, state.focus.wakeAt))
+                .filter { it > now }.minOrNull()
         )
     }
 

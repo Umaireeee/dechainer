@@ -29,4 +29,26 @@ object Rules {
      * chime: the phone was off or the alarm was lost, and ringing now would only be noise.
      */
     const val LATE_BLOCK_END_MS = 30_000L
+
+    /** Section 6.3. A focus block is at least this long (also the shortest session a block plans). */
+    const val FOCUS_BLOCK_MIN_MS = 10 * 60_000L
+
+    /** Section 5.2. A focus block is at most this long. */
+    const val FOCUS_BLOCK_MAX_MS = 8 * 60 * 60_000L
+
+    /** D13. How long the pre-session prompt waits before the session runs as special. */
+    const val FOCUS_PROMPT_TIMEOUT_MS = 2 * 60_000L
+
+    /** D14. How long a check-in waits before it is recorded as unanswered. */
+    const val FOCUS_CHECKIN_TIMEOUT_MS = 5 * 60_000L
+
+    /** Section 6.3. The two halves of the reset: meditation, then going outside. */
+    const val FOCUS_RESET_MEDITATION_MS = 5 * 60_000L
+    const val FOCUS_RESET_OUTSIDE_MS = 5 * 60_000L
+
+    /** Section 6.3. How long the "your call" message is shown before the plain timer takes over. */
+    const val FOCUS_NOT_READY_MESSAGE_MS = 15_000L
+
+    /** Section 6.3. The shortest purpose that counts. */
+    const val FOCUS_PURPOSE_MIN_CHARS = 3
 }

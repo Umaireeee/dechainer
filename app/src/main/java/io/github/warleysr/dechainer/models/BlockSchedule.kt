@@ -10,6 +10,13 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /**
+ * What a timetable entry does when its window opens (blueprint D12, 6.3). [BLOCK] is the original
+ * kind: it suspends apps, applies restrictions and blocks sites. [FOCUS] starts a focus block (a
+ * brick) for its window instead and holds nothing by itself.
+ */
+enum class ScheduleType { BLOCK, FOCUS }
+
+/**
  * A recurring block window. While the window is open, [packages] are suspended, the Android user
  * [restrictions] ("services") are applied and [websites] are added to the browser URL blocklist.
  * When it closes, everything the schedule applied is released again, and the cycle repeats on
@@ -34,8 +41,12 @@ data class BlockSchedule(
      * Study mode: [packages] are the only apps allowed during the window — everything else with an
      * icon is suspended (see ScheduleEnforcer).
      */
-    val allowOnly: Boolean = false
+    val allowOnly: Boolean = false,
+    /** [ScheduleType.BLOCK] for everything stored before the type existed. */
+    val type: ScheduleType = ScheduleType.BLOCK
 ) {
+    val isFocus: Boolean get() = type == ScheduleType.FOCUS
+
     val crossesMidnight: Boolean get() = endMinute <= startMinute
 
     /** Length of one window in minutes (1440 when start == end). */
@@ -63,6 +74,15 @@ data class BlockSchedule(
         val endDate = if (crossesMidnight && minute >= startMinute) now.toLocalDate().plusDays(1)
         else now.toLocalDate()
         return LocalDateTime.of(endDate, endTime)
+    }
+
+    /** Wall-clock start of the window that is open at [now], or null if it isn't open. */
+    fun currentWindowStart(now: LocalDateTime): LocalDateTime? {
+        if (!isActiveAt(now)) return null
+        val minute = now.hour * 60 + now.minute
+        val startDate = if (crossesMidnight && minute < startMinute) now.toLocalDate().minusDays(1)
+        else now.toLocalDate()
+        return LocalDateTime.of(startDate, LocalTime.of(startMinute / 60, startMinute % 60))
     }
 
     /** Every start/end instant of this schedule from [from] onward, over the next [daysAhead] days. */
@@ -112,6 +132,7 @@ data class BlockSchedule(
         put("websites", JSONArray(websites.toList()))
         put("lockWhileActive", lockWhileActive)
         put("allowOnly", allowOnly)
+        put("type", type.name)
     }
 
     companion object {
@@ -127,7 +148,9 @@ data class BlockSchedule(
             restrictions = obj.optJSONArray("restrictions").toStringList().toSet(),
             websites = obj.optJSONArray("websites").toStringList().toSet(),
             lockWhileActive = obj.optBoolean("lockWhileActive", false),
-            allowOnly = obj.optBoolean("allowOnly", false)
+            allowOnly = obj.optBoolean("allowOnly", false),
+            // Entries stored before the type existed have none: they are block schedules (blueprint 13).
+            type = runCatching { ScheduleType.valueOf(obj.optString("type", "BLOCK")) }.getOrDefault(ScheduleType.BLOCK)
         )
 
         private fun JSONArray?.toStringList(): List<String> =

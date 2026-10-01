@@ -52,7 +52,12 @@ data class FocusInput(
      */
     val sessionLockEndsAt: Long = 0L,
     /** Apps the owner allowed during a focus block or a locked session. */
-    val allowedApps: Set<String> = emptySet()
+    val allowedApps: Set<String> = emptySet(),
+    /**
+     * The next time the focus session's own clock needs a wake-up (a prompt or check-in timeout, a
+     * reset step), or 0. The block's end is already one; this is for the moments inside it.
+     */
+    val wakeAt: Long = 0L
 )
 
 /** Daily time limits: the apps already out of time today, and when the day resets. */

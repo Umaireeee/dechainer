@@ -323,4 +323,30 @@ class LockPlannerTest {
         val p = plan(at(10), state(focus = FocusInput(brickEndsAt = at(11), sessionLockEndsAt = at(10, 20))))
         assertEquals(listOf(LockMode.FOCUS_BLOCK), p.holds.map { it.mode })
     }
+
+    // ---- FOCUS timetable entries (Phase 4) ----
+
+    @Test
+    fun aFocusEntryHoldsNothingByItselfButItsBoundariesAreWakeUps() {
+        val entry = BlockSchedule(
+            "study", "Study", startMinute = 14 * 60, endMinute = 16 * 60, packages = setOf("games"),
+            restrictions = setOf("no_config_wifi"), websites = setOf("example.com"),
+            type = io.github.warleysr.dechainer.models.ScheduleType.FOCUS
+        )
+        val open = plan(at(15), state(listOf(entry)))
+        assertTrue(open.holds.isEmpty())
+        assertTrue(open.desiredApps.isEmpty())
+        assertTrue(open.desiredSites.isEmpty())
+        assertEquals(setOf(LockRestrictions.DATE_TIME), open.desiredRestrictions)
+        assertFalse(open.brick)
+        assertEquals("the window's end is the next boundary", at(16), open.nextWakeAt)
+        assertEquals("and its start is one before it opens", at(14), plan(at(13), state(listOf(entry))).nextWakeAt)
+    }
+
+    @Test
+    fun theFocusFlowsOwnDeadlineIsAWakeUpToo() {
+        val s = state(focus = FocusInput(brickEndsAt = at(16), wakeAt = at(14, 2)))
+        assertEquals(at(14, 2), plan(at(14), s).nextWakeAt)
+        assertEquals("a deadline that has passed is not a wake-up", at(16), plan(at(14, 3), s).nextWakeAt)
+    }
 }
