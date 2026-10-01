@@ -64,6 +64,16 @@ class LockPlannerTest {
     }
 
     @Test
+    fun withoutDeviceOwnerAnEndedBlockIsStillFlaggedSoItsRecordCanBeClosed() {
+        val end = at(14, 30)
+        val s = state(focus = FocusInput(brickEndsAt = end), deviceOwner = false)
+        assertTrue(plan(end, s).expiredFocusBlock)
+        assertFalse("a block still running is not flagged", plan(end - 1, s).expiredFocusBlock)
+        assertFalse("and nothing is blocked either way", plan(end - 1, s).brick)
+        assertFalse(plan(at(12), state(deviceOwner = false)).expiredFocusBlock)
+    }
+
+    @Test
     fun withoutDeviceOwnerNothingIsAppliedButTheNextBoundaryIsStillWatched() {
         val p = plan(at(8), state(listOf(schedule("work", 9 * 60, 17 * 60, "games")), deviceOwner = false))
         assertTrue(p.desiredApps.isEmpty())

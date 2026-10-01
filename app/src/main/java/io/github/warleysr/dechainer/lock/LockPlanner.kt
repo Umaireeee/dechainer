@@ -21,11 +21,13 @@ object LockPlanner {
         val schedulesNext = state.schedules.flatMap { it.boundariesAfter(zoned) }.map { it.toInstant().toEpochMilli() }
 
         if (!state.deviceOwner) {
-            // Nothing can be applied without Device Owner; the alarm still wakes the engine at each boundary.
+            // Nothing can be applied without Device Owner; the alarm still wakes the engine at each
+            // boundary. A stored block that has ended is still flagged: the record is closed from the
+            // time on any phone, so the screen never keeps showing a block that is over.
             return LockPlan(
                 deviceOwner = false, holds = emptyList(), desiredApps = emptySet(),
                 desiredRestrictions = emptySet(), desiredSites = emptySet(), brick = false, holdClock = false,
-                expiredFocusBlock = false, nextWakeAt = schedulesNext.minOrNull()
+                expiredFocusBlock = state.focus.brickEndsAt in 1..now, nextWakeAt = schedulesNext.minOrNull()
             )
         }
 

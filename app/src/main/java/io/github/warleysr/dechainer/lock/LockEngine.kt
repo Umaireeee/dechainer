@@ -148,8 +148,14 @@ object LockEngine {
 
         if (!dpm.isDeviceOwnerApp(ctx.packageName)) {
             val none = PhoneFacts(emptySet(), emptySet(), emptySet(), emptySet())
+            Pomodoro.ensureLoaded(ctx)
+            val st = Pomodoro.state.value
             return Gathered(
-                LockState(deviceOwner = false, schedules = schedules, phone = none),
+                LockState(
+                    deviceOwner = false, schedules = schedules, phone = none,
+                    // Only so an ended block gets closed; without Device Owner nothing is applied.
+                    focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L)
+                ),
                 ScheduleEnforcer.ApplyExtras(emptySet(), -1L, 0L, null, ::label)
             )
         }
