@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +36,8 @@ fun RecoveryGenerateDialog(
 ) {
     var confirmKeySaved by remember { mutableStateOf(false) }
     var typedKey by remember { mutableStateOf("") }
-    val generatedKey by remember { mutableStateOf(SecurityManager.generateRecoveryCode()) }
+    // Saved across a rotation: a new code appearing while it is being copied to paper would be a trap.
+    val generatedKey by rememberSaveable { mutableStateOf(SecurityManager.generateRecoveryCode()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -78,8 +80,11 @@ fun RecoveryGenerateDialog(
                         label = { Text(stringResource(R.string.enter_recovery_code)) },
                         placeholder = { Text(stringResource(R.string.recovery_code_hint)) },
                         singleLine = true,
+                        // Not learned by the keyboard's dictionary or suggestions.
                         keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters
+                            capitalization = KeyboardCapitalization.Characters,
+                            autoCorrectEnabled = false,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password
                         )
                     )
                 }

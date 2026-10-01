@@ -101,7 +101,7 @@ private fun DeviceOwnerGrantContent(viewModel: DeviceOwnerViewModel) {
         accounts.addAll(viewModel.getAllAccountsViaShizuku())
     }
 
-    val extraUsers = remember { viewModel.getExtraUsersInfo() }
+    var extraUsers by remember { mutableStateOf(viewModel.getExtraUsersInfo()) }
 
     when {
         accounts.isNotEmpty() -> {
@@ -118,7 +118,7 @@ private fun DeviceOwnerGrantContent(viewModel: DeviceOwnerViewModel) {
         }
 
         extraUsers.isNotEmpty() -> {
-            UserWarningDialog(extraUsers = extraUsers)
+            UserWarningDialog(extraUsers = extraUsers, onCheckAgain = { extraUsers = viewModel.getExtraUsersInfo() })
         }
 
         else -> {

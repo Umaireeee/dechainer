@@ -74,8 +74,9 @@ fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, onOpenJournal: ()
         }
         item { TextButton(onOpenJournal) { Text(stringResource(R.string.reports_deep_dives)) } }
         item {
+            // Your data is not open while a lock holds the phone (an urge lock as well as a punishment day).
             if (SettingsFreeze.isFrozen(ctx)) Text(stringResource(R.string.reports_frozen), style = MaterialTheme.typography.bodySmall)
-            else TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) }
+            else if (io.github.warleysr.dechainer.lock.LockEngine.status.value == null) TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) }
         }
     }
 }

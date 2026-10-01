@@ -40,6 +40,8 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
     var version by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmWipe by remember { mutableStateOf(false) }
+    // Every single delete asks first: two "Delete" buttons side by side were one mis-tap from losing a deep dive.
+    var pendingDelete by remember { mutableStateOf<Pair<String, () -> DeleteResult>?>(null) }
     val frozen = SettingsFreeze.isFrozen(ctx)
     val fmt = remember { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT) }
     fun at(ms: Long) = fmt.format(Instant.ofEpochMilli(ms).atZone(zone))
@@ -112,9 +114,9 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
                     onClick = { onOpenEntry(e.id) }
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ report(tools.deleteUrge(e.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                    TextButton({ pendingDelete = at(e.createdAt) to { tools.deleteUrge(e.id) } }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
-                        TextButton({ report(tools.deleteDeepDive(e.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete_deep_dive)) }
+                        TextButton({ pendingDelete = at(e.createdAt) to { tools.deleteDeepDive(e.id) } }, enabled = !frozen) { Text(stringResource(R.string.data_delete_deep_dive)) }
                 }
             }
         }
@@ -124,7 +126,7 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
         items(sessions, key = { "s${it.id}" }) { s ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { "-" }), Modifier.weight(1f))
-                TextButton({ report(tools.deleteSession(s.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ pendingDelete = at(s.startedAt) to { tools.deleteSession(s.id) } }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -133,7 +135,7 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
         items(reports, key = { "r${it.id}" }) { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(at(r.periodStart), Modifier.weight(1f))
-                TextButton({ report(tools.deleteReport(r.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ pendingDelete = at(r.periodStart) to { tools.deleteReport(r.id) } }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -142,7 +144,7 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
         items(goalDays, key = { "g$it" }) { d ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.data_goals_row, d.toString()), Modifier.weight(1f))
-                TextButton({ report(tools.deleteGoals(d)) }, enabled = !frozen && tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ pendingDelete = d.toString() to { tools.deleteGoals(d) } }, enabled = !frozen && tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -151,6 +153,16 @@ fun DataScreen(onOpenEntry: (Long) -> Unit = {}, modifier: Modifier = Modifier) 
         item {
             OutlinedButton({ gate.run { confirmWipe = true } }, enabled = !frozen) { Text(stringResource(R.string.data_wipe)) }
         }
+    }
+
+    pendingDelete?.let { (what, action) ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.data_delete_one_title)) },
+            text = { Text(stringResource(R.string.data_delete_one_body, what)) },
+            confirmButton = { TextButton({ pendingDelete = null; report(action()) }) { Text(stringResource(R.string.data_delete)) } },
+            dismissButton = { TextButton({ pendingDelete = null }) { Text(stringResource(R.string.cancel)) } }
+        )
     }
 
     if (confirmWipe) {

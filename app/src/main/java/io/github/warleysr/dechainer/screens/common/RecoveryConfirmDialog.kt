@@ -63,7 +63,11 @@ fun RecoveryConfirmDialog(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            autoCorrectEnabled = false,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password
+                        )
                     )
                 }
             },

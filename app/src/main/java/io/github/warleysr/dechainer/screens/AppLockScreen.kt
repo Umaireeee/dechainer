@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -89,7 +90,7 @@ fun AppLockScreen(onUnlocked: () -> Unit, onCancel: (() -> Unit)?, modifier: Mod
             style = MaterialTheme.typography.bodyMedium,
             color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.height(48.dp)
+            modifier = Modifier.heightIn(min = 48.dp)
         )
         Spacer(Modifier.height(16.dp))
         SecretEntry(

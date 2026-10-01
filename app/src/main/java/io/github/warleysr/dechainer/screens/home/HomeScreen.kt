@@ -64,6 +64,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    // The swipe handler is set up once; it must call the latest lambda, which knows whether the app is locked now.
+    val latestOnMenu by androidx.compose.runtime.rememberUpdatedState(onMenu)
     var now by remember { mutableLongStateOf(TrustedClock.now(context)) }
     RepeatWhileVisible(1000) { now = TrustedClock.now(context) }
 
@@ -81,7 +83,7 @@ fun HomeScreen(
                 detectVerticalDragGestures(
                     onDragStart = { total = 0f },
                     onDragCancel = { total = 0f },
-                    onDragEnd = { if (total < -threshold) onMenu() },
+                    onDragEnd = { if (total < -threshold) latestOnMenu() },
                     onVerticalDrag = { change, dy ->
                         change.consume()
                         total += dy
@@ -98,6 +100,8 @@ fun HomeScreen(
                 style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp, lineHeight = 104.sp),
                 fontWeight = FontWeight.Light,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier
                     .clickable(enabled = menuEnabled, onClickLabel = stringResource(R.string.home_open_menu), onClick = onMenu)
                     .padding(horizontal = 16.dp, vertical = 8.dp)

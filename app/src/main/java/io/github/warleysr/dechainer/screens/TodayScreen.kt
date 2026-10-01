@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,7 +39,10 @@ fun TodayScreen(modifier: Modifier = Modifier) {
     val plan = remember(tomorrow, version) { repo.goals(tomorrow) }
     val tomorrowRow = remember(tomorrow, version) { repo.day(tomorrow) }
     val canEdit = DayWindow.canEditPlan(now, tomorrow, zone)
-    val drafts = remember(tomorrow, version) {
+    // What is being typed survives a rotation and any other write (ticking a goal, declaring a rest day): it is
+    // seeded again only when the saved plan itself changes, not on every `version`.
+    val planKey = plan.joinToString("\u0001") { "${it.text}|${it.type}|${it.targetMinutes}" }
+    val drafts = rememberSaveable(tomorrow, planKey, saver = DRAFTS_SAVER) {
         mutableStateListOf<GoalDraft>().apply {
             addAll(plan.map { GoalDraft(it.text, it.type, it.targetMinutes?.toString().orEmpty()) }.ifEmpty { List(DayRules.MIN_GOALS) { GoalDraft() } })
         }
@@ -180,3 +185,15 @@ private class GoalDraft(text: String = "", type: GoalType = GoalType.MANUAL, min
         if (type == GoalType.FOCUS_MINUTES) minutesValue() else null
     )
 }
+
+/** Keeps the goals being typed across a rotation: three strings per goal (text, type, minutes). */
+private val DRAFTS_SAVER = Saver<androidx.compose.runtime.snapshots.SnapshotStateList<GoalDraft>, List<String>>(
+    save = { list -> list.flatMap { listOf(it.text, it.type.name, it.minutes) } },
+    restore = { saved ->
+        mutableStateListOf<GoalDraft>().apply {
+            saved.chunked(3).forEach { (text, type, minutes) ->
+                add(GoalDraft(text, runCatching { GoalType.valueOf(type) }.getOrDefault(GoalType.MANUAL), minutes))
+            }
+        }
+    }
+)

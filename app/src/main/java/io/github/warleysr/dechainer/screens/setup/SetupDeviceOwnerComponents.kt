@@ -75,9 +75,11 @@ fun AccountWarningDialog(
 }
 
 @Composable
-fun UserWarningDialog(extraUsers: List<String>) {
+fun UserWarningDialog(extraUsers: List<String>, onCheckAgain: () -> Unit = {}) {
     AlertDialog(
-        onDismissRequest = { },
+        // Back reads the users again instead of trapping the screen: once they are removed the dialog goes away.
+        onDismissRequest = onCheckAgain,
+        dismissButton = { TextButton(onClick = onCheckAgain) { Text(stringResource(R.string.check_again)) } },
         confirmButton = {
             TextButton(onClick = {
                 val intent = Intent("android.settings.USER_SETTINGS").apply {

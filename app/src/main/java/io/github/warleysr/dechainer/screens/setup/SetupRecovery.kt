@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -34,7 +35,9 @@ fun SetupRecovery(paddingValues: PaddingValues) {
     var showGenerateDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     Column(
-        modifier = Modifier.padding(paddingValues).fillMaxSize(),
+        // Scrolls: at a large font size the first screen of the app must not clip its own button.
+        modifier = Modifier.padding(paddingValues).fillMaxSize()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (showGenerateDialog) {
@@ -48,10 +51,8 @@ fun SetupRecovery(paddingValues: PaddingValues) {
         }
         Text(
             stringResource(R.string.attention),
-            fontWeight = FontWeight.Bold,
-            textDecoration = TextDecoration.Underline,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.titleLarge
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.headlineSmall
         )
         Spacer(Modifier.height(8.dp))
         Text(

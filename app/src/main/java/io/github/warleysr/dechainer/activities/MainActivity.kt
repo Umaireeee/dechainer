@@ -247,7 +247,13 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(openReportRequest.longValue) {
                     if (openReportRequest.longValue >= 0 && !focusBrick && !urge.active) navViewModel.navigateTo(Route.REPORTS)
                 }
-                LaunchedEffect(route) { if (route != Route.REPORTS) openReportRequest.longValue = -1L }
+                // The request is cleared only after the reports screen has really been shown: on a cold start the first
+                // composition still says Home, and clearing it then made the notification open the list, not the report.
+                var reportShown by remember { mutableStateOf(false) }
+                LaunchedEffect(route) {
+                    if (route == Route.REPORTS) reportShown = true
+                    else if (reportShown) { openReportRequest.longValue = -1L; reportShown = false }
+                }
                 LaunchedEffect(openTodayRequest.value) {
                     if (openTodayRequest.value) {
                         openTodayRequest.value = false
@@ -290,6 +296,10 @@ class MainActivity : ComponentActivity() {
                 // The app lock (owner request): everything but Home, the urge flow and a running brick waits behind it.
                 val appLocked = AppLock.isLocked(this@MainActivity)
                 var unlockRequested by rememberSaveable { mutableStateOf(false) }
+                // Back while asked for the PIN cancels the request instead of closing the app.
+                BackHandler(enabled = unlockRequested) { unlockRequested = false }
+                // A sheet left open must not come back after an urge or a lock has taken over the screen.
+                LaunchedEffect(urge.active, brick) { if (urge.active || brick) menuOpen = false }
 
                 // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
                 val showTopBar = recoverySet && !urge.active && (focusBrick || (route != Route.HOME && !appLocked))
@@ -423,7 +433,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        SecurityManager.endSession()
+        // A rotation, a font or theme change recreates the activity: that is not the owner leaving, and ending the
+        // recovery session then would throw away a long unlock wait the owner had just finished.
+        if (!isChangingConfigurations) SecurityManager.endSession()
     }
 
     companion object {
