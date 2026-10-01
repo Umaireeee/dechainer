@@ -59,8 +59,8 @@ data class AiLimits(val maxTokens: Int, val connectTimeoutMs: Int, val readTimeo
     companion object {
         /** Section 6.2: if the questions take longer than 20 seconds the fixed ones are shown, so the call is cut off there too. */
         val QUESTIONS = AiLimits(maxTokens = 4_000, connectTimeoutMs = 10_000, readTimeoutMs = 45_000)
-        val DEEP_DIVE = AiLimits(maxTokens = 2_500, connectTimeoutMs = 15_000, readTimeoutMs = 60_000)
-        val WEEKLY = AiLimits(maxTokens = 6_000, connectTimeoutMs = 15_000, readTimeoutMs = 120_000)
+        val DEEP_DIVE = AiLimits(maxTokens = 6_000, connectTimeoutMs = 15_000, readTimeoutMs = 60_000)
+        val WEEKLY = AiLimits(maxTokens = 12_000, connectTimeoutMs = 15_000, readTimeoutMs = 120_000)
     }
 }
 

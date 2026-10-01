@@ -183,7 +183,12 @@ class MainActivity : ComponentActivity() {
         LockEngine.refreshStatus(this)
         if (savedInstanceState == null) { handleUrgeIntent(intent); handleTodayIntent(intent); handleReportIntent(intent) }
         // A deep dive that could not be made earlier gets another try (a job already waiting is left alone).
-        thread { DeepDiveScheduler.enqueueIfPending(applicationContext) }
+        // Entries left half-way past the resume window are settled first (a note never answered gets its deep dive from the note alone).
+        val freshStart = savedInstanceState == null
+        thread {
+            if (freshStart) io.github.warleysr.dechainer.urge.UrgeFlow(applicationContext).settleStale()
+            DeepDiveScheduler.enqueueIfPending(applicationContext)
+        }
         setContent {
             val focusState by Pomodoro.state.collectAsState()
             val lockStatus by LockEngine.status.collectAsState()
@@ -246,7 +251,9 @@ class MainActivity : ComponentActivity() {
 
                 var currentTime by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
                 // Only while a timed session shows its countdown, and only while on screen.
-                val sessionActive = SecurityManager.isSessionActive()
+                // Collected so the bar redraws when a session opens or ends (the timer is not Compose state).
+                val sessionRevision by SecurityManager.sessionChanges.collectAsState()
+                val sessionActive = remember(sessionRevision) { SecurityManager.isSessionActive() }
                 if (sessionActive) {
                     RepeatWhileVisible(1000, key = sessionActive) { currentTime = android.os.SystemClock.elapsedRealtime() }
                 }

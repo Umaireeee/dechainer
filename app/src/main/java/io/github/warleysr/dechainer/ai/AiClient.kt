@@ -158,10 +158,16 @@ object AiClient {
             code == 400 && detail.contains("api key", ignoreCase = true) -> AiResult.Failed(AiError.BAD_KEY, detail)
             code == 400 && detail.contains("model", ignoreCase = true) -> AiResult.Failed(AiError.BAD_MODEL, detail)
             code >= 500 -> AiResult.Failed(AiError.SERVER, detail)
+            code in 200..299 && finishedByLength(body) -> AiResult.Failed(AiError.SERVER, "The reply was cut off at the length limit.")
             code in 200..299 -> content(body)?.let { AiResult.Ok(it) } ?: AiResult.Failed(AiError.EMPTY)
             else -> AiResult.Failed(AiError.SERVER, detail)
         }
     }
+
+    /** Whether the model stopped because it hit its length cap, so the text it gave is incomplete. */
+    fun finishedByLength(json: String): Boolean = runCatching {
+        JSONObject(json).getJSONArray("choices").getJSONObject(0).optString("finish_reason") == "length"
+    }.getOrDefault(false)
 
     fun content(json: String): String? = runCatching {
         JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
@@ -217,17 +223,27 @@ object Sse {
         return err.optString("message").ifBlank { "The service reported an error." }
     }
 
-    /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. */
+    /** Why the model stopped, when a line says so (`stop`, `length`, ...), else null. */
+    fun finishReason(line: String): String? {
+        val data = payload(line)?.takeIf { it.startsWith("{") } ?: return null
+        val choice = runCatching { JSONObject(data).optJSONArray("choices")?.optJSONObject(0) }.getOrNull() ?: return null
+        return choice.optString("finish_reason").takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. A reply the model cut off at its length cap fails: half a deep dive is never kept. */
     fun read(reader: java.io.BufferedReader, onText: (String) -> Unit): String {
         val all = StringBuilder()
+        var cutOff = false
         while (true) {
             val line = reader.readLine() ?: break
             if (isDone(line)) break
             error(line)?.let { throw StreamFailure(it) }
+            if (finishReason(line) == "length") cutOff = true
             val piece = delta(line) ?: continue
             all.append(piece)
             onText(all.toString())
         }
+        if (cutOff) throw StreamFailure("The reply was cut off at the length limit.")
         return all.toString()
     }
 }

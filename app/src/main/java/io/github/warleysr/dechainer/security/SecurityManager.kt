@@ -29,14 +29,27 @@ class SecurityManager {
         // writes from the lock-engine background thread are safe.
         private val sessionEndElapsed = java.util.concurrent.atomic.AtomicLong(0L)
 
+        /**
+         * Counts every start and end of a recovery session, so a screen can collect it and redraw. The
+         * session itself is not Compose state (it is written from background threads), so without
+         * this nothing would tell the top bar that a session had opened or closed.
+         */
+        private val sessionRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+        val sessionChanges: kotlinx.coroutines.flow.StateFlow<Int> get() = sessionRevision
+
+        private fun setSessionEnd(elapsedEnd: Long) {
+            sessionEndElapsed.set(elapsedEnd)
+            sessionRevision.value = sessionRevision.value + 1
+        }
+
         fun isSessionActive(): Boolean = SystemClock.elapsedRealtime() < sessionEndElapsed.get()
 
         private fun startSession() {
-            sessionEndElapsed.set(SystemClock.elapsedRealtime() + (10 * 60 * 1000))
+            setSessionEnd(SystemClock.elapsedRealtime() + (10 * 60 * 1000))
         }
 
         fun endSession() {
-            sessionEndElapsed.set(0L)
+            setSessionEnd(0L)
         }
 
         /** Milliseconds left in the current recovery session, from [nowElapsed] (SystemClock.elapsedRealtime()). */
@@ -210,7 +223,7 @@ class SecurityManager {
             val now = android.os.SystemClock.elapsedRealtime()
             return when {
                 UnlockDelay.isOpen(pending, now) -> {
-                    sessionEndElapsed.set(now + UnlockDelay.remainingOpenMs(pending, now))
+                    setSessionEnd(now + UnlockDelay.remainingOpenMs(pending, now))
                     // Handed to the in-memory session, so ending the session really ends it.
                     cancelUnlock(context)
                     true

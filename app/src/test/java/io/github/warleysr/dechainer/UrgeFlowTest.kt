@@ -512,4 +512,23 @@ class UrgeFlowTest {
         assertEquals(DeepDiveResult.Pending(AiGateResult.OFFLINE, null), f.deepDive(w))
         assertNull(f.resumable())
     }
+
+    @Test
+    fun entriesLeftHalfWayPastTheResumeWindowAreSettled() {
+        val f = flow(FakeAi())
+        val old = System.currentTimeMillis() - 3 * Rules.URGE_RESUME_WINDOW_MS
+        val neverWritten = repo.insert(UrgeKind.SLIP, UrgeSource.HOME, old)
+        val answeredNever = repo.insert(UrgeKind.SLIP, UrgeSource.HOME, old + 1)
+        repo.markWriting(answeredNever); repo.saveNote(answeredNever, "I scrolled in bed")
+        val recent = repo.insert(UrgeKind.SLIP, UrgeSource.HOME, System.currentTimeMillis())
+
+        assertEquals(2, f.settleStale())
+
+        assertEquals("no note: a counted stub", UrgeStatus.SKIPPED, repo.get(neverWritten)!!.status)
+        val q = repo.get(answeredNever)!!
+        assertEquals("a note never answered is owed its deep dive", UrgeStatus.PENDING_DEEPDIVE, q.status)
+        assertEquals("I scrolled in bed", q.rawText)
+        assertEquals("a recent one is still the screen's", UrgeStatus.WRITING, repo.get(recent)!!.status)
+        assertEquals("settling twice changes nothing", 0, f.settleStale())
+    }
 }

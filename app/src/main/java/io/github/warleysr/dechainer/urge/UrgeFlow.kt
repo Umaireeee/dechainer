@@ -141,6 +141,29 @@ class UrgeFlow(
             .onFailure { Timber.w(it, "Unfinished urge entries not readable") }
             .getOrNull()
 
+    /**
+     * Closes the entries that were left behind: ones the app can no longer open back into (past
+     * [Rules.URGE_RESUME_WINDOW_MS]). One that never got its note stays as a counted stub (SKIPPED).
+     * One whose note was saved but never answered goes to PENDING_DEEPDIVE with no answers, so the
+     * deep dive is made from the note alone and the note is deleted, instead of sitting on the
+     * phone for good. Returns how many were settled. Never throws.
+     */
+    fun settleStale(): Int = try {
+        val now = TrustedClock.now(ctx)
+        var settled = 0
+        repo.unfinished()
+            .filter { (it.lockEndedAt ?: it.createdAt) + Rules.URGE_RESUME_WINDOW_MS <= now }
+            .forEach { e ->
+                val ok = if (e.status == UrgeStatus.QUESTIONS && !e.rawText.isNullOrBlank()) repo.saveAnswers(e.id, emptyList())
+                else repo.skip(e.id)
+                if (ok) settled++
+            }
+        settled
+    } catch (e: Exception) {
+        Timber.w(e, "Stale urge entries not settled")
+        0
+    }
+
     private fun createEntry(kind: UrgeKind, source: UrgeSource, at: Long): Long =
         try {
             repo.insert(kind, source, at)

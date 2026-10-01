@@ -222,4 +222,20 @@ class AiClientTest {
         }
         assertEquals("rate limited", failure)
     }
+
+    @Test
+    fun aReplyCutOffAtTheLengthLimitFailsInsteadOfBeingKeptHalfWritten() {
+        val failure = try {
+            Sse.read(sse("""data: {"choices":[{"delta":{"content":"## What happened\nYou sat"}}]}""", """data: {"choices":[{"delta":{},"finish_reason":"length"}]}""", "data: [DONE]")) { }
+            null
+        } catch (e: Sse.StreamFailure) {
+            e.message
+        }
+        assertEquals("The reply was cut off at the length limit.", failure)
+        assertEquals("length", Sse.finishReason("""data: {"choices":[{"finish_reason":"length"}]}"""))
+        assertNull(Sse.finishReason("""data: {"choices":[{"delta":{"content":"x"},"finish_reason":null}]}"""))
+        assertEquals(AiResult.Failed(AiError.SERVER, "The reply was cut off at the length limit."),
+            AiClient.interpret(200, """{"choices":[{"message":{"content":"half"},"finish_reason":"length"}]}"""))
+        assertEquals(AiResult.Ok("whole"), AiClient.interpret(200, """{"choices":[{"message":{"content":"whole"},"finish_reason":"stop"}]}"""))
+    }
 }
