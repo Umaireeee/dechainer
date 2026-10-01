@@ -44,6 +44,8 @@ fun LogScreen(
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var shown by remember { mutableIntStateOf(30) }
 
+    // Over every entry, not only the range in the chart: a pattern needs the most history it can get.
+    val patterns = remember(entries) { Patterns.summary(entries, zone)?.takeIf { it.hasLines } }
     val bars = remember(entries, weekly) {
         if (weekly) Insights.weeks(entries, now, zone, 12) else Insights.days(entries, now, zone, 14)
     }
@@ -105,6 +107,8 @@ fun LogScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        patterns?.let { PatternsPanel(it) }
 
         val feelings = Insights.feelingCounts(scoped)
         if (feelings.isNotEmpty()) {
@@ -183,5 +187,35 @@ fun LogScreen(
         }
         TextButton(onClick = onBack) { Text(stringResource(R.string.detail_back)) }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+/**
+ * What the entries say, counted on the phone with no AI: the usual run-up, where and when urges
+ * land, where slips happen and what has worked. Every line has repeated at least three times, and
+ * each one says how many entries it is counted from.
+ */
+@Composable
+private fun PatternsPanel(p: Patterns.Summary) {
+    val lines = mutableListOf<String>()
+    p.chain?.let {
+        lines += stringResource(R.string.patterns_chain, label("opt_", it.before), label("opt_", it.feeling), it.count, it.of)
+    }
+    p.place?.let { lines += stringResource(R.string.patterns_place, label("opt_", it.value), it.count, it.of) }
+    p.window?.let {
+        lines += stringResource(R.string.patterns_window, Times.clock(it.startHour * 60), Times.clock(it.endHour * 60), it.count, it.total)
+    }
+    p.slipPlace?.let { lines += stringResource(R.string.patterns_slip_place, label("opt_", it.value), it.count, p.slips) }
+    if (p.slipsLate >= Patterns.MIN_REPEAT) lines += stringResource(R.string.patterns_slips_late, p.slipsLate, p.slips)
+    p.works.forEach { lines += stringResource(R.string.patterns_works, label("try_", it.step), it.wins, it.tries) }
+
+    Eyebrow(stringResource(R.string.patterns_title))
+    Panel {
+        Text(
+            stringResource(R.string.patterns_intro, p.entries),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Bullets(lines)
     }
 }

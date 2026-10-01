@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.data.AppRepository
+import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.security.SecurityManager
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,12 @@ class ImpulseLockViewModel : ViewModel() {
     fun loadApps() {
         viewModelScope.launch {
             isLoadingApps = true
-            apps = withContext(Dispatchers.IO) { AppRepository.getApps() }
+            apps = withContext(Dispatchers.IO) {
+                // What can never be suspended (the launcher, the dialer, keyboards, Déchaîner and the
+                // Urge Journal) is not offered: choosing it would do nothing.
+                val never = ScheduleEnforcer.protectedPackages(context)
+                AppRepository.getApps().filter { it.packageName !in never }
+            }
             isLoadingApps = false
         }
     }

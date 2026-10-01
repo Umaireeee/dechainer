@@ -14,6 +14,9 @@ object UrgeActions {
     const val EXTRA_KIND = "kind"
     const val EXTRA_MINUTES = "minutes"
 
+    /** What the first session of a focus block is for (the journal's "first move"); optional, cleaned before use. */
+    const val EXTRA_INTENTION = "intention"
+
     enum class Kind {
         /** The panic button, remotely: locks Déchaîner and suspends the apps the panic button is set to. */
         IMPULSE_BLOCK,

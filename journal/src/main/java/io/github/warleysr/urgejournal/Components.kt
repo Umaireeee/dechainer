@@ -30,10 +30,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -48,16 +51,26 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.time.format.TextStyle as DayStyle
 import java.util.Locale
 
-/** Looks up `<prefix><name>` in strings.xml, falling back to the raw name if it is missing. */
+/**
+ * Looks up `<prefix><name>` in strings.xml, falling back to the raw name if it is missing. Looked
+ * up once per screen, not on every recomposition: a name lookup by reflection is not free.
+ */
 @Composable
 fun label(prefix: String, key: Enum<*>): String {
     val ctx = LocalContext.current
-    val id = ctx.resources.getIdentifier(prefix + key.name.lowercase(), "string", ctx.packageName)
-    return if (id != 0) ctx.getString(id) else key.name
+    return remember(ctx, prefix, key) {
+        val id = ctx.resources.getIdentifier(prefix + key.name.lowercase(), "string", ctx.packageName)
+        if (id != 0) ctx.getString(id) else key.name
+    }
 }
 
 /** How long the ember has to be held before it starts a ride, so a bump in a pocket never does. */
 private const val HOLD_MS = 700L
+
+// How a press on the ember ended, if it did within HOLD_MS.
+private const val STILL_DOWN = 0
+private const val LIFTED = 1
+private const val CANCELLED = 2
 
 /**
  * The one big call to action: a slowly breathing ember. Calm on purpose; nothing flashes. It starts
@@ -66,8 +79,11 @@ private const val HOLD_MS = 700L
 @Composable
 fun Ember(text: String, onTap: () -> Unit, onStart: () -> Unit) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val tap by rememberUpdatedState(onTap)
+    val start by rememberUpdatedState(onStart)
     val transition = rememberInfiniteTransition(label = "ember")
-    val scale by transition.animateFloat(
+    // Read inside graphicsLayer, so each frame redraws the layer and nothing is recomposed.
+    val scale = transition.animateFloat(
         initialValue = 1f,
         targetValue = 1.05f,
         animationSpec = infiniteRepeatable(tween(3200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
@@ -83,23 +99,25 @@ fun Ember(text: String, onTap: () -> Unit, onStart: () -> Unit) {
         Box(
             Modifier
                 .size(196.dp)
-                .scale(scale)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
                 .clip(CircleShape)
                 .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34))))
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         awaitFirstDown()
-                        var released = false
+                        // Lifted early is a tap; still down after HOLD_MS starts the ride; a scroll that
+                        // takes the gesture over (the page moves under the finger) is neither.
+                        var ended = STILL_DOWN
                         withTimeoutOrNull(HOLD_MS) {
-                            waitForUpOrCancellation()
-                            released = true
+                            ended = if (waitForUpOrCancellation() != null) LIFTED else CANCELLED
                         }
-                        if (released) {
-                            onTap()
-                        } else {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            onStart()
-                            waitForUpOrCancellation()
+                        when (ended) {
+                            LIFTED -> tap()
+                            STILL_DOWN -> {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                start()
+                                waitForUpOrCancellation()
+                            }
                         }
                     }
                 },
@@ -340,7 +358,7 @@ fun Breathing(text: String) {
 @Composable
 fun BreathCircle(inhale: Boolean, centerText: String, caption: String) {
     val transition = rememberInfiniteTransition(label = "breathCircle")
-    val scale by transition.animateFloat(
+    val scale = transition.animateFloat(
         initialValue = 0.72f,
         targetValue = 0.72f,
         animationSpec = infiniteRepeatable(
@@ -359,14 +377,18 @@ fun BreathCircle(inhale: Boolean, centerText: String, caption: String) {
             Box(
                 Modifier
                     .size(260.dp)
-                    .scale(scale)
+                    .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
                     .clip(CircleShape)
                     .background(Brush.radialGradient(listOf(Color(0x55D9A55B), Color(0x11D9A55B))))
             )
             Box(
                 Modifier
                     .size(170.dp)
-                    .scale(0.85f + scale * 0.15f)
+                    .graphicsLayer {
+                        val inner = 0.85f + scale.value * 0.15f
+                        scaleX = inner
+                        scaleY = inner
+                    }
                     .clip(CircleShape)
                     .background(Brush.radialGradient(listOf(Color(0xFFF1D6A0), Color(0xFFD9A55B), Color(0xFFAE7A34)))),
                 contentAlignment = Alignment.Center

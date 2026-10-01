@@ -12,6 +12,8 @@ Déchaîner exposes one broadcast receiver so a companion app, signed with the *
 | `FOCUS_BLOCK` | A committed focus block: the phone is bricked until it ends. Nothing ends it early, not even the recovery code. | 25 to 120 |
 | `RIDE_LOCK` | The ride lock: every app with an icon is suspended except calls, emergency apps, the alarm clock, Déchaîner and the journal. Nothing ends it early; a new request can only make it longer. The clock is locked while it runs. | 10 to 30 |
 
+Optional extra `intention` (text, `FOCUS_BLOCK` only): what the first session is for, for example the journal's "first move" for the day. It is cleaned like any intention (one line, at most 80 characters) and used only if this request really started the block; if the timer was busy, nothing changes. The end-of-session question then asks about exactly that.
+
 Rules that will not change:
 - Commands only **add** blocking. Nothing can end a block, edit a schedule or touch the recovery code.
 - Ignored unless Déchaîner is Device Owner.
@@ -28,3 +30,5 @@ sendBroadcast(Intent("io.github.warleysr.dechainer.URGE_ACTION").apply {
     putExtra("minutes", 60)
 })
 ```
+
+Going the other way, Déchaîner's focus screen starts a ride in the journal by launching it with the extra `action` = `ride` (the same extra the journal's tile and icon shortcut use). The journal counts down five seconds, which can be cancelled, before it starts.

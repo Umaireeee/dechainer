@@ -490,7 +490,7 @@ object ScheduleEnforcer : AppBlockEngine() {
 
     private fun readProtectedPackages(context: Context): Set<String> {
         val pm = context.packageManager
-        val result = mutableSetOf(context.packageName, "com.android.systemui", "com.android.phone")
+        val result = LockSafety.neverBlocked(context.packageName).toMutableSet()
         try {
             val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
             pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)

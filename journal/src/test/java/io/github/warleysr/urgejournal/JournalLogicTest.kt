@@ -1199,5 +1199,144 @@ class JournalLogicTest {
         assertFalse("Thu 01:00" in Prompt.weeklyUser(listOf(e, stub), ms(18, 12), "", zone))
         for (s in listOf("How to analyse", "Find the chains", "targets a link in a chain")) assertTrue(s in WEEKLY_SYSTEM)
     }
+
+    // ---- Proof, patterns, the first move and the weekly reminder ----
+
+    private fun ride(day: Int, hour: Int, after: After, tried: List<Step> = emptyList()) =
+        Entry(ms(day, hour), false, mapOf(Q.FEELING to Opt.STRESSED), after.outcome, tried = tried, after = after)
+
+    @Test
+    fun proofSaysOnlyWhatIsTrueAndGood() {
+        assertNull(Insights.proof(emptyList()))
+        // An empty ride note is not an entry.
+        assertNull(Insights.proof(listOf(Entry(ms(10, 12), false, emptyMap(), null))))
+        // One urge ridden out, no ride recorded: the total.
+        assertEquals(Insights.Proof.Total(1), Insights.proof(listOf(Entry(ms(10, 12), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED))))
+        // Most of the last rides worked: say so.
+        val good = listOf(ride(10, 12, After.GONE), ride(11, 12, After.WEAKER), ride(12, 12, After.STILL), ride(13, 12, After.GONE))
+        assertEquals(Insights.Proof.Rides(3, 4), Insights.proof(good))
+        // Mostly "still strong": never open a hard moment with a poor ratio, fall back to the total.
+        val poor = listOf(ride(10, 12, After.STILL), ride(11, 12, After.STILL), ride(12, 12, After.GONE))
+        assertEquals(Insights.Proof.Total(1), Insights.proof(poor))
+        // Only the last ten rides count.
+        val many = (1..8).map { ride(it, 9, After.STILL) } + (9..18).map { ride(it, 9, After.GONE) }
+        assertEquals(Insights.Proof.Rides(10, 10), Insights.proof(many))
+    }
+
+    @Test
+    fun patternsNeedRepeatsAndAreCountedFromTheEntries() {
+        fun e(day: Int, hour: Int, feeling: Opt, before: Opt, place: Opt, outcome: Outcome?, tried: List<Step> = emptyList(), after: After? = null) =
+            Entry(ms(day, hour), false, mapOf(Q.FEELING to feeling, Q.BEFORE to before, Q.PLACE to place), outcome, tried = tried, after = after)
+        val list = listOf(
+            e(10, 23, Opt.STRESSED, Opt.BEFORE_AVOIDING, Opt.BED, Outcome.GAVE_IN),
+            e(11, 23, Opt.STRESSED, Opt.BEFORE_AVOIDING, Opt.BED, Outcome.RESISTED, listOf(Step.LEAVE_ROOM), After.GONE),
+            e(12, 22, Opt.STRESSED, Opt.BEFORE_AVOIDING, Opt.BED, Outcome.GAVE_IN),
+            e(13, 15, Opt.BORED, Opt.BEFORE_SCROLLING, Opt.DESK, Outcome.RESISTED, listOf(Step.LEAVE_ROOM), After.WEAKER),
+            e(14, 23, Opt.STRESSED, Opt.BEFORE_AVOIDING, Opt.BED, Outcome.GAVE_IN, listOf(Step.LEAVE_ROOM), After.STILL),
+            e(15, 14, Opt.BORED, Opt.BEFORE_NOTHING, Opt.DESK, Outcome.RESISTED)
+        )
+        val sum = Patterns.summary(list, zone)!!
+        assertEquals(6, sum.entries)
+        assertEquals(Patterns.Chain(Opt.BEFORE_AVOIDING, Opt.STRESSED, 4, 5), sum.chain)
+        assertEquals(Patterns.Share(Opt.BED, 4, 6), sum.place)
+        assertEquals(22, sum.window!!.startHour)
+        assertEquals(4, sum.window!!.count)
+        assertEquals(3, sum.slips)
+        assertEquals(Patterns.Share(Opt.BED, 3, 3), sum.slipPlace)
+        assertEquals(3, sum.slipsLate)
+        assertEquals(listOf(Step.LEAVE_ROOM), sum.works.map { it.step })
+        assertEquals(3 to 2, sum.works[0].tries to sum.works[0].wins)
+        assertTrue(sum.hasLines)
+        // Too few entries say nothing, and an empty ride note is not one of them.
+        assertNull(Patterns.summary(list.take(4), zone))
+        assertNull(Patterns.summary(list.take(4) + Entry(ms(16, 1), false, emptyMap(), null), zone))
+        // "Nothing in particular" never leads the run-up.
+        val flat = (1..6).map { e(it, 12, Opt.BORED, Opt.BEFORE_NOTHING, Opt.COUCH, Outcome.RESISTED) }
+        assertNull(Patterns.summary(flat, zone)!!.chain)
+        assertEquals(Opt.COUCH, Patterns.summary(flat, zone)!!.place!!.value)
+    }
+
+    @Test
+    fun theFirstMoveTravelsWithTheDay() {
+        val log = DayLog(DayResult.PARTLY, setOf(Area.STUDIED), "Tired", "FAR ch. 6, questions 1 to 10")
+        assertEquals(log, DayLog.fromStored(org.json.JSONObject(log.toJson().toString())))
+        // Days saved before this existed read fine, with no first move.
+        assertEquals("", DayLog.fromStored("NOT").let { it?.next ?: "" })
+        assertEquals("", DayLog.fromStored(org.json.JSONObject("""{"r":"PLANNED","n":"x"}"""))!!.next)
+    }
+
+    @Test
+    fun theWeeklyReminderLandsOnTheNextSunday() {
+        val sunday = java.time.DayOfWeek.SUNDAY
+        // Sunday 20 Sept 2026 at 19:00: the same evening.
+        assertEquals(ms(20, 20), Times.nextWeekly(sunday, 20 * 60, ms(20, 19), zone))
+        // Already past it: a week later.
+        assertEquals(ms(27, 20), Times.nextWeekly(sunday, 20 * 60, ms(20, 21), zone))
+        // From midweek.
+        assertEquals(ms(27, 20), Times.nextWeekly(sunday, 20 * 60, ms(23, 9), zone))
+        // Exactly at the moment counts as passed.
+        assertEquals(ms(27, 20), Times.nextWeekly(sunday, 20 * 60, ms(20, 20), zone))
+    }
+
+    @Test
+    fun theirOwnReasonReachesBothPromptsAndTheBackup() {
+        val e = Entry(ms(20, 23), false, mapOf(Q.FEELING to Opt.STRESSED), null)
+        val line = "Their reason, written for hard moments (their own words): "
+        assertTrue(line + "I want to pass CAF in May" in Prompt.user(e, "", "", emptyList(), emptyList(), "  I want to pass CAF in May  "))
+        assertTrue(line + "I want to pass CAF in May" in Prompt.weeklyUser(listOf(e), ms(21, 12), "", zone, reason = "I want to pass CAF in May"))
+        // Nothing written: no line, so the coach has nothing to invent.
+        assertFalse("Their reason" in Prompt.user(e, ""))
+        assertFalse("Their reason" in Prompt.weeklyUser(listOf(e), ms(21, 12), "", zone))
+        assertFalse("Their reason" in Prompt.user(e, "", "", emptyList(), emptyList(), "   "))
+        // A very long reason is cut, not sent whole.
+        val long = "x".repeat(900)
+        assertTrue(("x".repeat(300)) in Prompt.user(e, "", "", emptyList(), emptyList(), long))
+        assertFalse(("x".repeat(301)) in Prompt.user(e, "", "", emptyList(), emptyList(), long))
+        // The backup carries it, and a backup from before it existed reads with none.
+        assertEquals("I want to pass CAF in May", Backup.parse(Backup.compose(listOf(e), emptyList(), emptyList(), "  I want to pass CAF in May ")).reason)
+        assertEquals("", Backup.parse(Backup.compose(listOf(e), emptyList())).reason)
+        assertEquals("", Backup.parse(Entry.listToJson(listOf(e))).reason)
+        assertTrue("Never use it as a stick" in Prompt.systemFor(true))
+        assertTrue("never as a stick" in WEEKLY_SYSTEM)
+    }
+
+    @Test
+    fun eveningCheckInsAndFirstMovesTravelInTheBackup() {
+        val d1 = java.time.LocalDate.of(2026, 9, 29)
+        val d2 = java.time.LocalDate.of(2026, 9, 30)
+        val days = mapOf(
+            d1 to DayLog(DayResult.PLANNED, setOf(Area.SLEPT, Area.STUDIED), "Good lecture", "FAR ch. 6"),
+            d2 to DayLog(DayResult.NOT)
+        )
+        assertEquals(days, Backup.parse(Backup.compose(emptyList(), emptyList(), emptyList(), "", days)).days)
+        // A backup from before days were included has none.
+        assertTrue(Backup.parse(Backup.compose(emptyList(), emptyList())).days.isEmpty())
+        assertTrue(Backup.parse(Entry.listToJson(emptyList())).days.isEmpty())
+        // A day that cannot be read does not cost the others.
+        val broken = Backup.parse("""{"version":2,"entries":[],"plans":[],"days":{"2026-09-29":"PLANNED","not a date":"PLANNED","2026-09-30":{"r":"NONSENSE"}}}""")
+        assertEquals(mapOf(d1 to DayLog(DayResult.PLANNED)), broken.days)
+    }
+
+    @Test
+    fun theWeeklyLookBackWaitsForSomethingToLookAt() {
+        val now = ms(30, 20)
+        val e = { day: Int -> Entry(ms(day, 12), false, mapOf(Q.FEELING to Opt.BORED), Outcome.RESISTED) }
+        assertFalse(Insights.reviewReady(emptyList(), now))
+        // An empty ride note is not an entry.
+        assertFalse(Insights.reviewReady(listOf(e(28), e(29), Entry(ms(30, 1), false, emptyMap(), null)), now))
+        assertTrue(Insights.reviewReady(listOf(e(27), e(28), e(29)), now))
+        // Entries from over a month ago are not something to look back at.
+        assertFalse(Insights.reviewReady(listOf(e(1), e(2), e(3)), ms(30, 20) + 20L * 24 * 60 * 60 * 1000))
+    }
+
+    @Test
+    fun aFirstMoveIsOneShortLineAndTravelsToDechainerAsAnIntention() {
+        val long = "x".repeat(200)
+        assertEquals(DayLog.NEXT_LIMIT, DayLog.fromStored(org.json.JSONObject("""{"r":"PLANNED","x":"$long"}"""))!!.next.length)
+        assertEquals(80, DayLog.NEXT_LIMIT)
+        // The door carries it only when there is one.
+        assertEquals("", DoorAction(DoorAction.FOCUS_BLOCK, 25).intention)
+        assertEquals("FAR ch. 6", DoorAction(DoorAction.FOCUS_BLOCK, 25, "FAR ch. 6").intention)
+    }
 }
 

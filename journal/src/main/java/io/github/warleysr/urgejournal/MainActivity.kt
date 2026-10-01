@@ -34,6 +34,9 @@ class MainActivity : ComponentActivity() {
     /** What the launching intent asked for (a notification tap, or Déchaîner's shortcut). The app clears it once handled. */
     var pendingAction by mutableStateOf<String?>(null)
 
+    /** Bumped each time the app comes to the front, so Home can bring its greeting and cards up to date. */
+    var resumeTick by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Only a fresh launch carries a request; a recreated screen must not repeat it.
@@ -61,6 +64,11 @@ class MainActivity : ComponentActivity() {
         if (PrivacySettings(this).hideInRecents) window.setFlags(flag, flag) else window.clearFlags(flag)
     }
 
+    override fun onResume() {
+        super.onResume()
+        resumeTick++
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -73,11 +81,16 @@ class MainActivity : ComponentActivity() {
         const val ACTION_CHECKIN = "checkin"
         /** Start a ride straight away (used by Déchaîner's shortcut). */
         const val ACTION_RIDE = "ride"
+        /** Open the weekly deep dive (the Sunday reminder). */
+        const val ACTION_REVIEW = "review"
         const val ACTION_NONE = "none"
     }
 }
 
 private enum class Screen { HOME, STARTING, RIDE, AFTER, INTERVIEW, NOTE, PLAN, DETAIL, LOG, SETTINGS, REVIEW, KEPT }
+
+/** Screens a reminder may take over: never a ride, a question or a plan the person is in the middle of. */
+private val CALM_SCREENS = setOf(Screen.HOME, Screen.LOG, Screen.KEPT, Screen.DETAIL, Screen.REVIEW)
 
 /** Where an AI reply is: for one entry's deep dive, or for the weekly review. */
 sealed interface AiState {
@@ -146,6 +159,7 @@ private fun App(activity: MainActivity) {
     var statusChecked by remember { mutableStateOf(false) }
     var startingAt by remember { mutableLongStateOf(0L) }
     val privacy = remember { PrivacySettings(context) }
+    val supportContact = remember { SupportContact(context) }
     var pendingAfter by remember { mutableStateOf<After?>(null) }
     var pendingTried by remember { mutableStateOf(emptyList<Step>()) }
     var plans by remember { mutableStateOf(store.plans()) }
@@ -218,7 +232,8 @@ private fun App(activity: MainActivity) {
                     Insights.summary(history, System.currentTimeMillis()),
                     about,
                     Prompt.extras(history, entry, store.plans().map { it.text }),
-                    Insights.lifeFacts(store.days(), LocalDate.now(), window = 3)
+                    Insights.lifeFacts(store.days(), LocalDate.now(), window = 3),
+                    store.reason()
                 )
                 var lastPush = 0L
                 AiClient.chatStream(provider, baseUrl, key, model, system, user) { text ->
@@ -270,7 +285,7 @@ private fun App(activity: MainActivity) {
                     val days = ((now - at) / (24L * 60 * 60 * 1000)).toInt()
                     if (days >= 3) Prompt.PreviousReview(days, text) else null
                 }
-                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous, days = store.days())) { text ->
+                AiClient.chatStream(provider, baseUrl, key, model, WEEKLY_SYSTEM, Prompt.weeklyUser(store.all(), now, about, previous = previous, days = store.days(), reason = store.reason())) { text ->
                     val nowMs = System.currentTimeMillis()
                     if (id == runId && nowMs - lastPush >= STREAM_UI_MS) {
                         lastPush = nowMs
@@ -436,6 +451,17 @@ private fun App(activity: MainActivity) {
         }
     }
 
+    // Back in the app after hours away: the greeting, the evening card and the counts are for now.
+    val resumed = activity.resumeTick
+    LaunchedEffect(resumed) {
+        // The first resume is the launch itself, which is already fresh.
+        if (resumed > 1 && screen == Screen.HOME) {
+            hour = LocalTime.now().hour
+            refresh()
+            cardsTick++
+        }
+    }
+
     // What a notification tap or the tile / icon shortcut asked for.
     val action = activity.pendingAction
     LaunchedEffect(action) {
@@ -453,6 +479,11 @@ private fun App(activity: MainActivity) {
                 RideRequest.Decision.IGNORE -> {}
             }
             MainActivity.ACTION_CHECKIN -> startCheckIn()
+            // Already on it, or in the middle of something else: nothing to do (and no second request).
+            MainActivity.ACTION_REVIEW -> if (screen in CALM_SCREENS && screen != Screen.REVIEW) {
+                screen = Screen.REVIEW
+                runReview(force = false)
+            }
         }
         if (action != null) {
             activity.pendingAction = null
@@ -464,13 +495,22 @@ private fun App(activity: MainActivity) {
         Screen.HOME -> {
             val now = System.currentTimeMillis()
             val cards = remember(entries, cardsTick, nudgeMinute) {
+                val days = store.days()
+                val today = LocalDate.now()
+                val startOfToday = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val hourNow = LocalTime.now().hour
                 HomeCards(
                     pendingRideAt = store.pendingRide().takeIf { it != 0L && now - it < SIX_HOURS_MS } ?: 0L,
                     hot = if (nudgeMinute < 0 && now - store.dismissedAt("hot") > FORTNIGHT_MS) Insights.hotWindow(entries, now) else null,
                     heavier = now - store.dismissedAt("heavier") > FORTNIGHT_MS && Insights.heavier(entries, now),
                     nudgeMinute = nudgeMinute,
-                    askDay = LocalTime.now().hour >= 17 && LocalDate.now() !in store.days(),
-                    planDays = Insights.planDays(store.days(), LocalDate.now())
+                    askDay = hourNow >= 17 && today !in days,
+                    planDays = Insights.planDays(days, today),
+                    // Last night's first move stays until it is ticked off, and goes when the evening check-in opens.
+                    firstMove = days[today.minusDays(1)]?.next
+                        ?.takeIf { it.isNotBlank() && hourNow < 17 && store.dismissedAt("move") < startOfToday },
+                    setupHidden = store.dismissedAt("setup") > 0L,
+                    reviewReady = Insights.reviewReady(entries, now)
                 )
             }
             HomeScreen(
@@ -479,7 +519,10 @@ private fun App(activity: MainActivity) {
                 setup = SetupState(
                     dechainerInstalled = Door.isInstalled(context),
                     canReachDechainer = Door.hasPermission(context),
-                    aiReady = settings.configured
+                    aiReady = settings.configured,
+                    reasonWritten = store.reason().isNotBlank(),
+                    contactSet = supportContact.number.isNotBlank(),
+                    eveningOn = reminders.eveningMinute >= 0
                 ),
                 cards = cards,
                 onRide = { startRide() },
@@ -493,7 +536,7 @@ private fun App(activity: MainActivity) {
                 },
                 onKept = { kept = store.kept(); screen = Screen.KEPT },
                 keptCount = kept.size,
-                onFocus = { minutes -> Door.send(context, DoorAction(DoorAction.FOCUS_BLOCK, minutes)) },
+                onFocus = { minutes, intention -> Door.send(context, DoorAction(DoorAction.FOCUS_BLOCK, minutes, intention)) },
                 onReview = {
                     screen = Screen.REVIEW
                     runReview(force = false)
@@ -523,6 +566,14 @@ private fun App(activity: MainActivity) {
                     store.dismiss("heavier")
                     cardsTick++
                 },
+                onDismissMove = {
+                    store.dismiss("move")
+                    cardsTick++
+                },
+                onHideSetup = {
+                    store.dismiss("setup")
+                    cardsTick++
+                },
                 onShare = { Share.text(context, Insights.shareText(entries, System.currentTimeMillis())) }
             )
         }
@@ -541,6 +592,8 @@ private fun App(activity: MainActivity) {
                 statusChecked = statusChecked,
                 step = Coach.rideStep(entries),
                 myPlan = MyPlan.forRide(plans, hour),
+                reason = store.reason(),
+                proof = remember(entries) { Insights.proof(entries) },
                 onDone = { screen = Screen.AFTER },
                 onLonger = {
                     lockDown(LONGER_BLOCK_MINUTES, LONGER_LOCK_MINUTES)
@@ -618,6 +671,7 @@ private fun App(activity: MainActivity) {
                     plans = plans,
                     ai = ai,
                     providerLabel = settings.provider.label,
+                    reason = store.reason(),
                     onSavePlan = { text ->
                         store.addPlan(
                             MyPlan(

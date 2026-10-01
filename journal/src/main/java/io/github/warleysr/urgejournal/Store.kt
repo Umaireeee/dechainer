@@ -10,6 +10,9 @@ import androidx.core.content.edit
 class JournalStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("journal", Context.MODE_PRIVATE)
 
+    /** Small and separate: the reason is saved as it is typed, and that must not rewrite the whole journal each time. */
+    private val whyPrefs = context.applicationContext.getSharedPreferences("why", Context.MODE_PRIVATE)
+
     @Synchronized
     fun all(): List<Entry> = Entry.parseList(prefs.getString(KEY, null)).items.sortedBy { it.time }
 
@@ -122,11 +125,42 @@ class JournalStore(context: Context) {
     @Synchronized
     fun setDay(date: java.time.LocalDate, log: DayLog) {
         // A stored value that cannot be read is left alone rather than replaced by one day.
-        if (runCatching { org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}") }.isFailure) return
-        val kept = (days() + (date to log)).toSortedMap().entries.toList().takeLast(120)
+        if (!daysReadable()) return
+        saveDays(days() + (date to log))
+    }
+
+    private fun daysReadable(): Boolean = runCatching { org.json.JSONObject(prefs.getString(DAYS, "{}") ?: "{}") }.isSuccess
+
+    private fun saveDays(all: Map<java.time.LocalDate, DayLog>) {
+        val kept = all.toSortedMap().entries.toList().takeLast(DAYS_LIMIT)
         val o = org.json.JSONObject()
         kept.forEach { o.put(it.key.toString(), it.value.toJson()) }
         prefs.edit(commit = true) { putString(DAYS, o.toString()) }
+    }
+
+    /** Adds the evening check-ins of a backup for days not answered here; returns how many were new. */
+    @Synchronized
+    private fun mergeDays(incoming: Map<java.time.LocalDate, DayLog>): Int {
+        if (!daysReadable()) return 0
+        val have = days()
+        val fresh = incoming.filterKeys { it !in have }
+        if (fresh.isEmpty()) return 0
+        saveDays(have + fresh)
+        return fresh.size
+    }
+
+    // ---- Why they are doing this ----
+
+    /**
+     * The person's own reason, written for the version of them at 23:00; shown during every ride and
+     * after a slip. A setting like the "about me" text: "delete all my entries" leaves it.
+     */
+    @Synchronized
+    fun reason(): String = whyPrefs.getString(REASON, "") ?: ""
+
+    @Synchronized
+    fun setReason(text: String) {
+        whyPrefs.edit { putString(REASON, text.trim().take(REASON_LIMIT)) }
     }
 
     // ---- Deep dives the person chose to keep ----
@@ -172,8 +206,8 @@ class JournalStore(context: Context) {
     fun dismiss(card: String, time: Long = System.currentTimeMillis()) =
         prefs.edit(commit = true) { putLong("dismissed_$card", time) }
 
-    /** The whole journal as text, for a backup the person keeps: entries and their own rules. */
-    fun exportJson(): String = Backup.compose(all(), plans(), kept())
+    /** The whole journal as text, for a backup the person keeps: entries, their own rules, kept deep dives, evening check-ins and their reason. */
+    fun exportJson(): String = Backup.compose(all(), plans(), kept(), reason(), days())
 
     /**
      * Adds entries and rules from a backup; returns how many were new. Nothing existing is
@@ -191,6 +225,12 @@ class JournalStore(context: Context) {
             }
         }
         incoming.kept.forEach { k -> if (!isKept(k.text) && keep(k.kind, k.text, k.id)) added++ }
+        added += mergeDays(incoming.days)
+        // A reason already written here is never overwritten by a backup's.
+        if (incoming.reason.isNotBlank() && reason().isBlank()) {
+            setReason(incoming.reason)
+            added++
+        }
         if (incoming.plans.isNotEmpty()) {
             mutatePlans { before ->
                 val fresh = Backup.newPlans(before, incoming.plans)
@@ -224,7 +264,9 @@ class JournalStore(context: Context) {
         const val PENDING_RIDE = "pending_ride"
         const val LIMIT = 2000
         const val PLAN_LIMIT = 30
+        const val DAYS_LIMIT = 120
         const val KEPT = "kept"
+        const val REASON = "reason"
         const val KEPT_LIMIT = 200
     }
 }
@@ -274,6 +316,7 @@ object Door {
                 component = ComponentName(PKG, RECEIVER)
                 putExtra("kind", action.kind)
                 putExtra("minutes", action.minutes)
+                if (action.intention.isNotBlank()) putExtra("intention", action.intention.trim().take(DayLog.NEXT_LIMIT))
             }
         )
         return Result.SENT
