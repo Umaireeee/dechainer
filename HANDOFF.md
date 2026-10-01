@@ -1,8 +1,12 @@
 # Project handoff (read this first in a new session)
 
 Last updated: 2026-10-01. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
-The journal, the door and the guided-ride upgrade are all on `main-clean` (PR #3 merged; the ride upgrade follows it, see "State").
 
+**Current state:** Déchaîner 2.0 is one app (`:app`, package `io.github.warleysr.dechainer`). BLUEPRINT.md is the single source of truth and phases 1 to 7 are built (see the phase sections at the end). Everything between here and "Update: Déchaîner 2.0, Phase 1" describes the old two-app project (Déchaîner plus the Urge Journal and its door) and is **historical**: the journal module, the door, the ride lock, the entry gate and the subject/lecture features no longer exist.
+
+Build and release today: `.github/workflows/build.yml` (CI: unit tests, debug and release builds, release-manifest check) on every push; `.github/workflows/release.yml` (run by hand) builds and signs the one APK and runs the emulator tests. Version codes come from the run number (`-PversionCode`). The sandbox has no Android SDK, so CI is the only compiler.
+
+## Historical (pre-2.0, kept for the reasoning in it)
 ## What this project is
 Two Android apps in one repo, built to cut compulsive phone use (and porn urges) and to protect study time.
 
@@ -261,3 +265,29 @@ Judgement calls to confirm: `period_index` column added; a slip or session of th
 Testing: 21 pure tests ran in a scratch JVM project (`WeekMathTest` 9, `ReportInputsTest` 8, `ReportRulesTest` 4). `ReportServiceTest` (report built after the phone was off at the due time, no raw text in the request, failures, no double build, deleted report not rebuilt, advice carried forward) and `DataToolsTest` (deletes, wipe, freeze, export/import) are Robolectric tests that only CI runs. The Compose screens and the WorkManager worker are only compiled by CI.
 
 Owner checks (section 15) still unchecked: all of 1 to 8 from earlier phases, and now 9: the weekly report arrives after the phone was off at the due time (switch the phone off over a week boundary, switch it on with a network, open the app or wait for the job). Also: the Reports progress line, a backup save and read on the phone, and wipe asking for the recovery code.
+
+
+## Update: Déchaîner 2.0, Phase 7 "Setup, cleanup, polish" (2026-10-01; see BLUEPRINT.md, sections 3, 9.3, 10, 11, 12, 14)
+Phase 7 only. All seven phases are now built; none is accepted by the owner yet (owner checks in section 15 are all still open).
+
+Removed (grep-checked across the repo, no references left outside BLUEPRINT.md, RELEASE-NOTES.md and this file):
+- The door: `UrgeActionReceiver`, `RideStatusProvider`, `UrgeActions`, `JournalLink`, their manifest entries, the signature permission and `URGE_ACTIONS.md`. The `:journal` module, its release steps and `settings.gradle.kts` include.
+- **The entry gate (owner decision, rule 8):** `LockScreen`, the biometric prompt, `ChallengeScreens` (maths and word), `EntryChallengeScreen`, `SecurityManager.EntryChallenge` and its get and set, the Route, the Settings row and the `USE_BIOMETRIC` permission. Menu screens now open directly; Home is unchanged. Loosening still needs the recovery code and the unlock delay. The stored key `impulse_lock_mode` is simply unused.
+- Migrations: `LegacyCleanup`, `LocaleUtils`, `migrateFromHiding`, `releaseAllHidden` (and the hidden-app bookkeeping in `Blocker`), `DechainerPolicyUpdateReceiver`.
+- Dead functions: `isBrowser`, `isTorrentApp`, `getPossibleTorrentApps`, `supportsRestrictions`, `isBlockTorrentsEnabled` and its setter, `isHeldBySchedule`, `DnsGuard.isActive`, `UsageMath.foregroundMillis`, `RecoveryCodeHash.isHash`.
+- Focus extras: subject tags, daily targets, lecture progress and its three questions, the daily lecture goal and lecture length settings, the study chart and the CSV export and import. `FocusLogScreen` is now a plain list of sessions with the yes/no answer and a delete. The old stored log still reads (`FocusLogMath.decode`) for the one-time import.
+- Dependencies `androidx.appcompat`, `androidx.biometric`, `biometric-compose` and their catalogue entries. `device_admin_policies.xml` keeps only `force-lock` and `disable-keyguard-features`.
+- 92 strings nothing referenced.
+
+Added:
+- **Setup status card** (Settings, first item): `setup/SetupStatus.kt` (pure) and `setup/SetupProbe.kt`, `screens/setup/SetupStatusCard.kt`. Checks: Device Owner, notifications, full-screen alerts (Android 14+), usage access, battery (Xiaomi, Redmi, POCO only), recovery code, AI key (optional), rules confirmed. Each open check has a Fix button (an Android settings page, or the in-app screen).
+- **Rules onboarding** (`screens/setup/RulesOnboarding.kt`): shown after the recovery code is set, until confirmed. `DayEngine.confirmRules` sets `activatedOn`; **`DayEngine.runPass` no longer activates by itself** (D19: enforcement starts on the explicit confirmation). A phone that already had `activatedOn` set by the Phase 5 build keeps it.
+- **Three notification channels**: Weekly report (`weekly_report`), Evening checklist (`evening_checklist`) and one Focus channel (`focus_v3`, high importance, alarm sound). The three old focus channels are deleted when the new one is made. The running timer and the questions without sound are silenced per notification (`setSilent`), but the first post of the timer may still show as a heads-up because the channel is high importance. If that annoys, make the timer its own low-importance channel and the count becomes four, which the blueprint does not allow: tell the owner.
+- Content descriptions on the two icon-only buttons that had none (app picker menu, restriction expand). Every other icon without one sits inside a labelled button or row.
+- README, GUIDE and RELEASE-NOTES describe the one-app build.
+
+Judgement calls to confirm: removing the entry gate changes what "Settings" protects (it is now behind nothing except the recovery code for loosening); the Focus channel's sound is the alarm ringtone for both the 5-second chime and the question; the setup flow is the Setup status card plus the existing Device Owner and recovery screens plus the rules screen, not a new multi-page wizard; the release emulator tests are not run by CI and were not run here.
+
+Testing: CI is the only compiler (see the sandbox note). New pure test `SetupStatusTest`; tests for removed code were removed (entry challenge, lecture, CSV, targets) and the rest adjusted. Not run on a device: the release APK install over the old build, two launches, a ten-minute urge lock, a short focus block, and a process kill during a brick (the Phase 7 acceptance check), the Setup status card, the rules screen, and the single Focus channel.
+
+Owner checks (section 15) still unchecked: all of 1 to 10. For this phase also: the Setup status card shows ticks, Fix opens the right page; the rules screen appears once after the recovery code and never again; a notification from each of the three channels; and install the release build over the old Déchaîner on a spare phone first (14A), then uninstall the old Urge Journal.
