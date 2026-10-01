@@ -1,17 +1,22 @@
 package io.github.warleysr.dechainer.lock
 
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.Rules
+import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.DnsGuard
-import io.github.warleysr.dechainer.data.RideLock
+import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.ScheduleRepository
 import io.github.warleysr.dechainer.data.TimeLimits
 import io.github.warleysr.dechainer.focus.Pomodoro
-import io.github.warleysr.dechainer.security.SecurityManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import java.time.ZoneId
 import java.util.concurrent.Executors
@@ -40,6 +45,16 @@ object LockEngine {
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "lock-engine").apply { isDaemon = true } }
     private val draining = AtomicBoolean(false)
     private val inPass = ThreadLocal<Boolean>()
+    private val startLock = Any()
+
+    private val _status = MutableStateFlow<BrickStatus?>(null)
+
+    /**
+     * What holds the phone right now (an urge lock, a focus block, a punishment day), for the lock
+     * screen and the pin; null when nothing does. Every pass publishes the plan's answer, and
+     * [refreshStatus] fills it in at once, before any pass has run.
+     */
+    val status: StateFlow<BrickStatus?> = _status.asStateFlow()
 
     /** Elapsed-realtime when the latest pass began; lets the process-start request skip a pass a receiver already ran. */
     @Volatile private var lastPassStartedElapsed = Long.MIN_VALUE
@@ -126,6 +141,7 @@ object LockEngine {
                 gathered = gather(ctx, now)
                 plan = plan(now, zone, gathered.state)
             }
+            _status.value = plan.brickStatus
             ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
             SystemGuard.apply(ctx)
             DnsGuard.enforce(ctx)
@@ -146,35 +162,42 @@ object LockEngine {
                 LockMode.DAILY_LIMIT -> R.string.limit_source
                 LockMode.FOCUS_BLOCK -> R.string.focus_brick_source
                 LockMode.FOCUS_SESSION -> R.string.focus_lock_source
-                LockMode.IMPULSE_LOCK -> R.string.impulse_lock
-                LockMode.RIDE_LOCK -> R.string.ride_lock_source
+                LockMode.URGE_LOCK -> R.string.urge_lock_source
+                LockMode.PUNISHMENT_DAY -> R.string.punishment_day_source
             }
         )
+        // The urge lock and the punishment day come from `app_state`; they are known on any phone, so
+        // the settings freeze and the status never depend on Device Owner being asked.
+        val urge = LockStateStore.urge(ctx)
+        val punishment = LockStateStore.punishment(ctx)
+
+        Pomodoro.ensureLoaded(ctx)
+        val st = Pomodoro.state.value
 
         if (!dpm.isDeviceOwnerApp(ctx.packageName)) {
             val none = PhoneFacts(emptySet(), emptySet(), emptySet(), emptySet())
-            Pomodoro.ensureLoaded(ctx)
-            val st = Pomodoro.state.value
             return Gathered(
                 LockState(
                     deviceOwner = false, schedules = schedules, phone = none,
                     // Only so an ended block gets closed; without Device Owner nothing is applied.
-                    focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L)
+                    focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L),
+                    urge = urge, punishment = punishment
                 ),
-                ScheduleEnforcer.ApplyExtras(emptySet(), -1L, 0L, null, ::label)
+                ScheduleEnforcer.ApplyExtras(emptySet(), null, ::label)
             )
         }
 
         val protectedPkgs = ScheduleEnforcer.protectedPackages(ctx)
+        val sms = try { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) } catch (_: Exception) { null }
         val phone = PhoneFacts(
             launcherApps = ScheduleEnforcer.launcherApps(ctx),
             protectedApps = protectedPkgs,
             alarmApps = ScheduleEnforcer.alarmApps(ctx),
-            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx)
+            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx),
+            emergencyApps = LockSafety.EMERGENCY_APPS,
+            smsApps = setOfNotNull(sms)
         )
 
-        Pomodoro.ensureLoaded(ctx)
-        val st = Pomodoro.state.value
         val focus = FocusInput(
             brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L,
             sessionLockEndsAt = if (Pomodoro.sessionLockActive()) (if (st.isRunning) st.endsAt else Long.MAX_VALUE) else 0L,
@@ -185,33 +208,85 @@ object LockEngine {
         val limitStatus = TimeLimits.evaluate(ctx, now)
         val limits = LimitInput(limitStatus.reached, TimeLimits.midnightMillis(now))
 
-        // Until Phase 2 merges them into the urge lock, the impulse and ride locks are still holds.
-        // An older version kept the impulse suspensions in a separate record; adopting them lets
-        // this engine release them on time.
-        SecurityManager.getActiveImpulseSuspension(ctx).takeIf { it.isNotEmpty() }?.let { legacy ->
-            legacy.forEach { ScheduleEnforcer.adopt(ctx, it) }  // same lock, re-entered
-            SecurityManager.clearActiveImpulseSuspension(ctx)
-        }
-        val extraHolds = mutableListOf<Hold>()
-        val impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(ctx)
-        if (impulseRemaining > 0 && SecurityManager.getImpulseAction(ctx) == SecurityManager.ImpulseAction.TIMER_AND_SUSPEND) {
-            extraHolds += Hold(LockMode.IMPULSE_LOCK, null, now + impulseRemaining, SecurityManager.getImpulseSuspendedApps(ctx))
-        }
-        // The ride lock: everything with an icon except calls, text messages (reaching a person is
-        // what a hard moment may need most), emergency apps, the alarm clock and the journal.
-        val rideRemaining = RideLock.remainingMillis(ctx, now)
-        if (rideRemaining > 0) {
-            val sms = try { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) } catch (_: Exception) { null }
-            extraHolds += Hold(
-                LockMode.RIDE_LOCK, null, now + rideRemaining,
-                phone.launcherApps - phone.alarmApps - RideLock.ALWAYS_OPEN - setOfNotNull(sms)
-            )
-        }
-
         return Gathered(
-            LockState(true, schedules, phone, focus, limits, extraHolds),
-            ScheduleEnforcer.ApplyExtras(protectedPkgs, impulseRemaining, rideRemaining, limitStatus.nextCheckDelayMs, ::label)
+            LockState(true, schedules, phone, focus, limits, urge, punishment),
+            ScheduleEnforcer.ApplyExtras(protectedPkgs, limitStatus.nextCheckDelayMs, ::label)
         )
+    }
+
+    private fun isDeviceOwner(ctx: Context): Boolean =
+        (ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager).isDeviceOwnerApp(ctx.packageName)
+
+    /**
+     * The lock status read straight from the stored state, without a pass: what the lock screen
+     * shows on its first frame, and what answers "is a brick running" for a caller that cannot wait.
+     * It uses the same rule as the plan ([LockPlanner.quickStatus]). Without Device Owner nothing is locked.
+     */
+    fun refreshStatus(context: Context): BrickStatus? {
+        val ctx = context.applicationContext
+        val status = try {
+            if (!isDeviceOwner(ctx)) null else {
+                Pomodoro.ensureLoaded(ctx)
+                val st = Pomodoro.state.value
+                LockPlanner.quickStatus(
+                    TrustedClock.now(ctx),
+                    FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L, allowedApps = Pomodoro.allowedApps.value),
+                    LockStateStore.urge(ctx),
+                    LockStateStore.punishment(ctx)
+                )
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Lock status not readable; keeping the last one")
+            _status.value
+        }
+        _status.value = status
+        return status
+    }
+
+    /** True while an urge lock, a focus block or a punishment day holds the phone. */
+    fun brickRunning(context: Context): Boolean = refreshStatus(context) != null
+
+    /**
+     * The owner asked for an urge lock (the panic button, the Quick Settings tile, the door; blueprint
+     * 5.2). The rule is [UrgeLockRule]: ten minutes, never extended by a second tap, no second lock
+     * inside a focus block or a punishment day. The lock is stored and shown before this returns and
+     * before the caller does anything else: it never waits on the network. Returns what happened.
+     */
+    fun startUrgeLock(context: Context): UrgeStart = startUrgeLock(context, Rules.URGE_LOCK_MS)
+
+    private fun startUrgeLock(context: Context, lockMs: Long): UrgeStart {
+        val ctx = context.applicationContext
+        val decision = synchronized(startLock) {
+            val now = TrustedClock.checkpoint(ctx)
+            Pomodoro.ensureLoaded(ctx)
+            val decision = UrgeLockRule.decide(
+                now = now,
+                runningUrgeEndsAt = LockStateStore.urge(ctx).endsAt,
+                focusBlockActive = Pomodoro.brickActive(),
+                punishmentActive = LockStateStore.punishment(ctx).activeAt(now),
+                deviceOwner = isDeviceOwner(ctx),
+                lockMs = lockMs
+            )
+            if (decision is UrgeStart.Started) LockStateStore.setUrge(ctx, now, decision.endsAt)
+            decision
+        }
+        refreshStatus(ctx)
+        requestSync(ctx)
+        return decision
+    }
+
+    /**
+     * After a reboot or an update the pin is gone: if any brick is running, open this app, which pins
+     * itself again. Suspension holds meanwhile (it is the layer under the pin).
+     */
+    fun reopenIfBrick(context: Context) {
+        val ctx = context.applicationContext
+        if (!brickRunning(ctx)) return
+        try {
+            ctx.startActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            Timber.w(e, "Couldn't reopen the brick screen")
+        }
     }
 
     /**
@@ -226,11 +301,18 @@ object LockEngine {
     fun abortBrick(context: Context) {
         val ctx = context.applicationContext
         Timber.e("Aborting the brick")
-        // First, so no pass that runs meanwhile sees the block as running.
+        // First, so no pass that runs meanwhile sees a brick as running.
         try {
             Pomodoro.abortBlock(ctx)
         } catch (e: Throwable) {
             Timber.e(e, "Abort: block state")
+        }
+        _status.value = null
+        // The urge lock is dropped and a punishment day is ended on record (by the system, so it is not
+        // taken for the owner's doing). Without that the next pass would put the brick straight back.
+        bounded("urge lock and punishment records") {
+            LockStateStore.clearUrge(ctx)
+            LockStateStore.endPunishmentBySystem(ctx, TrustedClock.now(ctx))
         }
         bounded("home screen") { ScheduleEnforcer.releaseBrickHome(ctx) }
         bounded("restrictions and apps") { ScheduleEnforcer.releaseAll(ctx) }
@@ -249,6 +331,22 @@ object LockEngine {
         t.start()
         t.join(ABORT_STEP_LIMIT_MS)
         if (t.isAlive) Timber.e("Abort: $name did not finish in %d ms", ABORT_STEP_LIMIT_MS)
+    }
+
+    /** Debug builds only (blueprint 14A): an urge lock of [minutes], through the same rule as the real one. A release build refuses. */
+    fun debugStartUrgeLock(context: Context, minutes: Int): UrgeStart? {
+        if (!BuildConfig.DEBUG) return null
+        return startUrgeLock(context, minutes * 60_000L)
+    }
+
+    /** Debug builds only: a punishment day of [minutes] starting now, recorded like a real one. A release build refuses. */
+    fun debugStartPunishment(context: Context, minutes: Int) {
+        if (!BuildConfig.DEBUG) return
+        val ctx = context.applicationContext
+        val now = TrustedClock.checkpoint(ctx)
+        LockStateStore.setPunishment(ctx, PunishmentInput(now, now + minutes * 60_000L), "debug")
+        refreshStatus(ctx)
+        requestSync(ctx)
     }
 
     /**

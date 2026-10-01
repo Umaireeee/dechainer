@@ -5,6 +5,7 @@ import android.os.SystemClock
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockStateStore
 
 /**
  * Wires [CrashGuard] into the process (blueprint 5.4, R2): an uncaught-exception handler that counts
@@ -35,15 +36,15 @@ object CrashHandler {
     }
 
     /**
-     * Whether a block is running, read straight from the stored end time rather than from the
-     * Pomodoro's in-memory state, which may be what just crashed. Over-estimating is harmless: an
-     * abort on a block that had really ended only releases what it was about to release anyway.
+     * Whether a brick is running, read straight from the stored end times rather than from any
+     * in-memory state, which may be what just crashed. Over-estimating is harmless: an abort on a
+     * brick that had really ended only releases what it was about to release anyway.
      */
     private fun brickIsRunning(ctx: Context): Boolean {
-        val end = Pomodoro.storedBlockEndsAt(ctx)
-        if (end <= 0L) return false
         val now = try { TrustedClock.now(ctx) } catch (_: Throwable) { System.currentTimeMillis() }
-        return end > now
+        return Pomodoro.storedBlockEndsAt(ctx) > now ||
+            LockStateStore.urge(ctx).endsAt > now ||
+            LockStateStore.punishment(ctx).activeAt(now)
     }
 
     /** Crashes in SharedPreferences, written with `commit()` so they are on disk before the process dies. */

@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.telecom.TelecomManager
 import androidx.core.content.ContextCompat
@@ -37,9 +36,6 @@ object ScheduleEnforcer : AppBlockEngine() {
     private const val KEY_ACTIVE_SITES = "active_sites"
 
     const val ACTION_BOUNDARY = "io.github.warleysr.dechainer.SCHEDULE_BOUNDARY"
-    const val ACTION_IMPULSE_END = "io.github.warleysr.dechainer.IMPULSE_END"
-    private const val IMPULSE_ALARM_REQUEST_CODE = 2
-    private const val RIDE_ALARM_REQUEST_CODE = 3
 
     // Ownership and the boundary alarm live in AppBlockEngine.
     override val statePrefsName = "schedule_state"
@@ -50,31 +46,21 @@ object ScheduleEnforcer : AppBlockEngine() {
     /** What [applyPlan] needs besides the plan: facts that are not decisions. */
     internal class ApplyExtras(
         val protectedPackages: Set<String>,
-        val impulseRemainingMs: Long,
-        val rideRemainingMs: Long,
         val limitNextCheckDelayMs: Long?,
         /** The label shown on the Apps screen for a hold that has no name of its own. */
         val labelFor: (LockMode) -> String
     )
 
-    // Held here so they live as long as the process (listeners are only weakly referenced).
-    private var securityListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    // Held here so it lives as long as the process.
     private var suspensionReceiver: BroadcastReceiver? = null
 
     /**
-     * Reacts the moment an impulse lock starts or ends, so its apps are blocked and released
-     * straight away. Two signals, either one enough: the security settings changing
-     * (where impulse lock keeps its state), and Android announcing that apps were suspended or
-     * unsuspended (which impulse lock does to its apps). Idempotent; call once at startup.
+     * Reacts the moment Android announces that apps were suspended or unsuspended, by anyone: if
+     * something outside the engine lifts a suspension the engine holds, the next pass puts it back
+     * (the engine's own changes cost one more pass that finds nothing to do). Idempotent; call once at startup.
      */
     fun watchForChanges(context: Context) {
         val ctx = context.applicationContext
-        if (securityListener == null) {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> LockEngine.requestSync(ctx) }
-            securityListener = listener
-            ctx.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-                .registerOnSharedPreferenceChangeListener(listener)
-        }
         if (suspensionReceiver == null) {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context, i: Intent) = LockEngine.requestSync(ctx)
@@ -156,11 +142,7 @@ object ScheduleEnforcer : AppBlockEngine() {
         stage("restrictions") { applyRestrictions(ctx, dpm, admin, plan.desiredRestrictions) }
         stage("sites") { applySites(ctx, plan.desiredSites) }
         stage("alarms") {
-            // An exact alarm at the moment the impulse and ride locks end, so their apps come back
-            // on time even with the screen off.
-            armImpulseEnd(ctx, extras.impulseRemainingMs)
-            armRideEnd(ctx, extras.rideRemainingMs)
-            // And a non-wakeup alarm for the earliest moment a limit could run out (or midnight).
+            // A non-wakeup alarm for the earliest moment a limit could run out (or midnight).
             TimeLimits.armCheck(ctx, extras.limitNextCheckDelayMs)
         }
         // Write down the running time of a forced removal, so a reboot can't lose what came after the last write.
@@ -174,71 +156,6 @@ object ScheduleEnforcer : AppBlockEngine() {
         val next = armAlarmFor(ctx, nextWake)
         val cap = wallNow + ENGINE_MAX_CACHE_MS
         cacheValidUntil = if (anyFailed) 0L else if (next != null) minOf(next, cap) else cap
-    }
-
-    /**
-     * An alarm at the moment the impulse lock ends, which fires even with the screen off, so the
-     * apps come back on time rather than at the next screen-on.
-     */
-    @Volatile
-    private var impulseAlarmAt = 0L
-
-    private fun armImpulseEnd(ctx: Context, remainingMillis: Long) {
-        // Runs on every sync, so only touch AlarmManager when the target actually changes.
-        val target = if (remainingMillis > 0) System.currentTimeMillis() + remainingMillis + 1000L else 0L
-        if (target == 0L && impulseAlarmAt == 0L) return
-        if (target != 0L && kotlin.math.abs(target - impulseAlarmAt) < 2000L) return
-        impulseAlarmAt = target
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        val pi = android.app.PendingIntent.getBroadcast(
-            ctx,
-            IMPULSE_ALARM_REQUEST_CODE,
-            Intent(ctx, io.github.warleysr.dechainer.ScheduleReceiver::class.java).setAction(ACTION_IMPULSE_END),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        if (remainingMillis <= 0) {
-            am.cancel(pi)
-            return
-        }
-        val triggerAt = target
-        try {
-            val canExact = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
-                am.canScheduleExactAlarms()
-            if (canExact) am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
-            else am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        } catch (e: SecurityException) {
-            am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        }
-    }
-
-    /** Same idea as [armImpulseEnd], for the ride lock: an exact alarm so its apps come back on time. */
-    @Volatile
-    private var rideAlarmAt = 0L
-
-    private fun armRideEnd(ctx: Context, remainingMillis: Long) {
-        val target = if (remainingMillis > 0) System.currentTimeMillis() + remainingMillis + 1000L else 0L
-        if (target == 0L && rideAlarmAt == 0L) return
-        if (target != 0L && kotlin.math.abs(target - rideAlarmAt) < 2000L) return
-        rideAlarmAt = target
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        val pi = android.app.PendingIntent.getBroadcast(
-            ctx,
-            RIDE_ALARM_REQUEST_CODE,
-            Intent(ctx, io.github.warleysr.dechainer.ScheduleReceiver::class.java).setAction(ACTION_IMPULSE_END),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        if (remainingMillis <= 0) {
-            am.cancel(pi)
-            return
-        }
-        try {
-            val canExact = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
-                am.canScheduleExactAlarms()
-            if (canExact) am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
-            else am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
-        } catch (e: SecurityException) {
-            am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, target, pi)
-        }
     }
 
     private fun applyRestrictions(
@@ -294,7 +211,7 @@ object ScheduleEnforcer : AppBlockEngine() {
         state(context).getStringSet(KEY_ACTIVE_SITES, emptySet()) ?: emptySet()
 
     /**
-     * The schedule, impulse lock or focus session holding [pkg] right now, if any. With [fresh]
+     * The hold (a brick, a schedule, a limit or a focus session) keeping [pkg] suspended right now, if any. With [fresh]
      * true an expired cache is refreshed first (what the Apps tab uses before lifting an app);
      * with it false, the refresh happens in the background and the cached answer is returned.
      */

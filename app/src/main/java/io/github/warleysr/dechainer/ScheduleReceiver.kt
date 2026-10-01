@@ -26,8 +26,11 @@ class ScheduleReceiver : BroadcastReceiver() {
                 // is harmless. First, so the sync below plans from a settled state.
                 val fresh = intent.action == Intent.ACTION_BOOT_COMPLETED ||
                     intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
-                Pomodoro.rearm(ctx, relaunchBrick = fresh)
+                Pomodoro.rearm(ctx)
                 LockEngine.sync(ctx)
+                // The pin does not survive a reboot or an update: if any brick runs, open Déchaîner so
+                // it pins again. Only then; on any other wake-up it would drag you out of an allowed app.
+                if (fresh) LockEngine.reopenIfBrick(ctx)
             } finally {
                 pending.finish()
             }

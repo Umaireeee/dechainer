@@ -14,7 +14,13 @@ import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.lock.LockRestrictions
+import io.github.warleysr.dechainer.lock.LockStateStore
+import io.github.warleysr.dechainer.lock.PunishmentInput
+import io.github.warleysr.dechainer.lock.UrgeStart
+import io.github.warleysr.dechainer.store.DechainerDatabase
+import io.github.warleysr.dechainer.store.Store
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -44,10 +50,13 @@ class LockEngineSyncTest {
     fun setUp() {
         ctx = ApplicationProvider.getApplicationContext()
         listOf(
-            "pomodoro", "schedule_state", "schedule_prefs", "security_prefs", "ride_lock",
+            "pomodoro", "schedule_state", "schedule_prefs", "security_prefs", "lock_settings", "crash_guard",
             "app_time_limits", "app_time_limits_reached"
         ).forEach { ctx.getSharedPreferences(it, Context.MODE_PRIVATE).edit(commit = true) { clear() } }
         Pomodoro.resetForTests()
+        Store.resetForTests()
+        ctx.deleteDatabase(DechainerDatabase.FILE_NAME)
+        LockStateStore.resetForTests()
 
         dpm = ctx.getSystemService(DevicePolicyManager::class.java)
         admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
@@ -160,5 +169,85 @@ class LockEngineSyncTest {
         assertTrue(dpm.getAutoTimeZoneEnabled(admin))
         // Force stop and Clear data (setUserControlDisabledPackages) cannot be read back in Robolectric;
         // that one is the owner's check on the phone (blueprint section 15, check 1).
+    }
+
+    // ---- The urge lock and the punishment day, end to end ----
+
+    @Test
+    fun anUrgeLockTakesTheAppAwayAndASecondTapNeverExtendsIt() {
+        makeDeviceOwner()
+        val first = LockEngine.startUrgeLock(ctx)
+        assertTrue("it started: $first", first is UrgeStart.Started)
+        val endsAt = (first as UrgeStart.Started).endsAt
+        LockEngine.sync(ctx)
+        assertTrue("the brick suspended the app", dpm.isPackageSuspended(admin, games))
+        assertEquals(LockMode.URGE_LOCK, LockEngine.status.value?.primary)
+        assertEquals(endsAt, LockEngine.status.value?.endsAt)
+        assertTrue(LockEngine.brickRunning(ctx))
+
+        assertEquals(UrgeStart.AlreadyRunning(endsAt), LockEngine.startUrgeLock(ctx))
+        assertEquals("the end did not move", endsAt, LockStateStore.urge(ctx).endsAt)
+    }
+
+    @Test
+    fun anUrgeLockWhoseTimeHasPassedIsOverEvenIfNoAlarmEverFired() {
+        makeDeviceOwner()
+        val now = TrustedClock.now(ctx)
+        LockStateStore.setUrge(ctx, startedAt = now - 11 * minute, endsAt = now - minute)
+        LockEngine.sync(ctx)
+        assertFalse("the app is released", dpm.isPackageSuspended(admin, games))
+        assertEquals(null, LockEngine.status.value)
+        assertFalse(LockEngine.brickRunning(ctx))
+    }
+
+    @Test
+    fun anUrgeLockWithoutDeviceOwnerLocksNothingAndSaysSo() {
+        val result = LockEngine.startUrgeLock(ctx)
+        assertTrue("$result", result is UrgeStart.Unavailable)
+        assertEquals(0L, LockStateStore.urge(ctx).endsAt)
+        assertFalse(LockEngine.brickRunning(ctx))
+    }
+
+    @Test
+    fun aPunishmentDayHoldsThePhoneAndNoUrgeLockStartsInsideIt() {
+        makeDeviceOwner()
+        val now = TrustedClock.now(ctx)
+        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 60 * minute), "today")
+        LockEngine.sync(ctx)
+        assertTrue(dpm.isPackageSuspended(admin, games))
+        assertEquals(LockMode.PUNISHMENT_DAY, LockEngine.status.value?.primary)
+        assertTrue(ctx.let { ownedRestrictions() }.containsAll(LockRestrictions.BRICK))
+
+        val urge = LockEngine.startUrgeLock(ctx)
+        assertTrue("$urge", urge is UrgeStart.Covered)
+        assertEquals("no second lock was stored", 0L, LockStateStore.urge(ctx).endsAt)
+    }
+
+    @Test
+    fun aPunishmentDayThatHasEndedReleasesWhatItHeld() {
+        makeDeviceOwner()
+        val now = TrustedClock.now(ctx)
+        LockStateStore.setPunishment(ctx, PunishmentInput(now - 60 * minute, now + 60 * minute), "today")
+        LockEngine.sync(ctx)
+        assertTrue(dpm.isPackageSuspended(admin, games))
+        LockStateStore.setPunishment(ctx, PunishmentInput(now - 120 * minute, now - minute), "today")
+        LockEngine.sync(ctx)
+        assertFalse(dpm.isPackageSuspended(admin, games))
+        assertEquals(null, LockEngine.status.value)
+    }
+
+    @Test
+    fun theCrashBreakerEndsAnUrgeLockAndAPunishmentDayOnRecord() {
+        makeDeviceOwner()
+        val now = TrustedClock.now(ctx)
+        LockEngine.startUrgeLock(ctx)
+        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 60 * minute), "today")
+        LockEngine.sync(ctx)
+        LockEngine.abortBrick(ctx)
+        assertEquals(null, LockEngine.status.value)
+        assertEquals(0L, LockStateStore.urge(ctx).endsAt)
+        assertFalse("the day is shortened to now", LockStateStore.punishment(ctx).endsAt > TrustedClock.now(ctx))
+        LockEngine.sync(ctx)
+        assertFalse("and it does not come back on the next pass", LockEngine.brickRunning(ctx))
     }
 }
