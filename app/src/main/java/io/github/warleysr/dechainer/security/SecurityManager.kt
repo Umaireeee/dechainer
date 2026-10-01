@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.security
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
@@ -14,23 +15,19 @@ import androidx.core.content.edit
 
 class SecurityManager {
 
-    enum class ImpulseLockMode {
+    /**
+     * The challenge in front of Déchaîner's own screens (the old "impulse lock" setting, whose stored
+     * key is unchanged): none, a maths problem, or typing a word. It is not a lock mode of the
+     * engine; it only slows the way in.
+     */
+    enum class EntryChallenge {
         OFF, NORMAL, HARD;
 
         companion object {
             /** A stored mode that is missing or unknown (an older or damaged value) means OFF, never a crash. */
-            fun parse(raw: String?): ImpulseLockMode =
+            fun parse(raw: String?): EntryChallenge =
                 runCatching { valueOf(raw ?: OFF.name) }.getOrDefault(OFF)
         }
-    }
-
-    /** What the "I'm having impulses" panic button does on top of locking Dechainer itself. */
-    enum class ImpulseAction {
-        /** Only the timer that already blocks access to Dechainer. */
-        TIMER_ONLY,
-
-        /** The timer, plus suspending a user-picked list of apps until it runs out. */
-        TIMER_AND_SUSPEND
     }
 
     companion object {
@@ -39,9 +36,8 @@ class SecurityManager {
         /** How long forced removal makes you wait, without the recovery code: four days. */
         const val FORCED_REMOVAL_WAIT_MS = 4L * 24 * 60 * 60 * 1000
 
-        const val IMPULSE_MIN_DURATION_MINUTES = 15
-        const val IMPULSE_MAX_DURATION_MINUTES = 360
-        const val IMPULSE_DEFAULT_DURATION_MINUTES = 60
+        /** Stored under its old name so an owner's choice survives the update. */
+        private const val ENTRY_CHALLENGE_KEY = "impulse_lock_mode"
 
         const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
 
@@ -110,6 +106,7 @@ class SecurityManager {
         }
 
         fun setShuffleKeyboardEnabled(context: Context, enabled: Boolean) {
+            if (!SettingsFreeze.allowWrite(context, "keyboard setting")) return
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
         }
@@ -124,122 +121,16 @@ class SecurityManager {
             prefs.edit { putBoolean("block_torrents", enabled) }
         }
 
-        fun getImpulseLockMode(context: Context): ImpulseLockMode {
+        fun getEntryChallenge(context: Context): EntryChallenge {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return ImpulseLockMode.parse(prefs.getString("impulse_lock_mode", null))
+            return EntryChallenge.parse(prefs.getString(ENTRY_CHALLENGE_KEY, null))
         }
 
-        fun setImpulseLockMode(context: Context, mode: ImpulseLockMode) {
+        /** Frozen on a punishment day with the other settings. */
+        fun setEntryChallenge(context: Context, mode: EntryChallenge) {
+            if (!SettingsFreeze.allowWrite(context, "entry challenge")) return
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("impulse_lock_mode", mode.name) }
-        }
-
-        fun getImpulseAction(context: Context): ImpulseAction {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val stored = prefs.getString("impulse_action", ImpulseAction.TIMER_ONLY.name)!!
-            return runCatching { ImpulseAction.valueOf(stored) }.getOrDefault(ImpulseAction.TIMER_ONLY)
-        }
-
-        fun setImpulseAction(context: Context, action: ImpulseAction) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("impulse_action", action.name) }
-        }
-
-        /** Always inside [IMPULSE_MIN_DURATION_MINUTES]..[IMPULSE_MAX_DURATION_MINUTES]. */
-        fun getImpulseDurationMinutes(context: Context): Int {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getInt("impulse_duration_minutes", IMPULSE_DEFAULT_DURATION_MINUTES)
-                .coerceIn(IMPULSE_MIN_DURATION_MINUTES, IMPULSE_MAX_DURATION_MINUTES)
-        }
-
-        fun setImpulseDurationMinutes(context: Context, minutes: Int) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit {
-                putInt(
-                    "impulse_duration_minutes",
-                    minutes.coerceIn(IMPULSE_MIN_DURATION_MINUTES, IMPULSE_MAX_DURATION_MINUTES)
-                )
-            }
-        }
-
-        /** Apps the user picked to be suspended while an impulse block is running. */
-        fun getImpulseSuspendedApps(context: Context): Set<String> {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getStringSet("impulse_suspended_apps", emptySet()) ?: emptySet()
-        }
-
-        fun setImpulseSuspendedApps(context: Context, packages: Set<String>) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putStringSet("impulse_suspended_apps", packages) }
-        }
-
-        /**
-         * Apps that are suspended *right now* because of an impulse block, as opposed to the list
-         * the user configured — the two can differ if the configuration changes mid-block, and
-         * releasing has to act on what was actually suspended.
-         */
-        fun getActiveImpulseSuspension(context: Context): Set<String> {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getStringSet("impulse_active_suspension", emptySet()) ?: emptySet()
-        }
-
-        fun setActiveImpulseSuspension(context: Context, packages: Set<String>) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putStringSet("impulse_active_suspension", packages) }
-        }
-
-        fun clearActiveImpulseSuspension(context: Context) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { remove("impulse_active_suspension") }
-        }
-
-        fun startImpulseBlock(context: Context, minutes: Int = getImpulseDurationMinutes(context)) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val duration = minutes * 60 * 1000L
-            prefs.edit {
-                putLong("impulse_block_start_rtc", System.currentTimeMillis())
-                putLong("impulse_block_start_elapsed", SystemClock.elapsedRealtime())
-                putLong("impulse_block_duration", duration)
-                putBoolean("impulse_block_active", true)
-            }
-        }
-
-        fun getImpulseBlockRemainingTime(context: Context): Long {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            if (!prefs.getBoolean("impulse_block_active", false)) return -1L
-
-            val startRtc = prefs.getLong("impulse_block_start_rtc", 0L)
-            val startElapsed = prefs.getLong("impulse_block_start_elapsed", 0L)
-            val duration = prefs.getLong("impulse_block_duration", 0L)
-
-            val nowRtc = System.currentTimeMillis()
-            val nowElapsed = SystemClock.elapsedRealtime()
-
-            // Resistance logic:
-            // 1. If elapsed time says it's over, it's over.
-            // 2. If RTC says it's over, but elapsed time says it's NOT, 
-            //    it means the user moved the clock forward. Trust elapsed time.
-            // 3. If elapsed time is LESS than startElapsed, a reboot happened.
-            //    In this case, we have to trust RTC but cross-reference if possible.
-            
-            val remainingElapsed = (startElapsed + duration) - nowElapsed
-            val remainingRtc = (startRtc + duration) - nowRtc
-
-            val remaining = if (nowElapsed < startElapsed) {
-                // Reboot occurred, fallback to RTC but ensure it didn't jump forward illegally
-                // Actually, without a secure remote clock, we can only do so much.
-                // But we can at least detect if they moved it backwards.
-                remainingRtc
-            } else {
-                // No reboot, trust elapsed time as it's resistant to clock changes
-                remainingElapsed
-            }
-
-            if (remaining <= 0) {
-                prefs.edit { putBoolean("impulse_block_active", false) }
-                return -1L
-            }
-            return remaining
+            prefs.edit { putString(ENTRY_CHALLENGE_KEY, mode.name) }
         }
 
         fun generateRecoveryCode(length: Int = 16): String {
@@ -282,6 +173,7 @@ class SecurityManager {
         }
 
         fun saveRecoveryCode(context: Context, code: String) {
+            if (!SettingsFreeze.allowWrite(context, "recovery code")) return
             synchronized(RECOVERY_LOCK) {
                 recoveryPrefs(context).edit(commit = true) {
                     putString(KEY_RECOVERY_HASH, RecoveryCodeHash.create(code))
@@ -311,8 +203,10 @@ class SecurityManager {
         fun getUnlockDelayMinutes(context: Context): Int =
             UnlockDelay.clampMinutes(securityPrefs(context).getInt(KEY_UNLOCK_DELAY_MIN, 0))
 
-        fun setUnlockDelayMinutes(context: Context, minutes: Int) =
+        fun setUnlockDelayMinutes(context: Context, minutes: Int) {
+            if (!SettingsFreeze.allowWrite(context, "unlock delay")) return
             securityPrefs(context).edit { putInt(KEY_UNLOCK_DELAY_MIN, UnlockDelay.clampMinutes(minutes)) }
+        }
 
         private fun pendingUnlock(context: Context): UnlockDelay.Pending? {
             val p = securityPrefs(context)
@@ -387,6 +281,7 @@ class SecurityManager {
         }
 
         fun startForcedRemoval(context: Context) = synchronized(forcedRemovalLock) {
+            if (!SettingsFreeze.allowWrite(context, "forced removal")) return@synchronized
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", true)
@@ -396,6 +291,7 @@ class SecurityManager {
             }
         }
         fun cancelForcedRemoval(context: Context) {
+            if (!SettingsFreeze.allowWrite(context, "forced removal")) return
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit {
                 putBoolean("forced_removal_active", false)

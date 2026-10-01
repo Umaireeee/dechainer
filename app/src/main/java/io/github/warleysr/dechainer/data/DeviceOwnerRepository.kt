@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.accounts.AccountManager
 import android.app.admin.DevicePolicyManager
 import android.content.ActivityNotFoundException
@@ -90,8 +91,15 @@ object DeviceOwnerRepository {
     }
 
     fun setPrivateDNS(host: String): Int {
+        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
         return dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
     }
+
+    /** The DNS guard putting the pinned provider back: enforcement, so a punishment day does not stop it. */
+    fun restorePrivateDns(host: String): Int = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
+
+    /** What a refused change returns, in the same terms as Android's own result codes. */
+    private const val REFUSED = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
 
     /**
      * "Automatic" Private DNS: encrypted where the network allows, plain otherwise, and no
@@ -106,8 +114,10 @@ object DeviceOwnerRepository {
     fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
         // Déchaîner, the dialers, the apps you allowed and the urge journal (opened from its Quick
         // Settings tile when an urge hits mid-block): a pinned phone opens only these.
-        val pkgs = mutableSetOf(context.packageName, RideLock.JOURNAL_PACKAGE)
+        val pkgs = mutableSetOf(context.packageName, JournalLink.PACKAGE)
         pkgs += allowed
+        // The alarm clock is allowed by every brick, so it may also run pinned (D3).
+        try { pkgs += ScheduleEnforcer.alarmApps(context) } catch (_: Exception) { }
         try {
             val telecom = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager
             telecom.defaultDialerPackage?.let { pkgs += it }
@@ -137,7 +147,10 @@ object DeviceOwnerRepository {
         }
     }
 
-    fun setPrivateDnsAutomatic(): Int = dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
+    fun setPrivateDnsAutomatic(): Int {
+        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
+        return dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
+    }
 
     fun getPrivateDNS(): String? {
         if (dpm.getGlobalPrivateDnsMode(adminName) != DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME)

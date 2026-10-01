@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import io.github.warleysr.dechainer.lock.LockEngine
 import android.os.UserManager
 import androidx.compose.runtime.mutableStateMapOf
@@ -76,6 +77,8 @@ class RestrictionsViewModel : ViewModel() {
     }
 
     fun applyChanges() {
+        // The system rules are written here, so the freeze (blueprint 5.5) is checked here too.
+        if (!SettingsFreeze.allowWrite(DechainerApplication.getInstance(), "system rules")) return
         val current = dpm.getUserRestrictions(adminName)
         val switchedOnByHand = mutableSetOf<String>()
         // Only the restrictions you actually changed on this screen. Applying the whole list would

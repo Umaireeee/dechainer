@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer.focus
 
+import io.github.warleysr.dechainer.lock.LockStateStore
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -202,6 +204,8 @@ object Pomodoro {
      */
     fun startBlock(context: Context, endsAt: Long): Boolean {
         ensureLoaded(context)
+        // A punishment day is no time to start another lock; the Focus screen is not one of the things that stay available (6.4).
+        if (LockStateStore.punishment(context).activeAt(now())) return false
         val total = ((endsAt - now()) / 60_000L).toInt()
         val first = BlockPlanner.plan(total, _settings.value).firstOrNull() ?: return false
         var started = false
@@ -245,6 +249,7 @@ object Pomodoro {
     }
 
     fun updateSettings(context: Context, new: PomodoroSettings) {
+        if (!SettingsFreeze.allowWrite(context, "focus settings")) return
         ensureLoaded(context)
         val s = new.clamped()
         synchronized(lock) {
@@ -266,6 +271,7 @@ object Pomodoro {
     }
 
     fun toggleAllowedApp(context: Context, pkg: String) {
+        if (!SettingsFreeze.allowWrite(context, "focus allow list")) return
         ensureLoaded(context)
         synchronized(lock) {
             _allowed.value = if (pkg in _allowed.value) _allowed.value - pkg else _allowed.value + pkg
@@ -296,6 +302,7 @@ object Pomodoro {
     // ---- Subjects ----
 
     fun addTag(context: Context, raw: String) {
+        if (!SettingsFreeze.allowWrite(context, "focus subjects")) return
         ensureLoaded(context)
         val tag = FocusLogMath.cleanTag(raw) ?: return
         synchronized(lock) {
@@ -308,6 +315,7 @@ object Pomodoro {
 
     /** Removes a subject from the picker. Sessions already logged under it keep it. */
     fun removeTag(context: Context, tag: String) {
+        if (!SettingsFreeze.allowWrite(context, "focus subjects")) return
         ensureLoaded(context)
         synchronized(lock) {
             _tags.value = _tags.value - tag
@@ -326,6 +334,7 @@ object Pomodoro {
     }
 
     fun setTarget(context: Context, tag: String, sessions: Int) {
+        if (!SettingsFreeze.allowWrite(context, "focus targets")) return
         ensureLoaded(context)
         synchronized(lock) {
             if (tag !in _tags.value) return
@@ -615,21 +624,8 @@ object Pomodoro {
     }
 
     /** After a reboot or an app update: the alarm is gone, so put it back — or catch up if it passed. */
-    fun rearm(context: Context, relaunchBrick: Boolean = false) {
+    fun rearm(context: Context) {
         ensureLoaded(context)
-        // Only after a reboot or update (the pin is gone then). On any other wake-up it would drag
-        // you out of an allowed app back to this screen.
-        if (relaunchBrick && brickActive()) {
-            // The pin doesn't survive a reboot; reopening Déchaîner puts it back. Blocking holds
-            // meanwhile anyway (suspension is the layer under the pin).
-            try {
-                context.startActivity(
-                    Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (e: Exception) {
-                Timber.w(e, "Couldn't reopen the brick screen")
-            }
-        }
         val s = _state.value
         when {
             s.isRunning && s.endsAt <= now() -> onPhaseAlarm(context)

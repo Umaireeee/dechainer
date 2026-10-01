@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.database.ContentObserver
@@ -44,11 +45,13 @@ object DnsGuard {
 
     /** Records [host] as the provider to keep enforcing. Call only once Android has accepted it. */
     fun remember(context: Context, host: String) {
+        if (!SettingsFreeze.allowWrite(context, "DNS filter")) return
         prefs(context).edit(commit = true) { putString(KEY_PINNED_HOST, host) }
     }
 
     /** Drops the pinned provider, so the guard stops restoring it. Used when filtering is turned off. */
     fun forget(context: Context) {
+        if (!SettingsFreeze.allowWrite(context, "DNS filter")) return
         prefs(context).edit(commit = true) { remove(KEY_PINNED_HOST) }
     }
 
@@ -79,7 +82,8 @@ object DnsGuard {
             try {
                 val pinned = pinnedHost(ctx) ?: return@execute
                 if (!needsRestore(pinned, currentHost())) return@execute
-                val result = DeviceOwnerRepository.setPrivateDNS(pinned)
+                // Enforcement, not a change of setting: it must keep working on a punishment day.
+                val result = DeviceOwnerRepository.restorePrivateDns(pinned)
                 if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                     Timber.i("DNS filter restored to %s", pinned)
                     // The browser policy depends on a DNS filter being set, so refresh it too.

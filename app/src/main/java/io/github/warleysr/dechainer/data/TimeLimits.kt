@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.SettingsFreeze
 import io.github.warleysr.dechainer.lock.LockEngine
 import android.app.AlarmManager
 import android.app.AppOpsManager
@@ -41,6 +42,7 @@ object TimeLimits {
 
     /** Sets (or, with 0, removes) [pkg]'s limit, and has the engine look at once. */
     fun set(ctx: Context, pkg: String, minutes: Int) {
+        if (!SettingsFreeze.allowWrite(ctx, "daily limit")) return
         prefs(ctx).edit(commit = true) {
             if (minutes <= 0) remove(pkg) else putInt(pkg, minutes.coerceAtMost(MAX_MINUTES))
         }
