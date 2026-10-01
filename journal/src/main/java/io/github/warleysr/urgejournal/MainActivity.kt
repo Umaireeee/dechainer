@@ -479,7 +479,8 @@ private fun App(activity: MainActivity) {
                 RideRequest.Decision.IGNORE -> {}
             }
             MainActivity.ACTION_CHECKIN -> startCheckIn()
-            MainActivity.ACTION_REVIEW -> if (screen in CALM_SCREENS) {
+            // Already on it, or in the middle of something else: nothing to do (and no second request).
+            MainActivity.ACTION_REVIEW -> if (screen in CALM_SCREENS && screen != Screen.REVIEW) {
                 screen = Screen.REVIEW
                 runReview(force = false)
             }
