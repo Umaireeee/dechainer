@@ -3,6 +3,7 @@ package io.github.warleysr.dechainer.focus
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import io.github.warleysr.dechainer.lock.LockEngine
 
 /** The Pomodoro's alarm, and the Yes / No / Start buttons on its notifications. */
 class PomodoroReceiver : BroadcastReceiver() {
@@ -27,5 +28,15 @@ class PomodoroReceiver : BroadcastReceiver() {
                 if (id > 0L && a != null) Pomodoro.answerLecture(ctx, id, a)
             }
         }
+        // Every receiver is a wake-up (blueprint 5.4): the lock is recomputed from stored data, so
+        // an alarm that arrives late or twice can never leave a stale brick behind.
+        val pending = goAsync()
+        Thread {
+            try {
+                LockEngine.sync(ctx)
+            } finally {
+                pending.finish()
+            }
+        }.start()
     }
 }

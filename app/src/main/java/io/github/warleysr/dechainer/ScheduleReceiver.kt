@@ -3,15 +3,14 @@ package io.github.warleysr.dechainer
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import io.github.warleysr.dechainer.data.DnsGuard
-import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.focus.Pomodoro
+import io.github.warleysr.dechainer.lock.LockEngine
 import timber.log.Timber
 
 /**
- * Wakes the engine at every window boundary and impulse-lock end (alarms armed by
- * [ScheduleEnforcer]) and whenever something could have invalidated the current state: a reboot,
- * an app update, or the clock / time zone being changed.
+ * Wakes the engine at every boundary and block end (alarms armed by the lock engine) and whenever
+ * something could have invalidated the current state: a reboot, an app update, or the clock / time
+ * zone being changed. The alarm is only a wake-up; [LockEngine.sync] recomputes everything from stored data.
  */
 class ScheduleReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -22,13 +21,13 @@ class ScheduleReceiver : BroadcastReceiver() {
         val ctx = context.applicationContext
         Thread {
             try {
-                ScheduleEnforcer.sync(ctx)
-                DnsGuard.enforce(ctx)
                 // A reboot or an app update clears alarms; put the Pomodoro one back if a phase
-                // is running. Idempotent, so running it on every wake-up is harmless.
+                // is running (or catch up if it passed). Idempotent, so running it on every wake-up
+                // is harmless. First, so the sync below plans from a settled state.
                 val fresh = intent.action == Intent.ACTION_BOOT_COMPLETED ||
                     intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
                 Pomodoro.rearm(ctx, relaunchBrick = fresh)
+                LockEngine.sync(ctx)
             } finally {
                 pending.finish()
             }

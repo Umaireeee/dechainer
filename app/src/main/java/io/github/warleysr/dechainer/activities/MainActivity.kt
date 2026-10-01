@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.activities
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -93,6 +94,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Coming back to the app is a wake-up: the lock is recomputed from stored data, so a block
+        // that outlived a lost alarm ends now (blueprint 5.4, R1).
+        LockEngine.requestSync(this)
         // Coming back mid-block (say, after answering a call): pin again.
         if (Pomodoro.brickActive()) syncBrickPin(true)
     }

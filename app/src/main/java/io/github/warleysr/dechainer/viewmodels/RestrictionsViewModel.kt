@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import android.os.UserManager
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
@@ -27,6 +28,8 @@ class RestrictionsViewModel : ViewModel() {
         UserManager.DISALLOW_CONFIG_VPN,
         UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
         UserManager.DISALLOW_FACTORY_RESET,
+        // Force stop and Clear data: the second layer behind setUserControlDisabledPackages (blueprint 5.4).
+        UserManager.DISALLOW_APPS_CONTROL,
         UserManager.DISALLOW_SAFE_BOOT,
         UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY,
         UserManager.DISALLOW_DEBUGGING_FEATURES
@@ -97,7 +100,7 @@ class RestrictionsViewModel : ViewModel() {
         ScheduleEnforcer.disownRestrictions(DechainerApplication.getInstance(), switchedOnByHand)
         // Anything a schedule, focus block or lock holds right now (the clock lock, say) is put
         // straight back: this screen can only change what is yours, never open a gap in one of those.
-        ScheduleEnforcer.requestSyncAll(DechainerApplication.getInstance())
+        LockEngine.requestSync(DechainerApplication.getInstance())
         loadRestrictions()
     }
 

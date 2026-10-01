@@ -10,9 +10,13 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
+import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.activities.PomodoroEndActivity
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.lock.LockEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -118,22 +122,21 @@ object Pomodoro {
     val lectureAsk: StateFlow<Long?> = _lectureAsk.asStateFlow()
 
     /**
-     * True while a focus session holds the phone: lock on, in focus, running or paused. Pausing
-     * keeps the lock (so a pause can't be used to scroll); breaks and idle release it.
+     * True while a focus block holds the phone: from its start until its end time. The end time is
+     * read against the trusted clock, so a block whose end alarm never fired is already over here
+     * (blueprint 5.4, R1); [closeExpiredBlock] then tidies the stored state.
      */
-    fun focusLockActive(): Boolean {
-        val s = _state.value
-        return brickActive() || ((_settings.value.lockApps || s.inBlock) && s.phase == Phase.FOCUS && !s.isIdle)
-    }
-
-    /** True for the whole of a focus block, sessions and breaks alike: every block bricks the phone. */
-    fun brickActive(): Boolean = _state.value.inBlock
+    fun brickActive(): Boolean = _state.value.blockActiveAt(now())
 
     /**
-     * True while the clock must stay put: during a locked session, and for a whole focus block
-     * (breaks included), since moving the time would end either early.
+     * The old "lock apps during a session" option: a focus session outside a block, running or
+     * paused, that holds the phone. Pausing keeps the lock (so a pause can't be used to scroll);
+     * breaks and idle release it.
      */
-    fun holdsClock(): Boolean = focusLockActive() || _state.value.inBlock
+    fun sessionLockActive(): Boolean {
+        val s = _state.value
+        return _settings.value.lockApps && !s.inBlock && s.phase == Phase.FOCUS && !s.isIdle
+    }
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -255,7 +258,7 @@ object Pomodoro {
                 putBoolean(K_BRICK, s.brickBlocks)
             }
         }
-        io.github.warleysr.dechainer.data.ScheduleEnforcer.requestSyncAll(context.applicationContext)
+        LockEngine.requestSync(context.applicationContext)
     }
 
     fun toggleAllowedApp(context: Context, pkg: String) {
@@ -264,7 +267,7 @@ object Pomodoro {
             _allowed.value = if (pkg in _allowed.value) _allowed.value - pkg else _allowed.value + pkg
             prefs(context).edit { putStringSet(K_ALLOWED, _allowed.value) }
         }
-        io.github.warleysr.dechainer.data.ScheduleEnforcer.requestSyncAll(context.applicationContext)
+        LockEngine.requestSync(context.applicationContext)
     }
 
     /** Your answer to "Did you do the work?" for session [id]. */
@@ -469,8 +472,13 @@ object Pomodoro {
 
     // ---- What the alarm and the system call ----
 
-    /** The phase's time is up: log it, ring, and move on to the next phase. */
-    fun onPhaseAlarm(context: Context) {
+    /**
+     * The phase's time is up: log it, ring, and move on to the next phase. [silent] skips the
+     * chime and the question screen (the question stays pending for the Focus tab), for a block
+     * found over long after its end. [requestSync] is false when the caller is the lock engine
+     * itself and is already in the middle of a pass.
+     */
+    fun onPhaseAlarm(context: Context, silent: Boolean = false, requestSync: Boolean = true) {
         ensureLoaded(context)
         val ctx = context.applicationContext
         val finished: PomodoroState
@@ -481,7 +489,7 @@ object Pomodoro {
             if (!blockOver && (!finished.isRunning || finished.endsAt > now() + 1_000L)) return
         }
         var loggedId: Long? = null
-        change(ctx) { current ->
+        change(ctx, requestSync) { current ->
             if (current != finished) return@change current
             // A block that ran out while paused just ends: the paused session wasn't finished.
             if (current.inBlock && !current.isRunning) {
@@ -518,7 +526,9 @@ object Pomodoro {
             nextState(current, completed = true)
         }
         val next = _state.value
-        if (finished.inBlock) {
+        if (silent) {
+            Unit
+        } else if (finished.inBlock) {
             // Inside a block nothing waits for you: a soft chime, and the question on the
             // notification to answer when convenient. No full-screen interruption.
             chime(ctx, finished, next, loggedId)
@@ -527,6 +537,76 @@ object Pomodoro {
             showQuestion(ctx, loggedId)
         } else {
             ringBreakDone(ctx, next)
+        }
+    }
+
+    /**
+     * Closes a focus block whose end time has passed although nothing closed it: the alarm never
+     * fired (blueprint 5.4, R1). It takes the alarm's own path, so the finished session is logged
+     * and its question left pending, but quietly when the end is long past. True if a block was closed.
+     */
+    fun closeExpiredBlock(context: Context, atMs: Long = now()): Boolean {
+        ensureLoaded(context)
+        val stale = synchronized(lock) { _state.value }
+        if (!stale.blockExpiredAt(atMs)) return false
+        onPhaseAlarm(context, silent = atMs - stale.blockEndsAt > Rules.LATE_BLOCK_END_MS, requestSync = false)
+        // The alarm path ends a block it finds over; this makes sure one it could not step is closed too.
+        change(context, requestSync = false) { if (it.blockExpiredAt(atMs)) PomodoroCore.stop(it) else it }
+        return true
+    }
+
+    /**
+     * Debug builds only (blueprint 14A): a block of [minutes] that skips the usual 10 minute
+     * minimum, for testing a brick on an emulator. Refuses in a release build.
+     */
+    fun debugStartBlock(context: Context, minutes: Int): Boolean {
+        if (!BuildConfig.DEBUG) return false
+        ensureLoaded(context)
+        val endsAt = now() + minutes * 60_000L
+        var started = false
+        change(context) { current ->
+            val next = PomodoroCore.beginBlockIfIdle(current, endsAt, now(), minutes)
+            started = next != current
+            next
+        }
+        if (started) dismissAlarm(context)
+        return started
+    }
+
+    /** Debug builds only: forget the alarm that ends the phase, as if it had been lost. */
+    fun debugCancelAlarm(context: Context) {
+        if (BuildConfig.DEBUG) cancelAlarm(context.applicationContext)
+    }
+
+    /** The end of the block as stored on disk, or 0. Read straight from the preferences: the crash-loop breaker uses it. */
+    fun storedBlockEndsAt(context: Context): Long = prefs(context).getLong(K_BLOCK, 0L)
+
+    /**
+     * Drops a running block without any of its end-of-block steps: for the crash-loop breaker and the
+     * debug abort (blueprint 5.4). Never throws, and takes no lock: it may run inside an
+     * uncaught-exception handler, where waiting on another thread could hang the process.
+     */
+    fun abortBlock(context: Context) {
+        val ctx = context.applicationContext
+        try {
+            prefs(ctx).edit(commit = true) {
+                putString(K_PHASE, Phase.FOCUS.name)
+                putLong(K_ENDS_AT, 0L)
+                putLong(K_PAUSED, 0L)
+                putLong(K_STARTED, 0L)
+                putInt(K_PLANNED, 0)
+                putLong(K_BLOCK, 0L)
+            }
+        } catch (e: Throwable) {
+            Timber.e(e, "Block state not cleared on disk")
+        }
+        if (loaded) _state.value = PomodoroCore.stop(_state.value)
+        try {
+            cancelAlarm(ctx)
+            notificationManager(ctx).cancel(ID_TIMER)
+            notificationManager(ctx).cancel(ID_ALARM)
+        } catch (e: Throwable) {
+            Timber.w(e, "Block alarm and notifications not cleared")
         }
     }
 
@@ -559,9 +639,10 @@ object Pomodoro {
 
     // ---- Plumbing ----
 
-    private fun now() = System.currentTimeMillis()
+    /** The trusted clock (blueprint 9.2): every stored time here is on it. */
+    private fun now() = TrustedClock.now()
 
-    private inline fun change(context: Context, transform: (PomodoroState) -> PomodoroState) {
+    private inline fun change(context: Context, requestSync: Boolean = true, transform: (PomodoroState) -> PomodoroState) {
         ensureLoaded(context)
         val ctx = context.applicationContext
         val new: PomodoroState
@@ -584,8 +665,8 @@ object Pomodoro {
             new.inBlock -> armAlarm(ctx, new.blockEndsAt)   // paused inside a block
             else -> cancelAlarm(ctx)
         }
-        // Locking or releasing apps is the blocking engine's job; tell it something changed.
-        io.github.warleysr.dechainer.data.ScheduleEnforcer.requestSyncAll(ctx)
+        // Locking or releasing apps is the lock engine's job; tell it something changed.
+        if (requestSync) LockEngine.requestSync(ctx)
         if (new.isIdle) notificationManager(ctx).cancel(ID_TIMER) else showTimer(ctx, new)
     }
 
@@ -609,11 +690,13 @@ object Pomodoro {
     private fun armAlarm(ctx: Context, at: Long) {
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = alarmIntent(ctx)
+        // Stored times are on the trusted clock; alarms fire on wall time. They differ only while the wall clock is behind.
+        val wallAt = TrustedClock.toWall(at, ctx)
         try {
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(at, openAppIntent(ctx)), pi)
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(wallAt, openAppIntent(ctx)), pi)
         } catch (e: SecurityException) {
             Timber.w(e, "Exact alarm refused; falling back")
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, wallAt, pi)
         }
     }
 
@@ -674,7 +757,7 @@ object Pomodoro {
                 .setOnlyAlertOnce(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
             if (s.isRunning) {
-                b.setUsesChronometer(true).setChronometerCountDown(true).setShowWhen(true).setWhen(s.endsAt)
+                b.setUsesChronometer(true).setChronometerCountDown(true).setShowWhen(true).setWhen(TrustedClock.toWall(s.endsAt, ctx))
             } else {
                 val left = s.pausedRemaining / 1000
                 b.setContentText(ctx.getString(R.string.focus_paused_left, "%d:%02d".format(left / 60, left % 60)))

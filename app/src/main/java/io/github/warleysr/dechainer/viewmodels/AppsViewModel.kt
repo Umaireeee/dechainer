@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -56,7 +57,7 @@ class AppsViewModel : ViewModel() {
             usedMinutes = u
             usageAccess = access
             // Access may just have been granted: have the engine look.
-            if (l.isNotEmpty() && access) ScheduleEnforcer.requestSyncAll(context)
+            if (l.isNotEmpty() && access) LockEngine.requestSync(context)
         }
     }
 

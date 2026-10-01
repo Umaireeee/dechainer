@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import android.os.UserManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +29,6 @@ class SchedulesViewModel : ViewModel() {
     enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED }
 
     var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
-        private set
-
-    var antiTamper by mutableStateOf(ScheduleRepository.isAntiTamperEnabled(context))
         private set
 
     var apps by mutableStateOf<List<AppItem>>(emptyList())
@@ -79,7 +77,6 @@ class SchedulesViewModel : ViewModel() {
 
     fun refresh() {
         schedules = ScheduleRepository.getSchedules(context)
-        antiTamper = ScheduleRepository.isAntiTamperEnabled(context)
     }
 
     fun loadApps() {
@@ -213,15 +210,8 @@ class SchedulesViewModel : ViewModel() {
         return SaveResult.OK
     }
 
-    fun updateAntiTamper(enabled: Boolean): SaveResult {
-        if (!enabled && ScheduleEnforcer.isAnyScheduleLocked(context)) return SaveResult.LOCKED
-        ScheduleRepository.setAntiTamperEnabled(context, enabled)
-        applyAndRefresh()
-        return SaveResult.OK
-    }
-
     private fun applyAndRefresh() {
         refresh()
-        viewModelScope.launch(Dispatchers.IO) { ScheduleEnforcer.sync(context) }
+        viewModelScope.launch(Dispatchers.IO) { LockEngine.sync(context) }
     }
 }

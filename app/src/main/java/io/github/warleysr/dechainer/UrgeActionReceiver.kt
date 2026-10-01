@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer
 
+import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.clock.TrustedClock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -45,13 +47,13 @@ class UrgeActionReceiver : BroadcastReceiver() {
                     }
                     UrgeActions.Kind.FOCUS_BLOCK -> {
                         Pomodoro.ensureLoaded(ctx)
-                        val started = Pomodoro.startBlock(ctx, System.currentTimeMillis() + minutes * 60_000L)
+                        val started = Pomodoro.startBlock(ctx, TrustedClock.now(ctx) + minutes * 60_000L)
                         // Only a block this request started: the plan made the evening before is what the
                         // first session is for, and the question at its end asks about exactly that.
                         if (started && intention != null) Pomodoro.setIntention(ctx, intention)
                     }
                 }
-                ScheduleEnforcer.sync(ctx)
+                LockEngine.sync(ctx)
                 Timber.d("Urge action %s for %d min", kind, minutes)
             } finally {
                 pending.finish()

@@ -3,7 +3,7 @@ package io.github.warleysr.dechainer
 /**
  * The numbers the blueprint fixes, in one place so a veto is a one-line change. Pure constants: no
  * Android, and no override path. A debug build that wants shorter durations does it from the
- * debug source set (see `debug/DebugControlReceiver`), which a release build does not contain.
+ * debug source set, which a release build does not contain.
  */
 object Rules {
     /**

@@ -199,7 +199,7 @@
     <string name="visual_blocking_apps_selected">%1$d apps selected</string>
     <string name="schedules">Schedules</string>
     <string name="schedule_anti_tamper">Lock date and time</string>
-    <string name="schedule_anti_tamper_desc">While any schedule is enabled, automatic time is forced and date and time settings can\'t be changed, so a window can\'t be skipped by moving the clock</string>
+    <string name="schedule_anti_tamper_desc">Always on. Automatic time and time zone are forced and the date and time settings can\'t be changed, so a window or a block can\'t be skipped by moving the clock</string>
     <string name="schedules_empty">No schedules yet. Tap \"New schedule\" to create one.</string>
     <string name="schedule_new">New schedule</string>
     <string name="schedule_quick_start">Quick start</string>
@@ -327,7 +327,7 @@
     <string name="info_config_how">Anything that weakens protection goes through your recovery code, and through the unlock delay if you\'ve set one. Forced removal is the escape hatch: it lifts everything after a 4-day wait, without the code.</string>
     <string name="info_schedules_what">Weekly block windows, plus Study mode.</string>
     <string name="info_schedules_does">A schedule suspends chosen apps, system features and websites at set times every week. With \"allow only\" on, it flips around: only the apps you list work. Duplicate a schedule, or copy apps from another, so you don\'t pick them twice.</string>
-    <string name="info_schedules_how">An exact alarm wakes Déchaîner at each window\'s start and end. Nothing polls in the background, so it costs almost no battery. Automatic time is forced while schedules are on, so changing the clock can\'t skip a window. \"Lock while active\" makes a running window uneditable.</string>
+    <string name="info_schedules_how">An exact alarm wakes Déchaîner at each window\'s start and end. Nothing polls in the background, so it costs almost no battery. Automatic time is always forced, so changing the clock can\'t skip a window. \"Lock while active\" makes a running window uneditable.</string>
     <string name="info_impulse_what">A lock on Déchaîner itself, for moments when you want to undo your own rules.</string>
     <string name="info_impulse_does">Adds a challenge (math or typing) before the app opens, plus a panic button that locks Déchaîner, and optionally chosen apps, for 15 minutes to 6 hours.</string>
     <string name="info_impulse_how">The challenge runs after authentication, every time you open Déchaîner. Until the panic timer runs out, Déchaîner stays locked.</string>

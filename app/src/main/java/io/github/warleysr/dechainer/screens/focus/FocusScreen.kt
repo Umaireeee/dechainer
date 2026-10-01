@@ -1,5 +1,8 @@
 package io.github.warleysr.dechainer.screens.focus
 
+import io.github.warleysr.dechainer.DechainerApplication
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.lock.LockEngine
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
@@ -127,8 +130,13 @@ fun FocusScreen(onOpenLog: () -> Unit) {
     val lectureAsk by Pomodoro.lectureAsk.collectAsState()
     val lectureProgress by Pomodoro.lectureProgress.collectAsState()
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    if (state.isRunning) RepeatWhileVisible(1000) { now = System.currentTimeMillis() }
+    var now by remember { mutableLongStateOf(TrustedClock.now()) }
+    if (state.isRunning) RepeatWhileVisible(1000) {
+        now = TrustedClock.now()
+        // The tick is a wake-up too (blueprint 5.4, R1): once a block's end has passed, have the lock
+        // engine close it from the time, whether or not its alarm ever fired.
+        if (state.inBlock && now >= state.blockEndsAt) LockEngine.requestSync(DechainerApplication.getInstance())
+    }
 
     var showSettings by remember { mutableStateOf(false) }
     var confirmStop by remember { mutableStateOf(false) }

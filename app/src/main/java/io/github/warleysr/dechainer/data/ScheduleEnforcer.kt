@@ -8,29 +8,29 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.os.UserManager
 import android.telecom.TelecomManager
 import androidx.core.content.ContextCompat
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import android.view.inputmethod.InputMethodManager
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
-import io.github.warleysr.dechainer.models.BlockSchedule
+import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.lock.ActiveBlock
+import io.github.warleysr.dechainer.lock.LockEngine
+import io.github.warleysr.dechainer.lock.LockMode
+import io.github.warleysr.dechainer.lock.LockPlan
+import io.github.warleysr.dechainer.lock.LockPlanner
 import io.github.warleysr.dechainer.security.SecurityManager
-import io.github.warleysr.dechainer.focus.Pomodoro
 import timber.log.Timber
-import java.time.ZonedDateTime
 
 /**
- * Brings the device in line with what should be blocked *right now*: open schedule windows and a
- * running impulse lock. Every call to [sync] is idempotent and computes the full desired state
- * from scratch, so it is safe to call from anywhere: the exact alarm at each boundary, boot,
- * clock/time-zone changes, app installs, and every edit made in the UI. Nothing polls.
+ * Applies a [LockPlan] to the device. The decisions (what is locked, until when) are made by the
+ * pure [LockPlanner]; [LockEngine.sync] gathers the state, plans, and hands the plan to [applyPlan].
+ * Every [applyPlan] is idempotent and safe to repeat, so any wake-up may run it: the exact alarm at each
+ * boundary, boot, clock changes, app installs, and every edit made in the UI. Nothing polls.
  *
- * Ownership: a package or restriction is only released at the end of a window if the schedule is
- * the one that applied it. Anything that was already suspended/restricted before the window opened
- * (a manual suspension, a permanent restriction) is left untouched when it closes.
+ * Ownership: a package or restriction is only released at the end of a hold if this engine is the
+ * one that applied it. Anything that was already suspended/restricted before the hold started (a
+ * manual suspension, a permanent restriction) is left untouched when it ends.
  */
 object ScheduleEnforcer : AppBlockEngine() {
     private const val KEY_OWNED_RESTRICTIONS = "owned_restrictions"
@@ -47,27 +47,15 @@ object ScheduleEnforcer : AppBlockEngine() {
     override val alarmAction = ACTION_BOUNDARY
     override val logName = "Schedule"
 
-    data class ActiveBlock(val scheduleName: String, val endsAtMillis: Long)
-
-    private class BlockSource(val name: String, val endsAt: Long, val apps: Set<String>)
-
-    // One background thread for every sync, so the UI and receivers never wait on it.
-    private val worker = Executors.newSingleThreadExecutor()
-    private val syncQueued = AtomicBoolean(false)
-
-    /**
-     * Runs the schedule and DNS engines off the main thread. Calls that arrive while one is
-     * already queued merge into it, so a burst of events costs a single pass.
-     */
-    fun requestSyncAll(context: Context) {
-        val ctx = context.applicationContext
-        if (!syncQueued.compareAndSet(false, true)) return
-        worker.execute {
-            syncQueued.set(false)
-            sync(ctx)
-            DnsGuard.enforce(ctx)
-        }
-    }
+    /** What [applyPlan] needs besides the plan: facts that are not decisions. */
+    internal class ApplyExtras(
+        val protectedPackages: Set<String>,
+        val impulseRemainingMs: Long,
+        val rideRemainingMs: Long,
+        val limitNextCheckDelayMs: Long?,
+        /** The label shown on the Apps screen for a hold that has no name of its own. */
+        val labelFor: (LockMode) -> String
+    )
 
     // Held here so they live as long as the process (listeners are only weakly referenced).
     private var securityListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
@@ -82,14 +70,14 @@ object ScheduleEnforcer : AppBlockEngine() {
     fun watchForChanges(context: Context) {
         val ctx = context.applicationContext
         if (securityListener == null) {
-            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> requestSyncAll(ctx) }
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> LockEngine.requestSync(ctx) }
             securityListener = listener
             ctx.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
                 .registerOnSharedPreferenceChangeListener(listener)
         }
         if (suspensionReceiver == null) {
             val receiver = object : BroadcastReceiver() {
-                override fun onReceive(c: Context, i: Intent) = requestSyncAll(ctx)
+                override fun onReceive(c: Context, i: Intent) = LockEngine.requestSync(ctx)
             }
             suspensionReceiver = receiver
             try {
@@ -123,142 +111,34 @@ object ScheduleEnforcer : AppBlockEngine() {
     @Volatile
     private var protectedValidUntil = 0L
 
-    fun sync(context: Context) {
+    /** Brings the device in line with [plan]. Called by [LockEngine] only; one pass at a time. */
+    internal fun applyPlan(context: Context, plan: LockPlan, extras: ApplyExtras) {
         val ctx = context.applicationContext
         synchronized(lock) {
             try {
-                syncLocked(ctx)
+                applyLocked(ctx, plan, extras)
             } catch (e: Exception) {
-                Timber.e(e, "Schedule sync failed")
+                Timber.e(e, "Lock apply failed")
                 // Retry on the next sync instead of trusting a half-applied state.
                 cacheValidUntil = 0L
             }
         }
     }
 
-    private fun syncLocked(ctx: Context) {
+    private fun applyLocked(ctx: Context, plan: LockPlan, extras: ApplyExtras) {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
-        val schedules = ScheduleRepository.getSchedules(ctx)
-        val now = ZonedDateTime.now()
-        val nowLocal = now.toLocalDateTime()
+        val wallNow = System.currentTimeMillis()
+        // Alarms fire on wall time; the plan is on the trusted clock. They differ only while the wall clock is behind.
+        val nextWake = plan.nextWakeAt?.let { TrustedClock.toWall(it, ctx) }
 
-        if (!dpm.isDeviceOwnerApp(ctx.packageName)) {
+        if (!plan.deviceOwner) {
             activeBlocks = emptyMap()
-            cacheValidUntil = System.currentTimeMillis() + ENGINE_MAX_CACHE_MS
-            armNextBoundary(ctx, schedules, now)
+            cacheValidUntil = wallNow + ENGINE_MAX_CACHE_MS
+            armAlarmFor(ctx, nextWake)
             return
         }
 
-        val active = schedules.filter { it.isActiveAt(nowLocal) }
-        val protectedPkgs = protectedPackages(ctx)
-
-        // What each open window takes away: its own list — or, with "allow only" on, every app
-        // with an icon that isn't on its list. A running impulse lock counts as one more window.
-        val sources = mutableListOf<BlockSource>()
-        active.forEach { schedule ->
-            val end = schedule.currentWindowEnd(nowLocal)?.atZone(now.zone)?.toInstant()?.toEpochMilli()
-                ?: Long.MAX_VALUE
-            val apps = if (schedule.allowOnly) allowOnlyBlocked(ctx, schedule.packages, protectedPkgs)
-            else schedule.packages
-            sources += BlockSource(schedule.name, end, apps)
-        }
-
-        // Impulse lock. An older version kept its suspensions in a separate record, applied by
-        // the accessibility service; adopting them lets this engine release them on time.
-        SecurityManager.getActiveImpulseSuspension(ctx).takeIf { it.isNotEmpty() }?.let { legacy ->
-            legacy.forEach { adopt(ctx, it) }  // same lock, re-entered
-            SecurityManager.clearActiveImpulseSuspension(ctx)
-        }
-        val impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(ctx)
-        if (impulseRemaining > 0 &&
-            SecurityManager.getImpulseAction(ctx) == SecurityManager.ImpulseAction.TIMER_AND_SUSPEND
-        ) {
-            sources += BlockSource(
-                ctx.getString(io.github.warleysr.dechainer.R.string.impulse_lock),
-                System.currentTimeMillis() + impulseRemaining,
-                SecurityManager.getImpulseSuspendedApps(ctx)
-            )
-        }
-
-        // The ride lock: for the few minutes of a ride, everything with an icon is suspended except
-        // calls, text messages (reaching a person is what a hard moment may need most), emergency
-        // apps, the alarm clock and the journal the ride happens in.
-        val rideRemaining = RideLock.remainingMillis(ctx)
-        if (rideRemaining > 0) {
-            val sms = try { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) } catch (_: Exception) { null }
-            sources += BlockSource(
-                ctx.getString(io.github.warleysr.dechainer.R.string.ride_lock_source),
-                System.currentTimeMillis() + rideRemaining,
-                launcherApps(ctx) - alarmApps(ctx) - RideLock.ALWAYS_OPEN - setOfNotNull(sms)
-            )
-        }
-
-        // A locked focus session: only your allowed apps (and the essentials) work until it ends.
-        // Its end comes from the Pomodoro's own alarm, which asks for a sync when it fires. The
-        // timer's state is read on every sync (cheap after the first load) because any sync may
-        // be the one that has to apply or lift this lock.
-        Pomodoro.ensureLoaded(ctx)
-        if (Pomodoro.focusLockActive()) {
-            val st = Pomodoro.state.value
-            sources += if (Pomodoro.brickActive()) BlockSource(
-                // The brick: everything with an icon, to the end of the block, except the apps you
-                // allowed (camera, SMS and Settings stay off unless you allowed them).
-                ctx.getString(io.github.warleysr.dechainer.R.string.focus_brick_source),
-                st.blockEndsAt,
-                brickBlocked(ctx, protectedPkgs, Pomodoro.allowedApps.value)
-            ) else BlockSource(
-                ctx.getString(io.github.warleysr.dechainer.R.string.focus_lock_source),
-                if (st.isRunning) st.endsAt else Long.MAX_VALUE,
-                allowOnlyBlocked(ctx, Pomodoro.allowedApps.value, protectedPkgs)
-            )
-        }
-
-        // Daily time limits: an app that has used its time is paused until midnight. Measured
-        // from Android's own usage log, so nothing runs to watch it (see TimeLimits).
-        val limitStatus = TimeLimits.evaluate(ctx, System.currentTimeMillis())
-        if (limitStatus.reached.isNotEmpty()) {
-            sources += BlockSource(
-                ctx.getString(io.github.warleysr.dechainer.R.string.limit_source),
-                TimeLimits.midnightMillis(System.currentTimeMillis()),
-                limitStatus.reached
-            )
-        }
-
-        val desiredApps = sources.flatMap { it.apps }.toSet() - protectedPkgs
-        val desiredRestrictions = active.flatMap { it.restrictions }.toMutableSet()
-        val desiredSites = active.flatMap { it.websites }.toSet()
-
-        // The clock is locked while schedules are on (if you chose that), and always during a locked
-        // focus session, a focus block, a ride lock or an impulse lock: moving the time would end
-        // any of them early (after a reboot the impulse lock can only go by the wall clock).
-        if ((ScheduleRepository.isAntiTamperEnabled(ctx) && schedules.any { it.enabled }) ||
-            Pomodoro.holdsClock() || rideRemaining > 0 || impulseRemaining > 0
-        ) {
-            desiredRestrictions += UserManager.DISALLOW_CONFIG_DATE_TIME
-            try {
-                // Read first: these are settings writes, and sync runs on every tick and alarm.
-                if (!dpm.getAutoTimeEnabled(admin)) dpm.setAutoTimeEnabled(admin, true)
-                if (!dpm.getAutoTimeZoneEnabled(admin)) dpm.setAutoTimeZoneEnabled(admin, true)
-            } catch (e: Exception) {
-                Timber.w(e, "Could not force automatic time")
-            }
-        }
-
-        // A brick closes every way around it, for exactly as long as the block runs: safe mode
-        // (boots without Déchaîner), USB debugging (ADB can lift the pin), a factory reset, and
-        // other users (a guest user has no brick). Released at the end like any other hold;
-        // anything you'd switched on yourself in System rules stays on.
-        val brick = Pomodoro.brickActive()
-        if (brick) {
-            desiredRestrictions += listOf(
-                UserManager.DISALLOW_SAFE_BOOT,
-                UserManager.DISALLOW_DEBUGGING_FEATURES,
-                UserManager.DISALLOW_FACTORY_RESET,
-                UserManager.DISALLOW_ADD_USER,
-                UserManager.DISALLOW_USER_SWITCH
-            )
-        }
         // Each stage on its own: one that fails must not stop the others (a refused restriction
         // must not leave apps unsuspended, and the other way round). A failed stage makes the next
         // sync run in full instead of trusting the cache.
@@ -267,38 +147,32 @@ object ScheduleEnforcer : AppBlockEngine() {
             try {
                 work()
             } catch (e: Exception) {
-                Timber.e(e, "Schedule sync: $name failed")
+                Timber.e(e, "Lock apply: $name failed")
                 anyFailed = true
             }
         }
-        stage("brick home") { if (!applyBrickHome(ctx, dpm, admin, brick)) anyFailed = true }
-        stage("apps") { applyApps(ctx, dpm, admin, desiredApps) { emptySet() } }
-        stage("restrictions") { applyRestrictions(ctx, dpm, admin, desiredRestrictions) }
-        stage("sites") { applySites(ctx, desiredSites) }
+        stage("brick home") { if (!applyBrickHome(ctx, dpm, admin, plan.brick)) anyFailed = true }
+        stage("apps") { applyApps(ctx, dpm, admin, plan.desiredApps) { emptySet() } }
+        stage("restrictions") { applyRestrictions(ctx, dpm, admin, plan.desiredRestrictions) }
+        stage("sites") { applySites(ctx, plan.desiredSites) }
         stage("alarms") {
-            // An exact alarm at the moment the impulse lock ends, so its apps come back on time
-            // even with the screen off.
-            armImpulseEnd(ctx, impulseRemaining)
-            armRideEnd(ctx, rideRemaining)
+            // An exact alarm at the moment the impulse and ride locks end, so their apps come back
+            // on time even with the screen off.
+            armImpulseEnd(ctx, extras.impulseRemainingMs)
+            armRideEnd(ctx, extras.rideRemainingMs)
             // And a non-wakeup alarm for the earliest moment a limit could run out (or midnight).
-            TimeLimits.armCheck(ctx, limitStatus.nextCheckDelayMs)
+            TimeLimits.armCheck(ctx, extras.limitNextCheckDelayMs)
         }
         // Write down the running time of a forced removal, so a reboot can't lose what came after the last write.
         stage("forced removal clock") { SecurityManager.getForcedRemovalRemainingTime(ctx) }
 
-        activeBlocks = buildMap<String, ActiveBlock> {
-            sources.forEach { source ->
-                source.apps.forEach { pkg ->
-                    val existing = get(pkg)
-                    // With overlapping windows the app stays blocked until the last one ends.
-                    if (existing == null || source.endsAt > existing.endsAtMillis)
-                        put(pkg, ActiveBlock(source.name, source.endsAt))
-                }
-            }
-        }.filterKeys { it !in protectedPkgs }
+        activeBlocks = LockPlanner.blockedBy(plan.holds, extras.protectedPackages)
+            .mapValues { (_, hold) -> ActiveBlock(hold.name ?: extras.labelFor(hold.mode), hold.endsAt) }
 
-        val next = armNextBoundary(ctx, schedules, now)
-        val cap = System.currentTimeMillis() + ENGINE_MAX_CACHE_MS
+        // The next boundary, brick end or limit reset: the backup wake-up that does not rely on
+        // any other alarm having fired.
+        val next = armAlarmFor(ctx, nextWake)
+        val cap = wallNow + ENGINE_MAX_CACHE_MS
         cacheValidUntil = if (anyFailed) 0L else if (next != null) minOf(next, cap) else cap
     }
 
@@ -426,7 +300,7 @@ object ScheduleEnforcer : AppBlockEngine() {
      */
     fun activeBlockFor(context: Context, pkg: String, fresh: Boolean = true): ActiveBlock? {
         if (System.currentTimeMillis() >= cacheValidUntil) {
-            if (fresh) sync(context) else requestSyncAll(context)
+            if (fresh) LockEngine.sync(context) else LockEngine.requestSync(context)
         }
         return activeBlocks[pkg]
     }
@@ -467,6 +341,21 @@ object ScheduleEnforcer : AppBlockEngine() {
             } catch (e: Exception) {
                 Timber.e(e, "Schedule releaseAll failed")
             }
+        }
+    }
+
+    /** Debug builds only: forget the boundary alarm, as if it had been lost (blueprint 14A). */
+    internal fun debugCancelAlarm(context: Context) {
+        if (io.github.warleysr.dechainer.BuildConfig.DEBUG) cancelAlarm(context.applicationContext)
+    }
+
+    /** Puts the home screen back and switches the brick's own off. For [LockEngine.abortBrick]. */
+    internal fun releaseBrickHome(context: Context): Boolean {
+        val ctx = context.applicationContext
+        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (!dpm.isDeviceOwnerApp(ctx.packageName)) return true
+        return synchronized(lock) {
+            applyBrickHome(ctx, dpm, ComponentName(ctx, DechainerDeviceAdminReceiver::class.java), false)
         }
     }
 
@@ -513,19 +402,13 @@ object ScheduleEnforcer : AppBlockEngine() {
         return result
     }
 
-    /** Arms the alarm at the next window start or end. Returns that alarm time, if any. */
-    private fun armNextBoundary(ctx: Context, schedules: List<BlockSchedule>, now: ZonedDateTime): Long? {
-        val nextWindow = schedules.flatMap { it.boundariesAfter(now) }.minOrNull()?.toInstant()?.toEpochMilli()
-        return armAlarmFor(ctx, nextWindow)
-    }
-
     // ---- "Allow only" schedules ----
 
     @Volatile private var cachedLauncherApps: Set<String>? = null
     @Volatile private var launcherValidUntil = 0L
 
     /** Every app with an icon. Cached; dropped when apps are (un)installed. */
-    private fun launcherApps(ctx: Context): Set<String> {
+    internal fun launcherApps(ctx: Context): Set<String> {
         cachedLauncherApps?.let { if (System.currentTimeMillis() < launcherValidUntil) return it }
         val fresh = try {
             ctx.packageManager.queryIntentActivities(
@@ -545,7 +428,7 @@ object ScheduleEnforcer : AppBlockEngine() {
      * system pieces other apps lean on (file picker, SIM menu, emergency info, and Xiaomi's
      * security app, which shows permission prompts on MIUI/HyperOS).
      */
-    private fun alwaysAllowed(ctx: Context): Set<String> {
+    internal fun alwaysAllowed(ctx: Context): Set<String> {
         val result = mutableSetOf(
             "com.android.settings",
             "com.android.documentsui", "com.google.android.documentsui",
@@ -607,7 +490,7 @@ object ScheduleEnforcer : AppBlockEngine() {
     }
 
     /** Alarm clock apps: left alone even by the brick, so a morning alarm still rings. */
-    private fun alarmApps(ctx: Context): Set<String> {
+    internal fun alarmApps(ctx: Context): Set<String> {
         val result = mutableSetOf<String>()
         for (action in listOf(android.provider.AlarmClock.ACTION_SHOW_ALARMS, android.provider.AlarmClock.ACTION_SET_ALARM)) {
             try {
@@ -616,17 +499,4 @@ object ScheduleEnforcer : AppBlockEngine() {
         }
         return result
     }
-
-    /**
-     * What the brick suspends: every app with an icon except the ones the phone can't work
-     * without (home screen, dialer, keyboards, Déchaîner), the alarm clock, [allowed], and the
-     * urge journal, so an urge in the middle of a block can still be ridden out there (it can only
-     * ever add blocking).
-     */
-    private fun brickBlocked(ctx: Context, protectedPkgs: Set<String>, allowed: Set<String>): Set<String> =
-        LockSafety.brickTargets(launcherApps(ctx), protectedPkgs, alarmApps(ctx), allowed + RideLock.JOURNAL_PACKAGE)
-
-    /** What an "allow only" window suspends: every app with an icon except [allowed] and the essentials. */
-    private fun allowOnlyBlocked(ctx: Context, allowed: Set<String>, protectedPkgs: Set<String>): Set<String> =
-        launcherApps(ctx) - allowed - protectedPkgs - alwaysAllowed(ctx)
 }

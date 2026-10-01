@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.lock.LockEngine
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.PendingIntent
@@ -43,7 +44,7 @@ object TimeLimits {
         prefs(ctx).edit(commit = true) {
             if (minutes <= 0) remove(pkg) else putInt(pkg, minutes.coerceAtMost(MAX_MINUTES))
         }
-        ScheduleEnforcer.requestSyncAll(ctx.applicationContext)
+        LockEngine.requestSync(ctx.applicationContext)
     }
 
     /** Usage access, granted once in Settings: what lets this app read Android's usage log. */
@@ -58,7 +59,9 @@ object TimeLimits {
     /** Milliseconds of foreground time today per package, from one read of the usage log. */
     fun usedToday(ctx: Context, pkgs: Set<String>, now: Long = System.currentTimeMillis()): Map<String, Long> {
         if (pkgs.isEmpty() || !hasUsageAccess(ctx)) return emptyMap()
-        val startOfDay = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        // The day starts at local midnight on the time the caller measures with (the trusted clock), not the system clock.
+        val zone = ZoneId.systemDefault()
+        val startOfDay = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
         val events = ArrayList<UsageEvt>()
         try {
             val usm = ctx.getSystemService(UsageStatsManager::class.java)

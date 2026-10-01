@@ -102,17 +102,23 @@ object Blocker {
         Timber.d("Un-hid %d app(s) left hidden by an older build", ours.size - left.size)
     }
 
-    /** Startup form of [releaseAllHidden]: a no-op without Device Owner or anything to undo. */
-    fun migrateFromHiding(context: Context) {
+    /**
+     * Startup form of [releaseAllHidden]. True when there is nothing left to undo, so the caller can
+     * remember that and stop calling it; false when it could not run (no admin yet, or Android
+     * refused something) and should be tried again on a later start.
+     */
+    fun migrateFromHiding(context: Context): Boolean {
         val ctx = context.applicationContext
-        try {
+        return try {
             val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val admin = ComponentName(ctx, io.github.warleysr.dechainer.DechainerDeviceAdminReceiver::class.java)
-            if (!dpm.isAdminActive(admin)) return
+            if (!dpm.isAdminActive(admin)) return false
             releaseAllHidden(ctx, dpm, admin)
             if (dpm.isApplicationHidden(admin, ctx.packageName)) dpm.setApplicationHidden(admin, ctx.packageName, false)
+            hiddenByUs(ctx).isEmpty()
         } catch (e: Exception) {
             Timber.w(e, "Could not undo hiding from an older build")
+            false
         }
     }
 }

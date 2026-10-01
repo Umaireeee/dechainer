@@ -74,7 +74,6 @@ fun SchedulesScreen(
     val lockedMsg = stringResource(R.string.schedule_locked_message)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
     val defaultName = stringResource(R.string.schedule_default_name)
-    val antiTamperLabel = stringResource(R.string.schedule_anti_tamper)
     val copySuffix = stringResource(R.string.schedule_copy_suffix)
 
     var now by remember { mutableStateOf(ZonedDateTime.now()) }
@@ -97,24 +96,13 @@ fun SchedulesScreen(
             }
 
             item {
+                // Always on while this app is Device Owner (blueprint 9.2): the row stays so the rule can be
+                // seen, but it is not a switch any more.
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.schedule_anti_tamper)) },
                     supportingContent = { Text(stringResource(R.string.schedule_anti_tamper_desc)) },
                     leadingContent = { Icon(Icons.Outlined.Lock, null) },
-                    trailingContent = {
-                        Switch(
-                            checked = viewModel.antiTamper,
-                            onCheckedChange = { checked ->
-                                // Turning protection on is always allowed; turning it off needs the code.
-                                if (checked) viewModel.updateAntiTamper(true)
-                                else if (viewModel.isAnyLocked()) showLocked()
-                                else recoveryGate.run {
-                                    if (viewModel.updateAntiTamper(false) == SchedulesViewModel.SaveResult.LOCKED)
-                                        showLocked()
-                                }
-                            }
-                        )
-                    }
+                    trailingContent = { Switch(checked = true, onCheckedChange = null, enabled = false) }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }

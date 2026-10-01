@@ -97,7 +97,7 @@ object TrustedClock {
     }
 
     /** Android's count of boots, so a reboot is noticed for certain; unknown if it can't be read. */
-    private fun bootCount(context: Context): Int = try {
+    internal fun bootCount(context: Context): Int = try {
         Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, ForcedRemovalClock.UNKNOWN_BOOT)
     } catch (_: Exception) {
         ForcedRemovalClock.UNKNOWN_BOOT
