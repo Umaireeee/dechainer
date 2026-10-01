@@ -71,6 +71,16 @@ data class PomodoroState(
     val blockEndsAt: Long = 0L
 ) {
     val inBlock get() = blockEndsAt > 0L
+
+    /** A block is recorded and its end is still ahead of [now]: the brick holds. */
+    fun blockActiveAt(now: Long) = inBlock && blockEndsAt > now
+
+    /**
+     * A block is still recorded although its end is at or before [now]: the alarm that should have
+     * closed it never did (blueprint 5.4, R1). The time, not the alarm, decides that it is over.
+     */
+    fun blockExpiredAt(now: Long) = inBlock && blockEndsAt <= now
+
     val isRunning get() = endsAt > 0L
     val isPaused get() = !isRunning && pausedRemaining > 0L
     val isIdle get() = !isRunning && !isPaused
