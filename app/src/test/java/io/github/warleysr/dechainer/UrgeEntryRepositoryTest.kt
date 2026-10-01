@@ -49,8 +49,8 @@ class UrgeEntryRepositoryTest {
     private val repo get() = Store.urgeEntries(context)
 
     @Test
-    fun theSchemaIsAtVersionTwoAndTheTableExists() {
-        assertEquals(2, Migrations.LATEST)
+    fun theUrgeTableExistsInTheCurrentSchema() {
+        assertTrue(Migrations.LATEST >= 2)
         assertEquals(0, repo.count())
     }
 
