@@ -108,7 +108,7 @@ A companion app that sits next to Déchaîner. It's built from this same reposit
 
 **Kept deep dives:** under any deep dive, tap **Keep this deep dive**. Home shows **Kept deep dives**: your own collection to reread on a hard day. Backups include them, with your rules.
 
-**Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** saves them as a file you can keep (entries, your rules, kept deep dives and your reason), and **Import** reads that file back without duplicating anything.
+**Backup:** your entries live only on the phone, and uninstalling erases them. In Settings, **Export** saves them as a file you can keep (entries, your rules, kept deep dives, evening check-ins and your reason), and **Import** reads that file back without duplicating anything.
 
 Everything you write stays on your phone, except what you send for a deep dive or the weekly deep dive. The journal can only ask Déchaîner to block more, never to unblock.
 
