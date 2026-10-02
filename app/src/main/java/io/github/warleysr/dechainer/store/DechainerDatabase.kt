@@ -22,8 +22,16 @@ class DechainerDatabase(context: Context, name: String? = FILE_NAME) :
 
     // The helper already runs both callbacks inside one transaction: all of a migration or none of it.
     private fun migrate(db: SQLiteDatabase, from: Int, to: Int) {
-        Migrations.statementsBetween(from, to).forEach { db.execSQL(it) }
+        // The shipped steps stay exactly as written. Creation is made idempotent here, so a second
+        // helper opening a freshly created file at the same moment (it happens in tests that delete
+        // the file) finds the tables already there instead of failing.
+        Migrations.statementsBetween(from, to).forEach { db.execSQL(idempotent(it)) }
     }
+
+    private fun idempotent(sql: String): String = sql
+        .replaceFirst(Regex("^(\\s*CREATE (?:UNIQUE )?TABLE) (?!IF NOT EXISTS)"), "$1 IF NOT EXISTS ")
+        .replaceFirst(Regex("^(\\s*CREATE (?:UNIQUE )?INDEX) (?!IF NOT EXISTS)"), "$1 IF NOT EXISTS ")
+
 
     companion object {
         const val FILE_NAME = "dechainer.db"
