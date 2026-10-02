@@ -33,7 +33,7 @@ object UrgeFlowRules {
      * The breathing window for what [UrgeLockRule] decided (5.3). A fresh lock breathes for exactly
      * its ten minutes, from the moment it was stored ([lockStartedAt]). A lock already running (a second
      * tap, or one the journal started) breathes until it ends, never longer, and never extends it.
-     * Inside a focus block or a punishment day, or without Device Owner, no lock starts and the
+     * Inside a focus block, or without Device Owner, no lock starts and the
      * breathing still runs for the full ten minutes from [now].
      */
     fun breathingFor(start: UrgeStart, now: Long, lockStartedAt: Long? = null): BreathingWindow = when (start) {

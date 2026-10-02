@@ -41,8 +41,7 @@ import kotlin.concurrent.thread
 
 /**
  * Urge and AI (blueprint D4, D5 and section 8): the personal reason, the one person to call, and the
- * AI provider, key, model and consent. Every write goes through the settings freeze, so on a
- * punishment day the screen reads but refuses to save, and says so.
+ * AI provider, key, model and consent.
  */
 @Composable
 fun UrgeSettingsScreen() {
@@ -51,7 +50,6 @@ fun UrgeSettingsScreen() {
     val urge = remember { UrgeSettings(context) }
 
     var message by remember { mutableStateOf<Int?>(null) }
-    val frozen = urge.frozen
 
     var reason by remember { mutableStateOf(urge.reason) }
     var contactName by remember { mutableStateOf(urge.contact.name) }
@@ -76,9 +74,6 @@ fun UrgeSettingsScreen() {
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (frozen) {
-            Text(stringResource(R.string.urge_frozen), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        }
         message?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
 
         // ---- the reason ----
@@ -91,8 +86,9 @@ fun UrgeSettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         SaveButton {
-            message = if (urge.setReason(reason)) R.string.urge_saved else R.string.urge_frozen
-            if (message == R.string.urge_saved) reason = urge.reason
+            urge.setReason(reason)
+            message = R.string.urge_saved
+            reason = urge.reason
         }
 
         // ---- the person to call ----
@@ -115,11 +111,10 @@ fun UrgeSettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         SaveButton {
-            message = if (urge.setContact(contactName, contactNumber)) R.string.urge_saved else R.string.urge_frozen
-            if (message == R.string.urge_saved) {
-                contactName = urge.contact.name
-                contactNumber = urge.contact.number
-            }
+            urge.setContact(contactName, contactNumber)
+            message = R.string.urge_saved
+            contactName = urge.contact.name
+            contactNumber = urge.contact.number
         }
 
         // ---- the AI ----
@@ -132,12 +127,11 @@ fun UrgeSettingsScreen() {
                 FilterChip(
                     selected = provider == p,
                     onClick = {
-                        if (ai.setProvider(p)) {
-                            provider = p
-                            model = ai.modelOverride
-                            consent = ai.consent
-                            message = null
-                        } else message = R.string.urge_frozen
+                        ai.setProvider(p)
+                        provider = p
+                        model = ai.modelOverride
+                        consent = ai.consent
+                        message = null
                     },
                     label = { Text(p.label) }
                 )
@@ -168,7 +162,6 @@ fun UrgeSettingsScreen() {
                     message = R.string.urge_saved
                     retryWaiting()
                 }
-                AiSettings.KeySave.REFUSED_FROZEN -> message = R.string.urge_frozen
                 AiSettings.KeySave.CANNOT_ENCRYPT -> message = R.string.ai_key_cannot_encrypt
             }
         }
@@ -191,9 +184,11 @@ fun UrgeSettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         SaveButton {
-            val ok = ai.setModel(model) && (provider != Provider.CUSTOM || ai.setCustomBase(customBase))
-            message = if (ok) R.string.urge_saved else R.string.urge_frozen
-            if (ok) { consent = ai.consent; retryWaiting() }
+            ai.setModel(model)
+            if (provider == Provider.CUSTOM) ai.setCustomBase(customBase)
+            message = R.string.urge_saved
+            consent = ai.consent
+            retryWaiting()
         }
 
         Spacer(Modifier.height(8.dp))
@@ -213,11 +208,10 @@ fun UrgeSettingsScreen() {
             Switch(
                 checked = consent,
                 onCheckedChange = { agreed ->
-                    if (ai.setConsent(agreed)) {
-                        consent = agreed
-                        message = null
-                        if (agreed) retryWaiting()
-                    } else message = R.string.urge_frozen
+                    ai.setConsent(agreed)
+                    consent = agreed
+                    message = null
+                    if (agreed) retryWaiting()
                 }
             )
         }

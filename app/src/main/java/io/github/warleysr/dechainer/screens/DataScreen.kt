@@ -14,7 +14,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.clock.TrustedClock
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import io.github.warleysr.dechainer.report.DataTools
 import io.github.warleysr.dechainer.report.DeleteResult
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
@@ -28,8 +27,7 @@ import java.time.format.FormatStyle
 
 /**
  * Your data (blueprint 6.6): delete single entries, sessions, deep dives and reports, wipe everything
- * the rules allow (behind the recovery code), and the backup file. Every write is refused on a
- * punishment day by [DataTools] itself; this screen only says so.
+ * the rules allow (behind the recovery code), and the backup file.
  */
 @Composable
 fun DataScreen(modifier: Modifier = Modifier) {
@@ -40,7 +38,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
     var version by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmWipe by remember { mutableStateOf(false) }
-    val frozen = SettingsFreeze.isFrozen(ctx)
     val fmt = remember { DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT) }
     fun at(ms: Long) = fmt.format(Instant.ofEpochMilli(ms).atZone(zone))
 
@@ -53,13 +50,11 @@ fun DataScreen(modifier: Modifier = Modifier) {
     val saveFailedMsg = stringResource(R.string.data_export_failed)
     val deletedMsg = stringResource(R.string.data_deleted)
     val notAllowedMsg = stringResource(R.string.data_not_allowed)
-    val frozenMsg = stringResource(R.string.data_frozen)
     val importFailedMsg = stringResource(R.string.data_import_failed)
 
     fun report(r: DeleteResult) {
         message = when (r) {
             DeleteResult.DELETED -> deletedMsg
-            DeleteResult.FROZEN -> frozenMsg
             DeleteResult.NOT_ALLOWED -> notAllowedMsg
             DeleteResult.MISSING -> null
         }
@@ -76,7 +71,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
             val text = runCatching { ctx.contentResolver.openInputStream(uri)!!.use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
             val result = text?.let { tools.import(it) }
             message = when {
-                SettingsFreeze.isFrozen(ctx) -> frozenMsg
                 result == null || !result.ok -> importFailedMsg
                 else -> ctx.getString(R.string.data_imported, result.added, result.skipped)
             }
@@ -85,7 +79,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
     }
 
     LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (frozen) item { Text(stringResource(R.string.data_frozen), color = MaterialTheme.colorScheme.error) }
         message?.let { m -> item { Text(m, color = MaterialTheme.colorScheme.primary) } }
 
         item { Text(stringResource(R.string.data_export_section), style = MaterialTheme.typography.titleLarge) }
@@ -93,7 +86,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton({ exportLauncher.launch("dechainer-backup.json") }) { Text(stringResource(R.string.data_export)) }
-                OutlinedButton({ importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, enabled = !frozen) {
+                OutlinedButton({ importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
                     Text(stringResource(R.string.data_import))
                 }
             }
@@ -106,9 +99,9 @@ fun DataScreen(modifier: Modifier = Modifier) {
                 Text(stringResource(R.string.data_urge_row, at(e.createdAt),
                     stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge), e.status.name.lowercase().replace('_', ' ')))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ report(tools.deleteUrge(e.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                    TextButton({ report(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
-                        TextButton({ report(tools.deleteDeepDive(e.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete_deep_dive)) }
+                        TextButton({ report(tools.deleteDeepDive(e.id)) }) { Text(stringResource(R.string.data_delete_deep_dive)) }
                 }
             }
         }
@@ -118,7 +111,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         items(sessions, key = { "s${it.id}" }) { s ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { "-" }), Modifier.weight(1f))
-                TextButton({ report(tools.deleteSession(s.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ report(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -127,7 +120,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         items(reports, key = { "r${it.id}" }) { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(at(r.periodStart), Modifier.weight(1f))
-                TextButton({ report(tools.deleteReport(r.id)) }, enabled = !frozen) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ report(tools.deleteReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -136,14 +129,14 @@ fun DataScreen(modifier: Modifier = Modifier) {
         items(goalDays, key = { "g$it" }) { d ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.data_goals_row, d.toString()), Modifier.weight(1f))
-                TextButton({ report(tools.deleteGoals(d)) }, enabled = !frozen && tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ report(tools.deleteGoals(d)) }, enabled = tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
         item { Text(stringResource(R.string.data_wipe_section), style = MaterialTheme.typography.titleLarge) }
         item { Text(stringResource(R.string.data_wipe_hint), style = MaterialTheme.typography.bodySmall) }
         item {
-            OutlinedButton({ gate.run { confirmWipe = true } }, enabled = !frozen) { Text(stringResource(R.string.data_wipe)) }
+            OutlinedButton({ gate.run { confirmWipe = true } }) { Text(stringResource(R.string.data_wipe)) }
         }
     }
 
@@ -156,7 +149,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
                 TextButton({
                     confirmWipe = false
                     val r = tools.wipeAll()
-                    message = if (r.frozen) frozenMsg else ctx.getString(R.string.data_wipe_done, r.removed, r.kept)
+                    message = ctx.getString(R.string.data_wipe_done, r.removed, r.kept)
                     version++
                 }) { Text(stringResource(R.string.data_wipe)) }
             },

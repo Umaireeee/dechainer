@@ -35,7 +35,7 @@ class ReportInputsTest {
         firstDate = LocalDate.of(2026, 10, 5), lastDate = LocalDate.of(2026, 10, 11),
         urges = urges,
         sessions = listOf(FocusFact(LocalDate.of(2026, 10, 6), 50, "Chapter 4", Flavor.USUAL, listOf(CheckinAnswer.YES, CheckinAnswer.NO))),
-        days = listOf(DayFact(LocalDate.of(2026, 10, 6), DayKind.PUNISHMENT,
+        days = listOf(DayFact(LocalDate.of(2026, 10, 6), DayKind.NORMAL,
             listOf(GoalFact("Read chapter 4", GoalType.MANUAL, null, GoalState.DONE), GoalFact("Focus", GoalType.FOCUS_MINUTES, 90, GoalState.NOT_DONE)),
             Violation.UNDER_HALF, 50)),
         past = past
@@ -69,7 +69,7 @@ class ReportInputsTest {
         val text = ReportInputs.build(data(past = listOf(past)))
         assertTrue(text.contains("[done] (manual) Read chapter 4"))
         assertTrue(text.contains("[not_done] (focus_minutes 90 min) Focus"))
-        assertTrue(text.contains("punishment day, because under_half; 1 of 2 goals done; focus minutes that day: 50"))
+        assertTrue(text.contains("normal day, because under_half; 1 of 2 goals done; focus minutes that day: 50"))
         assertTrue(text.contains("advice given then: Phone out of the bedroom."))
         assertTrue(text.contains("check-in yes: 1; check-in no: 1"))
     }

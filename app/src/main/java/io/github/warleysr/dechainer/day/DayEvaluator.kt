@@ -73,29 +73,25 @@ object DayEvaluator {
     }
 
     /**
-     * Day D, decided at the first wake-up after its 00:00.
-     * @param prevKind the kind of D-1
-     * @param prevGoals D-1's goals, already [settle]d
-     * @param planGoalCount how many goals the plan for D has
-     * @param declaredRest whether D was declared a REST day
+     * The result of day D, recorded at the first wake-up after it ended. Nothing is locked by it: it
+     * is the honest record the Today screen, the reports and the progress graphs read.
+     * @param kind D's kind (a REST day has no result of its own)
+     * @param goals D's goals, already [settle]d
+     * @param nextPlanCount how many goals the plan for D+1 has (written in D's evening)
+     * @return D's kind and, when the day missed, the first reason it did
      */
-    fun evaluate(prevKind: DayKind, prevGoals: List<Goal>, planGoalCount: Int, declaredRest: Boolean): DayVerdict {
-        val violation: Violation? = when (prevKind) {
-            // Back-to-back guard: a punishment day never follows a punishment day.
-            DayKind.PUNISHMENT -> null
-            else -> when {
-                planGoalCount < DayRules.MIN_GOALS -> Violation.PLAN_MISSING
-                prevKind == DayKind.REST -> null // a rest day waives its own goals only; the plan above still counts
-                prevGoals.any { it.type == GoalType.MANUAL && it.state == GoalState.OPEN } -> Violation.UNRESOLVED
-                prevGoals.count { it.state == GoalState.DONE } * 2 < prevGoals.size -> Violation.UNDER_HALF
-                else -> null
-            }
+    fun close(kind: DayKind, goals: List<Goal>, nextPlanCount: Int): DayVerdict {
+        val missed: Violation? = when {
+            kind == DayKind.REST -> if (nextPlanCount < DayRules.MIN_GOALS) Violation.PLAN_MISSING else null
+            goals.any { it.type == GoalType.MANUAL && it.state == GoalState.OPEN } -> Violation.UNRESOLVED
+            goals.count { it.state == GoalState.DONE } * 2 < goals.size -> Violation.UNDER_HALF
+            nextPlanCount < DayRules.MIN_GOALS -> Violation.PLAN_MISSING
+            else -> null
         }
-        val kind = when {
-            violation != null -> DayKind.PUNISHMENT
-            declaredRest -> DayKind.REST
-            else -> DayKind.NORMAL
-        }
-        return DayVerdict(kind, violation)
+        return DayVerdict(kind, missed)
     }
+
+    /** The share of goals done, 0 to 100, or null for a day with no goals. */
+    fun percentDone(goals: List<Goal>): Int? =
+        if (goals.isEmpty()) null else goals.count { it.state == GoalState.DONE } * 100 / goals.size
 }

@@ -15,9 +15,6 @@ enum class SkipReason {
     /** Its window has already ended. */
     WINDOW_OVER,
 
-    /** Never started on a punishment day. */
-    PUNISHMENT_DAY,
-
     /** A declared rest day skips scheduled focus (D18). Block schedules and limits still run. */
     REST_DAY,
 
@@ -35,11 +32,10 @@ enum class SkipReason {
  */
 object FocusStartRule {
     fun decide(
-        now: Long, windowEndsAt: Long, punishmentActive: Boolean, restDay: Boolean, urgeEndsAt: Long,
+        now: Long, windowEndsAt: Long, restDay: Boolean, urgeEndsAt: Long,
         minLeftMs: Long = 0L
     ): FocusStart = when {
         windowEndsAt <= now -> FocusStart.Skip(SkipReason.WINDOW_OVER)
-        punishmentActive -> FocusStart.Skip(SkipReason.PUNISHMENT_DAY)
         restDay -> FocusStart.Skip(SkipReason.REST_DAY)
         urgeEndsAt > now ->
             when {

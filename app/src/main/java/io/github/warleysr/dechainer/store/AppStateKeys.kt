@@ -22,16 +22,10 @@ object AppStateKeys {
     const val URGE_LOCK_ENDS = "urgeLockEndsAt"
 
     /**
-     * The punishment day: the window it holds in (trusted-clock epoch millis, start inclusive, end
-     * exclusive) and the local date it belongs to. Not deletable through data-delete: deleting data
-     * never cancels or shortens a punishment (blueprint 6.4).
+     * Keys an older build used for the punishment day, which was removed (blueprint 1.2). Kept only
+     * so the update can remove them; nothing reads them.
      */
-    const val PUNISHMENT_FROM = "punishmentFrom"
-    const val PUNISHMENT_UNTIL = "punishmentUntil"
-    const val PUNISHMENT_DATE = "punishmentDate"
-
-    /** Set when the crash-loop breaker cut a punishment day short, so the day is on record as ended by the system. */
-    const val PUNISHMENT_ABORTED_AT = "punishmentAbortedAt"
+    val LEGACY_PUNISHMENT_KEYS = listOf("punishmentFrom", "punishmentUntil", "punishmentDate", "punishmentAbortedAt")
 
     /** The running focus block's story, as [io.github.warleysr.dechainer.focus.FlowState] JSON. Absent when none runs. */
     const val FOCUS_FLOW = "focusFlow"

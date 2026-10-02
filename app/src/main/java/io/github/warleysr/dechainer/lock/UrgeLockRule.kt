@@ -11,7 +11,7 @@ sealed interface UrgeStart {
     data class AlreadyRunning(val endsAt: Long) : UrgeStart
 
     /**
-     * A focus block or a punishment day already holds the phone, so no second lock starts. The
+     * A focus block already holds the phone, so no second lock starts. The
      * breathing screen still runs for the full ten minutes, until [breathingUntil].
      */
     data class Covered(val by: LockMode, val breathingUntil: Long) : UrgeStart
@@ -29,15 +29,12 @@ object UrgeLockRule {
         now: Long,
         runningUrgeEndsAt: Long,
         focusBlockActive: Boolean,
-        punishmentActive: Boolean,
         deviceOwner: Boolean,
         lockMs: Long = Rules.URGE_LOCK_MS
     ): UrgeStart = when {
         // First: whatever is stored and still running is never touched, by any number of taps.
         runningUrgeEndsAt > now -> UrgeStart.AlreadyRunning(runningUrgeEndsAt)
         !deviceOwner -> UrgeStart.Unavailable(now + lockMs)
-        // The day is the longer lock and is named first.
-        punishmentActive -> UrgeStart.Covered(LockMode.PUNISHMENT_DAY, now + lockMs)
         focusBlockActive -> UrgeStart.Covered(LockMode.FOCUS_BLOCK, now + lockMs)
         else -> UrgeStart.Started(now + lockMs)
     }

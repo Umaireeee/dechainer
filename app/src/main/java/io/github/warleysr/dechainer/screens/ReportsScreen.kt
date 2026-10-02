@@ -21,7 +21,6 @@ import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.day.DayKind
 import io.github.warleysr.dechainer.day.DayRow
 import io.github.warleysr.dechainer.day.DayWindow
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import io.github.warleysr.dechainer.screens.urge.MarkdownText
 import io.github.warleysr.dechainer.store.StoredReport
 import io.github.warleysr.dechainer.store.Store
@@ -30,8 +29,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /**
- * Reports (blueprint 6.5): the weekly reports and the progress line of the daily results. Read only,
- * so it stays open on a punishment day. Deleting and the backup are on [DataScreen].
+ * Reports (blueprint 6.5): the weekly reports and the progress line of the daily results. Deleting and the backup are on [DataScreen].
  */
 @Composable
 fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, modifier: Modifier = Modifier) {
@@ -72,14 +70,11 @@ fun ReportsScreen(openReportId: Long?, onOpenData: () -> Unit, modifier: Modifie
                 Text(label(r), Modifier.padding(16.dp).heightIn(min = 24.dp), style = MaterialTheme.typography.titleMedium)
             }
         }
-        item {
-            if (SettingsFreeze.isFrozen(ctx)) Text(stringResource(R.string.reports_frozen), style = MaterialTheme.typography.bodySmall)
-            else TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) }
-        }
+        item { TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) } }
     }
 }
 
-/** The share of goals done on each finished day, as one line; a punishment day gets a ring. */
+/** The share of goals done on each finished day, as one line; a missed day gets a ring. */
 @Composable
 private fun ProgressLine(rows: List<DayRow>) {
     val finished = rows.filter { it.totalCount > 0 && it.resolvedAt != null }
@@ -101,8 +96,8 @@ private fun ProgressLine(rows: List<DayRow>) {
         drawPath(path, line, style = Stroke(width = 3.dp.toPx()))
         finished.forEachIndexed { i, r ->
             val p = point(i, r)
-            drawCircle(if (r.kind == DayKind.PUNISHMENT) mark else line, radius = 5.dp.toPx(), center = p,
-                style = if (r.kind == DayKind.PUNISHMENT) Stroke(2.dp.toPx()) else androidx.compose.ui.graphics.drawscope.Fill)
+            drawCircle(if (r.violation != null) mark else line, radius = 5.dp.toPx(), center = p,
+                style = if (r.violation != null) Stroke(2.dp.toPx()) else androidx.compose.ui.graphics.drawscope.Fill)
         }
     }
 }

@@ -114,7 +114,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    stringResource(if (lock.primary == LockMode.PUNISHMENT_DAY) R.string.locked_punishment_body else R.string.home_reason_urge),
+                    stringResource(R.string.home_reason_urge),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center

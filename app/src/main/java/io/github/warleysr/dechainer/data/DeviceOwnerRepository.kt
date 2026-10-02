@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.data
 
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.accounts.AccountManager
 import android.app.admin.DevicePolicyManager
 import android.content.ActivityNotFoundException
@@ -88,11 +87,10 @@ object DeviceOwnerRepository {
     }
 
     fun setPrivateDNS(host: String): Int {
-        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
         return dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
     }
 
-    /** The DNS guard putting the pinned provider back: enforcement, so a punishment day does not stop it. */
+    /** The DNS guard putting the pinned provider back. */
     fun restorePrivateDns(host: String): Int = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
 
     /** What a refused change returns, in the same terms as Android's own result codes. */
@@ -144,7 +142,6 @@ object DeviceOwnerRepository {
     }
 
     fun setPrivateDnsAutomatic(): Int {
-        if (!SettingsFreeze.allowWrite(context, "Private DNS")) return REFUSED
         return dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
     }
 

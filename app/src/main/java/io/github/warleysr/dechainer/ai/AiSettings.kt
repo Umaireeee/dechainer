@@ -2,12 +2,10 @@ package io.github.warleysr.dechainer.ai
 
 import android.content.Context
 import androidx.core.content.edit
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 
 /**
  * The owner's AI choices: provider, model, the key (sealed with the Keystore) and the consent to
- * send the note to that provider. Every write goes through the settings freeze (blueprint 5.5), so a
- * punishment day refuses it here and not only in the screen. Reading is always allowed.
+ * send the note to that provider.
  */
 class AiSettings(context: Context) {
     private val ctx = context.applicationContext
@@ -43,18 +41,14 @@ class AiSettings(context: Context) {
 
     fun toConfig(): AiConfig = AiConfig(provider, baseUrl, key, model)
 
-    /** True while a punishment day refuses settings writes. */
-    val frozen: Boolean get() = SettingsFreeze.isFrozen(ctx)
-
     /** What happened when a key was saved. */
-    enum class KeySave { SAVED, REFUSED_FROZEN, CANNOT_ENCRYPT }
+    enum class KeySave { SAVED, CANNOT_ENCRYPT }
 
     /**
      * Saves the key, sealed. If this phone cannot encrypt it nothing is saved: the key is never
      * kept as plain text. An empty key removes the saved one.
      */
     fun saveKey(value: String): KeySave {
-        if (!SettingsFreeze.allowWrite(ctx, "AI key")) return KeySave.REFUSED_FROZEN
         val clean = value.trim()
         if (clean.isEmpty()) {
             prefs.edit { remove(KEY_SEALED) }
@@ -73,22 +67,21 @@ class AiSettings(context: Context) {
     /** Switching provider drops a typed model name: it belonged to the other provider. */
     fun setProvider(p: Provider): Boolean {
         val changed = p != provider
-        return write("AI provider") {
+        return write {
             putString(KEY_PROVIDER, p.name)
             if (changed) remove(KEY_MODEL)
         }
     }
 
-    fun setModel(value: String): Boolean = write("AI model") { putString(KEY_MODEL, value.trim()) }
+    fun setModel(value: String): Boolean = write { putString(KEY_MODEL, value.trim()) }
 
-    fun setCustomBase(value: String): Boolean = write("AI address") { putString(KEY_CUSTOM_BASE, value.trim()) }
+    fun setCustomBase(value: String): Boolean = write { putString(KEY_CUSTOM_BASE, value.trim()) }
 
-    fun setConsent(agreed: Boolean): Boolean = write("AI consent") {
+    fun setConsent(agreed: Boolean): Boolean = write {
         if (agreed) putString(KEY_CONSENT_FOR, consentKey) else remove(KEY_CONSENT_FOR)
     }
 
-    private fun write(what: String, change: android.content.SharedPreferences.Editor.() -> Unit): Boolean {
-        if (!SettingsFreeze.allowWrite(ctx, what)) return false
+    private fun write(change: android.content.SharedPreferences.Editor.() -> Unit): Boolean {
         prefs.edit { change() }
         return true
     }

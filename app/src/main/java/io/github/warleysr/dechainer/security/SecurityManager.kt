@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.security
 
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
@@ -88,7 +87,6 @@ class SecurityManager {
         }
 
         fun setShuffleKeyboardEnabled(context: Context, enabled: Boolean) {
-            if (!SettingsFreeze.allowWrite(context, "keyboard setting")) return
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
         }
@@ -101,7 +99,6 @@ class SecurityManager {
 
         /** Switching it off loosens the lock, so callers ask for the recovery code first. */
         fun setEntryLockEnabled(context: Context, enabled: Boolean) {
-            if (!SettingsFreeze.allowWrite(context, "entry lock")) return
             context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit { putBoolean(KEY_ENTRY_LOCK, enabled) }
         }
 
@@ -120,10 +117,9 @@ class SecurityManager {
         /** Whether the opening pattern has been chosen. The pattern itself is only stored as a salted hash. */
         fun hasEntryPattern(context: Context): Boolean = recoveryPrefs(context).getString(KEY_ENTRY_HASH, null) != null
 
-        /** Sets (or replaces) the opening pattern. False if the settings are frozen or it is not valid. */
+        /** Sets (or replaces) the opening pattern. False if it is not valid. */
         fun setEntryPattern(context: Context, dots: List<Int>): Boolean {
             if (!Pattern.isValid(dots)) return false
-            if (!SettingsFreeze.allowWrite(context, "entry pattern")) return false
             recoveryPrefs(context).edit(commit = true) {
                 putString(KEY_ENTRY_HASH, RecoveryCodeHash.create(Pattern.encode(dots)))
                 putInt(KEY_ENTRY_FAILS, 0)
@@ -203,7 +199,6 @@ class SecurityManager {
         }
 
         fun saveRecoveryCode(context: Context, code: String) {
-            if (!SettingsFreeze.allowWrite(context, "recovery code")) return
             synchronized(RECOVERY_LOCK) {
                 recoveryPrefs(context).edit(commit = true) {
                     putString(KEY_RECOVERY_HASH, RecoveryCodeHash.create(code))
@@ -234,7 +229,6 @@ class SecurityManager {
             UnlockDelay.clampMinutes(securityPrefs(context).getInt(KEY_UNLOCK_DELAY_MIN, 0))
 
         fun setUnlockDelayMinutes(context: Context, minutes: Int) {
-            if (!SettingsFreeze.allowWrite(context, "unlock delay")) return
             securityPrefs(context).edit { putInt(KEY_UNLOCK_DELAY_MIN, UnlockDelay.clampMinutes(minutes)) }
         }
 
@@ -311,7 +305,6 @@ class SecurityManager {
         }
 
         fun startForcedRemoval(context: Context) = synchronized(forcedRemovalLock) {
-            if (!SettingsFreeze.allowWrite(context, "forced removal")) return@synchronized
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", true)
@@ -321,7 +314,6 @@ class SecurityManager {
             }
         }
         fun cancelForcedRemoval(context: Context) {
-            if (!SettingsFreeze.allowWrite(context, "forced removal")) return
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit {
                 putBoolean("forced_removal_active", false)

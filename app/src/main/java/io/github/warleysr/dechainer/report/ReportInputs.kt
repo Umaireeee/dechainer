@@ -41,7 +41,7 @@ object ReportInputs {
             checkinNo = checks.count { it == CheckinAnswer.NO },
             goalsDone = goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE },
             goalsTotal = goals.size,
-            punishmentDays = data.days.count { it.kind == io.github.warleysr.dechainer.day.DayKind.PUNISHMENT },
+            daysMissed = data.days.count { it.violation != null },
             advice = advice.take(MAX_ADVICE)
         )
     }
@@ -51,7 +51,7 @@ object ReportInputs {
         .put("focusSessions", s.focusSessions).put("focusMinutes", s.focusMinutes)
         .put("checkinYes", s.checkinYes).put("checkinNo", s.checkinNo)
         .put("goalsDone", s.goalsDone).put("goalsTotal", s.goalsTotal)
-        .put("punishmentDays", s.punishmentDays).put("advice", s.advice)
+        .put("daysMissed", s.daysMissed).put("advice", s.advice)
         .toString()
 
     /** Forgiving: a stored value that does not parse is null, and nothing is written back from a failed read. */
@@ -61,7 +61,7 @@ object ReportInputs {
         return ReportSummary(
             o.optInt("urges"), o.optInt("slips"), o.optInt("focusSessions"), o.optInt("focusMinutes"),
             o.optInt("checkinYes"), o.optInt("checkinNo"), o.optInt("goalsDone"), o.optInt("goalsTotal"),
-            o.optInt("punishmentDays"), o.optString("advice", "")
+            o.optInt("daysMissed"), o.optString("advice", "")
         )
     }
 
@@ -87,7 +87,7 @@ object ReportInputs {
         appendLine("TOTALS")
         appendLine("urges: ${s.urges}; slips: ${s.slips}")
         appendLine("focus sessions: ${s.focusSessions}; focused minutes: ${s.focusMinutes}; check-in yes: ${s.checkinYes}; check-in no: ${s.checkinNo}")
-        appendLine("checklist goals done: ${s.goalsDone} of ${s.goalsTotal}; punishment days: ${s.punishmentDays}")
+        appendLine("checklist goals done: ${s.goalsDone} of ${s.goalsTotal}; days that fell short of the plan: ${s.daysMissed}")
 
         appendLine()
         appendLine("URGES AND SLIPS")
@@ -125,7 +125,7 @@ object ReportInputs {
         if (data.past.isEmpty()) appendLine("none")
         data.past.forEach { p ->
             val x = p.summary
-            appendLine("- ${p.firstDate} to ${p.lastDate}: urges ${x.urges}, slips ${x.slips}, focus ${x.focusMinutes} min in ${x.focusSessions} sessions, check-in yes ${x.checkinYes} no ${x.checkinNo}, goals ${x.goalsDone}/${x.goalsTotal}, punishment days ${x.punishmentDays}")
+            appendLine("- ${p.firstDate} to ${p.lastDate}: urges ${x.urges}, slips ${x.slips}, focus ${x.focusMinutes} min in ${x.focusSessions} sessions, check-in yes ${x.checkinYes} no ${x.checkinNo}, goals ${x.goalsDone}/${x.goalsTotal}, days short of plan ${x.daysMissed}")
             if (x.advice.isNotBlank()) appendLine("  advice given then: ${clip(x.advice, MAX_ADVICE)}")
         }
     }.trimEnd()

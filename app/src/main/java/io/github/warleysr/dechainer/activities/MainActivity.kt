@@ -72,8 +72,8 @@ class MainActivity : ComponentActivity() {
     private val urgeVm: UrgeViewModel by viewModels()
 
     /**
-     * Pins the phone to Déchaîner while any brick runs (an urge lock, a focus block, a punishment
-     * day), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
+     * Pins the phone to Déchaîner while any brick runs (an urge lock or a focus
+     * block), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
      * let through ([io.github.warleysr.dechainer.lock.BrickStatus.ownerApps]). Only as device owner: without it, Android would show its
      * own "pin this app?" prompt instead. If the app crashes, Android drops the pin by itself:
      * the phone is never trapped, and suspension keeps blocking underneath.
@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
             val focusState by Pomodoro.state.collectAsState()
             val lockStatus by LockEngine.status.collectAsState()
             val urge by urgeVm.state.collectAsState()
-            // A punishment day (or an urge lock the flow has not picked up yet) shows Home with its end
+            // An urge lock the flow has not picked up yet shows Home with its end
             // time; a focus block shows the Focus page. When bricks overlap, the one that ends last is named.
             val lockedHome = lockStatus?.takeIf { it.primary != LockMode.FOCUS_BLOCK }
             val brick = focusState.inBlock || lockStatus != null
@@ -260,7 +260,7 @@ class MainActivity : ComponentActivity() {
                 // The pattern was drawn: an urge that stopped after its breathing carries on to the writing.
                 LaunchedEffect(entryUnlocked) { if (entryUnlocked) urgeVm.resumeIfAny() }
 
-                // An urge lock or a punishment day ends any open recovery session, so the code can't
+                // An urge lock ends any open recovery session, so the code can't
                 // be used until the lock runs out.
                 LaunchedEffect(lockedHome != null) {
                     if (lockedHome != null) SecurityManager.endSession()

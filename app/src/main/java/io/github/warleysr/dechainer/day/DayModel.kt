@@ -2,7 +2,14 @@ package io.github.warleysr.dechainer.day
 
 import java.time.LocalDate
 
-enum class DayKind { NORMAL, REST, PUNISHMENT }
+enum class DayKind {
+    NORMAL, REST;
+
+    companion object {
+        /** A stored kind; anything unknown (an older build's PUNISHMENT, say) reads as NORMAL. */
+        fun parse(name: String?): DayKind = entries.firstOrNull { it.name == name } ?: NORMAL
+    }
+}
 
 enum class GoalType { MANUAL, FOCUS_MINUTES, NO_SLIP }
 
@@ -10,7 +17,7 @@ enum class GoalState { OPEN, DONE, NOT_DONE }
 
 enum class ResolvedBy { USER, AUTO }
 
-/** Why a day became a punishment day (blueprint 6.4). */
+/** Why a day missed its plan (blueprint 6.4): the first reason found. Recorded only; nothing is locked by it. */
 enum class Violation { PLAN_MISSING, UNRESOLVED, UNDER_HALF }
 
 data class Goal(

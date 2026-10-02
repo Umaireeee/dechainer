@@ -21,7 +21,6 @@ import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.store.DechainerDatabase
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.store.UrgeEntryRepository
@@ -220,19 +219,6 @@ class UrgeFlowTest {
         assertEquals(10 * minute, e.lockEndedAt!! - e.lockStartedAt!!)
         assertEquals("nothing can be locked", 0L, LockStateStore.urge(ctx).endsAt)
         assertEquals(UrgeStatus.LOCKED, fresh(e).status)
-    }
-
-    @Test
-    fun onAPunishmentDayTheBreathingRunsWithoutStartingASecondLock() {
-        makeDeviceOwner()
-        val now = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - hour, now + 5 * hour), "today")
-        val f = flow(FakeAi(AiGateResult.OFFLINE))
-        val e = f.startOngoing(UrgeSource.FOCUS)
-
-        assertEquals("no second lock", 0L, LockStateStore.urge(ctx).endsAt)
-        assertEquals(10 * minute, e.lockEndedAt!! - e.lockStartedAt!!)
-        assertEquals(UrgeSource.FOCUS, fresh(e).source)
     }
 
     @Test

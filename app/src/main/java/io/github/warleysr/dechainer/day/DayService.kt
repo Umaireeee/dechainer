@@ -4,29 +4,29 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * The catch-up evaluation (blueprint 6.4), over a repository and a clock passed in, so it is
- * testable without a phone. Safe to run on every wake-up: a day already evaluated is never touched.
+ * The catch-up of the daily checklist (blueprint 6.4), over a repository and a clock passed in, so
+ * it is testable without a phone. Safe to run on every wake-up: a day already closed is never touched.
+ * It records results only; nothing here locks the phone.
  */
 object DayService {
 
     /**
-     * Evaluates every day from the one after [activatedOn] up to today, closes the goals of the days
-     * before, and ticks today's focus goals. Returns whether today is a punishment day.
+     * Closes every day from [activatedOn] up to yesterday that is not closed yet (its measured goals
+     * settled, its result recorded), and ticks today's focus goals as their minutes are reached.
      */
-    fun evaluate(repo: DayRepository, stats: DayStats, activatedOn: LocalDate, now: Long, zone: ZoneId): Boolean {
+    fun evaluate(repo: DayRepository, stats: DayStats, activatedOn: LocalDate, now: Long, zone: ZoneId) {
         val today = DayWindow.dateOf(now, zone)
-        var d = activatedOn.plusDays(1)
-        while (!d.isAfter(today)) {
+        // Days close in order, so the catch-up starts after the last one closed: one pass costs a few
+        // queries however long the app has been in use.
+        var d = repo.lastEvaluated()?.plusDays(1)?.takeIf { it.isAfter(activatedOn) } ?: activatedOn
+        while (d.isBefore(today)) {
             if (repo.day(d)?.evaluated != true) {
-                val prev = d.minusDays(1)
-                val settled = DayEvaluator.settle(repo.goals(prev), stats.focusMinutes(prev), stats.slips(prev))
-                repo.saveResult(prev, settled, now)
-                val prevKind = repo.day(prev)?.kind ?: DayKind.NORMAL
-                val verdict = DayEvaluator.evaluate(
-                    prevKind = prevKind,
-                    prevGoals = settled,
-                    planGoalCount = repo.goals(d).size,
-                    declaredRest = repo.day(d)?.kind == DayKind.REST
+                val settled = DayEvaluator.settle(repo.goals(d), stats.focusMinutes(d), stats.slips(d))
+                repo.saveResult(d, settled, now)
+                val verdict = DayEvaluator.close(
+                    kind = repo.day(d)?.kind ?: DayKind.NORMAL,
+                    goals = settled,
+                    nextPlanCount = repo.goals(d.plusDays(1)).size
                 )
                 repo.saveEvaluation(d, verdict)
             }
@@ -36,7 +36,6 @@ object DayService {
         DayEvaluator.live(todays, stats.focusMinutes(today)).zip(todays).forEach { (new, old) ->
             if (new.state != old.state) repo.setGoal(new.id, new.state, ResolvedBy.AUTO)
         }
-        return repo.day(today)?.kind == DayKind.PUNISHMENT
     }
 
     /** Whether the evening checklist still has something to do: tomorrow has no plan yet, or a manual goal of today is open. */

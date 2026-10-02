@@ -18,7 +18,6 @@ import io.github.warleysr.dechainer.focus.SessionOutcome
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.models.BlockSchedule
 import io.github.warleysr.dechainer.models.ScheduleType
 import io.github.warleysr.dechainer.store.Store
@@ -103,19 +102,13 @@ class FocusRunnerTest {
     }
 
     @Test
-    fun aStartIsRefusedWithoutAPurposeOutsideTenMinutesToEightHoursOrOnAPunishmentDay() {
+    fun aStartIsRefusedWithoutAPurposeOrOutsideTenMinutesToEightHours() {
         assertFalse(start(purpose = "ab"))
         assertFalse(start(purpose = null))
         assertFalse(start(minutes = 9))
         assertFalse(start(minutes = 8 * 60 + 5))
         assertEquals(0, repo.count())
         assertNull(FocusRunner.flow.value)
-
-        val now = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 60 * minute), "today")
-        assertFalse("never on a punishment day", start())
-        assertEquals(0, repo.count())
-        LockStateStore.setPunishment(ctx, PunishmentInput(), "")
         assertTrue(start(minutes = 11))
     }
 
@@ -336,18 +329,14 @@ class FocusRunnerTest {
     }
 
     @Test
-    fun aFocusEntryDoesNotStartOnAPunishmentDayNorLater() {
+    fun aFocusEntryDoesNotStartOnADeclaredRestDay() {
         makeDeviceOwner()
-        val now = TrustedClock.now(ctx)
-        // The entry is stored first: a punishment day freezes every settings write, schedules included.
+        val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(ctx), TrustedClock.zone())
+        Store.days(ctx).setRest(today, true)
         storeOpenFocusEntry()
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 20 * minute), "today")
         LockEngine.sync(ctx)
         assertNull(FocusRunner.flow.value)
-        assertEquals(0, repo.count())
-        // The punishment ends while the window is still open: the window was skipped, so it does not start now.
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - 60 * minute, now - minute), "today")
-        LockEngine.sync(ctx)
+        assertFalse(Pomodoro.state.value.inBlock)
         assertEquals(0, repo.count())
     }
 

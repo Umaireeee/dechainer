@@ -8,7 +8,6 @@ import io.github.warleysr.dechainer.lock.LockPlanner
 import io.github.warleysr.dechainer.lock.LockRestrictions
 import io.github.warleysr.dechainer.lock.LockState
 import io.github.warleysr.dechainer.lock.PhoneFacts
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.lock.RunningBrick
 import io.github.warleysr.dechainer.lock.UrgeInput
 import io.github.warleysr.dechainer.models.BlockSchedule
@@ -17,7 +16,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
@@ -43,16 +41,16 @@ class LockModesTest {
         ZonedDateTime.of(2026, 10, day, h, m, 0, 0, utc).toInstant().toEpochMilli()
 
     private fun state(
-        urge: UrgeInput = UrgeInput(), focus: FocusInput = FocusInput(), punishment: PunishmentInput = PunishmentInput(),
+        urge: UrgeInput = UrgeInput(), focus: FocusInput = FocusInput(),
         limits: LimitInput = LimitInput(), schedules: List<BlockSchedule> = emptyList(), deviceOwner: Boolean = true
-    ) = LockState(deviceOwner, schedules, phone, focus, limits, urge, punishment)
+    ) = LockState(deviceOwner, schedules, phone, focus, limits, urge)
 
     private fun plan(now: Long, s: LockState) = LockPlanner.plan(now, utc, s)
 
     private fun schedule(name: String, start: Int, end: Int, vararg pkgs: String, allowOnly: Boolean = false) =
         BlockSchedule(id = name, name = name, startMinute = start, endMinute = end, packages = pkgs.toSet(), allowOnly = allowOnly)
 
-    /** What an urge lock or a punishment day leaves open besides the protected apps: the alarm only. */
+    /** What an urge lock leaves open besides the protected apps: the alarm only. */
     private val everythingButHomeAndTheAlarm = setOf("chrome", "games", "notes", "mail", "settings", "sms", "com.android.emergency")
 
     // ================= 5.2  URGE_LOCK =================
@@ -99,79 +97,6 @@ class LockModesTest {
         assertEquals(LockMode.FOCUS_BLOCK, p.brickStatus?.primary)
     }
 
-    // ================= 5.2  PUNISHMENT_DAY =================
-
-    private val thursday = PunishmentInput.wholeDay(LocalDate.of(2026, 10, 1), utc)
-
-    @Test
-    fun aPunishmentDayHoldsFromMidnightToTheNextMidnightAndNotAMomentLonger() {
-        val s = state(punishment = thursday)
-        assertFalse("not yet, a millisecond before 00:00", plan(thursday.startsAt - 1, s).brick)
-        assertTrue(plan(thursday.startsAt, s).brick)
-        assertTrue(plan(at(12), s).brick)
-        assertTrue("still held at 23:59:59.999", plan(thursday.endsAt - 1, s).brick)
-        assertFalse("over at the next 00:00", plan(thursday.endsAt, s).brick)
-        assertEquals(at(0, day = 2), thursday.endsAt)
-    }
-
-    @Test
-    fun aPunishmentDayLeavesOpenOnlyThisAppCallsAndTheAlarm() {
-        val p = plan(at(12), state(punishment = thursday))
-        assertEquals(everythingButHomeAndTheAlarm, p.desiredApps)
-        assertEquals(BrickStatus(LockMode.PUNISHMENT_DAY, thursday.endsAt, setOf(LockMode.PUNISHMENT_DAY)), p.brickStatus)
-        assertTrue(p.desiredRestrictions.containsAll(LockRestrictions.BRICK))
-    }
-
-    @Test
-    fun theStudyAppListOpensItsAppsOnAPunishmentDayAndIsEmptyByDefault() {
-        assertTrue(thursday.ownerApps.isEmpty())
-        val withList = PunishmentInput.wholeDay(LocalDate.of(2026, 10, 1), utc, ownerApps = setOf("notes"))
-        val p = plan(at(12), state(punishment = withList))
-        assertFalse("notes" in p.desiredApps)
-        assertEquals(setOf("notes"), p.brickStatus?.ownerApps)
-    }
-
-    @Test
-    fun aPunishmentDayFreezesSettingsOnlyWhileItRuns() {
-        val s = state(punishment = thursday)
-        assertFalse(plan(thursday.startsAt - 1, s).punishmentActive)
-        assertTrue(plan(at(9), s).punishmentActive)
-        assertFalse(plan(thursday.endsAt, s).punishmentActive)
-    }
-
-    @Test
-    fun aPunishmentDayThatHasNotStartedIsAWakeUpNotALock() {
-        val p = plan(thursday.startsAt - 6 * hour, state(punishment = thursday))   // 18:00 on Sep 30
-        assertFalse(p.brick)
-        assertEquals("the engine wakes at 00:00 to put the brick on", thursday.startsAt, p.nextWakeAt)
-    }
-
-    @Test
-    fun aPunishmentDayIsOverByTheTimeWithoutAnyAlarm() {
-        val p = plan(thursday.endsAt + hour, state(punishment = thursday))
-        assertFalse(p.brick)
-        assertTrue(p.desiredApps.isEmpty())
-        assertNull(p.brickStatus)
-    }
-
-    @Test
-    fun theDayIsTheLocalDayInTheZoneOfTheTrustedClock() {
-        val date = LocalDate.of(2026, 10, 1)
-        val utcDay = PunishmentInput.wholeDay(date, utc)
-        val karachi = PunishmentInput.wholeDay(date, ZoneId.of("Asia/Karachi"))
-        assertEquals("Karachi midnight is five hours before UTC midnight", 5 * hour, utcDay.startsAt - karachi.startsAt)
-        assertEquals(24 * hour, karachi.endsAt - karachi.startsAt)
-    }
-
-    @Test
-    fun aDayThatChangesTheClockIsStillTheWholeLocalDay() {
-        val newYork = ZoneId.of("America/New_York")
-        val springForward = PunishmentInput.wholeDay(LocalDate.of(2026, 3, 8), newYork)
-        val fallBack = PunishmentInput.wholeDay(LocalDate.of(2026, 11, 1), newYork)
-        assertEquals("a 23 hour day", 23 * hour, springForward.endsAt - springForward.startsAt)
-        assertEquals("a 25 hour day", 25 * hour, fallBack.endsAt - fallBack.startsAt)
-    }
-
     // ================= 5.3  precedence =================
 
     @Test
@@ -190,13 +115,6 @@ class LockModesTest {
         assertTrue(p.brick)
         assertTrue(p.desiredRestrictions.containsAll(LockRestrictions.BRICK))
         assertEquals(setOf(LockMode.URGE_LOCK), p.holds.map { it.mode }.toSet())
-    }
-
-    @Test
-    fun aDailyLimitResettingNeverEndsAPunishmentDay() {
-        val s = state(punishment = thursday, limits = LimitInput(setOf("games"), at(15)))
-        assertTrue("the limit is still counting", plan(at(14), s).brick)
-        assertTrue("and has reset, but the day goes on", plan(at(16), s).brick)
     }
 
     @Test
@@ -256,29 +174,14 @@ class LockModesTest {
     }
 
     @Test
-    fun aFocusBlockInsideAPunishmentDayKeepsOnlyTheAppsBothAllow() {
-        val withList = PunishmentInput.wholeDay(LocalDate.of(2026, 10, 1), utc, ownerApps = setOf("notes"))
-        val s = state(focus = FocusInput(brickEndsAt = at(12), allowedApps = setOf("notes", "mail")), punishment = withList)
-        val p = plan(at(10), s)
-        assertFalse("notes: allowed by both", "notes" in p.desiredApps)
-        assertTrue("mail: allowed by the focus block only", "mail" in p.desiredApps)
-        assertTrue("emergency: the punishment day blocks it", "com.android.emergency" in p.desiredApps)
-        assertEquals(setOf("notes"), p.brickStatus?.ownerApps)
-    }
-
-    @Test
-    fun whenBricksEndTogetherTheDayIsNamedBeforeTheUrgeBeforeAFocusBlock() {
+    fun whenBricksEndTogetherTheUrgeIsNamedBeforeAFocusBlock() {
         val end = at(12)
         fun brick(mode: LockMode, at: Long = end) = RunningBrick(mode, at)
-        assertEquals(
-            LockMode.PUNISHMENT_DAY,
-            LockPlanner.statusOf(listOf(brick(LockMode.FOCUS_BLOCK), brick(LockMode.URGE_LOCK), brick(LockMode.PUNISHMENT_DAY)))?.primary
-        )
         assertEquals(LockMode.URGE_LOCK, LockPlanner.statusOf(listOf(brick(LockMode.FOCUS_BLOCK), brick(LockMode.URGE_LOCK)))?.primary)
         assertEquals(
             "the one that lasts longest is named, whatever its rank",
             LockMode.FOCUS_BLOCK,
-            LockPlanner.statusOf(listOf(brick(LockMode.PUNISHMENT_DAY), brick(LockMode.FOCUS_BLOCK, end + 1)))?.primary
+            LockPlanner.statusOf(listOf(brick(LockMode.URGE_LOCK), brick(LockMode.FOCUS_BLOCK, end + 1)))?.primary
         )
         assertNull(LockPlanner.statusOf(emptyList()))
     }
@@ -287,41 +190,35 @@ class LockModesTest {
     fun theOwnersAppsThatMayOpenPinnedAreTheIntersectionOfEveryRunningBricksList() {
         val end = at(12)
         val a = RunningBrick(LockMode.FOCUS_BLOCK, end, setOf("notes", "mail"))
-        val b = RunningBrick(LockMode.PUNISHMENT_DAY, end, setOf("notes"))
         val urge = RunningBrick(LockMode.URGE_LOCK, end)
         assertEquals(setOf("notes", "mail"), LockPlanner.statusOf(listOf(a))?.ownerApps)
-        assertEquals(setOf("notes"), LockPlanner.statusOf(listOf(a, b))?.ownerApps)
-        assertTrue("one brick that takes none empties the set", LockPlanner.statusOf(listOf(a, b, urge))?.ownerApps!!.isEmpty())
+        assertTrue("one brick that takes none empties the set", LockPlanner.statusOf(listOf(a, urge))?.ownerApps!!.isEmpty())
     }
 
     @Test
     fun theStatusForTheFirstFrameAgreesWithThePlan() {
-        val day = PunishmentInput.wholeDay(LocalDate.of(2026, 10, 1), utc)
         val cases = listOf(
-            Triple(0L, UrgeInput(), PunishmentInput()),
-            Triple(at(12), UrgeInput(), PunishmentInput()),
-            Triple(0L, UrgeInput(at(10, 10)), PunishmentInput()),
-            Triple(at(12), UrgeInput(at(10, 10)), day),
-            Triple(at(9), UrgeInput(at(9, 30)), day),   // the focus block and the urge lock are already over; the day is not
-            Triple(at(9), UrgeInput(at(9, 30)), PunishmentInput()),   // all three are over
+            0L to UrgeInput(),
+            at(12) to UrgeInput(),
+            0L to UrgeInput(at(10, 10)),
+            at(12) to UrgeInput(at(10, 10)),
+            at(9) to UrgeInput(at(9, 30)),   // both are over
         )
-        for ((focusEnd, urge, punishment) in cases) {
-            val s = state(focus = FocusInput(brickEndsAt = focusEnd, allowedApps = setOf("notes")), urge = urge, punishment = punishment)
-            assertEquals(plan(at(10), s).brickStatus, LockPlanner.quickStatus(at(10), FocusInput(brickEndsAt = focusEnd, allowedApps = setOf("notes")), urge, punishment))
+        for ((focusEnd, urge) in cases) {
+            val s = state(focus = FocusInput(brickEndsAt = focusEnd, allowedApps = setOf("notes")), urge = urge)
+            assertEquals(plan(at(10), s).brickStatus, LockPlanner.quickStatus(at(10), FocusInput(brickEndsAt = focusEnd, allowedApps = setOf("notes")), urge))
         }
     }
 
     @Test
-    fun withoutDeviceOwnerNoBrickIsAppliedButTheDayIsStillKnownForTheFreeze() {
-        val p = plan(at(12), state(punishment = thursday, urge = UrgeInput(at(12, 5)), deviceOwner = false))
+    fun withoutDeviceOwnerNoBrickIsApplied() {
+        val p = plan(at(12), state(urge = UrgeInput(at(12, 5)), deviceOwner = false))
         assertFalse(p.brick)
         assertTrue(p.desiredApps.isEmpty())
-        assertTrue("settings stay frozen on any phone", p.punishmentActive)
     }
 
     @Test
-    fun aPunishmentDayStartingTomorrowIsWatchedEvenWithoutDeviceOwner() {
-        val p = plan(thursday.startsAt - 6 * hour, state(punishment = thursday, deviceOwner = false))
-        assertEquals(thursday.startsAt, p.nextWakeAt)
+    fun thereIsNoPunishmentModeAnyMore() {
+        assertEquals(setOf(LockMode.URGE_LOCK, LockMode.FOCUS_BLOCK), LockMode.entries.filter { it.isBrick }.toSet())
     }
 }

@@ -14,7 +14,6 @@ import io.github.warleysr.dechainer.focus.FocusSource
 import io.github.warleysr.dechainer.focus.ResetResult
 import io.github.warleysr.dechainer.focus.SessionOutcome
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.report.DataTools
 import io.github.warleysr.dechainer.report.DeleteResult
 import io.github.warleysr.dechainer.store.AppStateKeys
@@ -69,11 +68,6 @@ class DataToolsTest {
         repo.addCheckin(id, at + hour, CheckinAnswer.YES, ResetResult.NONE)
         repo.end(id, at + hour, SessionOutcome.COMPLETED, 25)
         return id
-    }
-
-    private fun freeze() {
-        val t = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(t - hour, t + hour), "today")
     }
 
     // ---- delete ----
@@ -132,29 +126,14 @@ class DataToolsTest {
         assertFalse(tools().canDeleteGoals(LocalDate.of(2026, 10, 14)))
     }
 
-    @Test fun aPunishmentDayMakesEveryWriteRefuse() {
-        val id = entry(ms(10, 10))
-        val sid = session(ms(10, 10))
-        freeze()
-        assertEquals(DeleteResult.FROZEN, tools().deleteUrge(id))
-        assertEquals(DeleteResult.FROZEN, tools().deleteDeepDive(id))
-        assertEquals(DeleteResult.FROZEN, tools().deleteSession(sid))
-        assertEquals(DeleteResult.FROZEN, tools().deleteReport(1))
-        assertEquals(DeleteResult.FROZEN, tools().deleteGoals(LocalDate.of(2026, 10, 1)))
-        assertTrue(tools().wipeAll().frozen)
-        assertFalse(tools().import("{}").ok)
-        assertNotNull(Store.urgeEntries(ctx).get(id))
-        assertTrue(tools().export().isNotBlank()) // reading is still open
-    }
-
     // ---- wipe ----
 
-    @Test fun wipeRemovesWhatTheRulesAllowAndResetsNothingThatPunishes() {
+    @Test fun wipeRemovesWhatTheRulesAllowAndKeepsTheDailyResults() {
         val state = Store.appState(ctx)
         state.set(AppStateKeys.ACTIVATED_ON, "2026-10-01"); state.set(AppStateKeys.WEEK_ANCHOR, "2026-10-05")
         val days = Store.days(ctx)
         days.savePlan(LocalDate.of(2026, 10, 8), List(3) { NewGoal("old") }, ms(10, 7, 21))
-        days.saveEvaluation(LocalDate.of(2026, 10, 8), DayVerdict(DayKind.PUNISHMENT, Violation.UNDER_HALF))
+        days.saveEvaluation(LocalDate.of(2026, 10, 8), DayVerdict(DayKind.NORMAL, Violation.UNDER_HALF))
         days.setRest(LocalDate.of(2026, 10, 9), true)
         days.savePlan(LocalDate.of(2026, 10, 21), List(3) { NewGoal("open") }, ms(10, 20, 21))
         Store.reports(ctx).insert(0, ms(10, 5, 0), ms(10, 12, 0), ms(10, 12, 1), "## r", "{}")
@@ -162,13 +141,12 @@ class DataToolsTest {
         val oldSession = session(ms(10, 9, 9)); val sessionToday = session(ms(10, 20, 9))
 
         val r = tools().wipeAll()
-        assertFalse(r.frozen)
         assertNull(Store.urgeEntries(ctx).get(old)); assertNull(Store.urgeEntries(ctx).get(urgeToday))
         assertNotNull(Store.urgeEntries(ctx).get(slipToday)) // would otherwise turn tonight's NO_SLIP into a pass
         assertNull(Store.focus(ctx).session(oldSession)); assertNotNull(Store.focus(ctx).session(sessionToday))
         assertTrue(days.goals(LocalDate.of(2026, 10, 8)).isEmpty())
         assertEquals(3, days.goals(LocalDate.of(2026, 10, 21)).size) // the open week's goals stay
-        assertEquals(DayKind.PUNISHMENT, days.day(LocalDate.of(2026, 10, 8))!!.kind)
+        assertEquals(Violation.UNDER_HALF, days.day(LocalDate.of(2026, 10, 8))!!.violation)
         assertEquals(listOf(LocalDate.of(2026, 10, 9)), days.restDates())
         assertEquals("2026-10-01", state.get(AppStateKeys.ACTIVATED_ON)); assertEquals("2026-10-05", state.get(AppStateKeys.WEEK_ANCHOR))
         assertEquals("", Store.reports(ctx).all().single().bodyMd)
@@ -226,14 +204,14 @@ class DataToolsTest {
         Store.appState(ctx).set(AppStateKeys.ACTIVATED_ON, "2026-10-12")
         val days = Store.days(ctx)
         days.savePlan(LocalDate.of(2026, 10, 14), List(3) { NewGoal("g") }, ms(10, 13, 21))
-        days.saveEvaluation(LocalDate.of(2026, 10, 14), DayVerdict(DayKind.PUNISHMENT, Violation.PLAN_MISSING))
+        days.saveEvaluation(LocalDate.of(2026, 10, 14), DayVerdict(DayKind.NORMAL, Violation.PLAN_MISSING))
         val file = """{"format":"dechainer-export","version":1,"day":[
             {"date":"2026-10-14","kind":"NORMAL","done_count":3,"total_count":3,"evaluated":1},
             {"date":"2026-10-13","kind":"NORMAL","done_count":3,"total_count":3,"evaluated":1},
             {"date":"2026-10-10","kind":"NORMAL","done_count":3,"total_count":3,"evaluated":1}]}"""
         val r = tools().import(file)
         assertTrue(r.ok)
-        assertEquals(DayKind.PUNISHMENT, days.day(LocalDate.of(2026, 10, 14))!!.kind)
+        assertEquals(Violation.PLAN_MISSING, days.day(LocalDate.of(2026, 10, 14))!!.violation)
         assertNull(days.day(LocalDate.of(2026, 10, 13))) // inside the enforced period: not taken
         assertNotNull(days.day(LocalDate.of(2026, 10, 10))) // before activation: history only
         assertEquals(2, r.skipped)

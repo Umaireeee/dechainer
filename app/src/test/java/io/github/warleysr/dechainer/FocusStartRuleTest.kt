@@ -12,17 +12,12 @@ class FocusStartRuleTest {
     private val now = 1_800_000_000_000L
     private val windowEnd = now + 90 * minute
 
-    private fun decide(punishment: Boolean = false, rest: Boolean = false, urgeEnds: Long = 0L, at: Long = now, end: Long = windowEnd) =
-        FocusStartRule.decide(at, end, punishment, rest, urgeEnds)
+    private fun decide(rest: Boolean = false, urgeEnds: Long = 0L, at: Long = now, end: Long = windowEnd) =
+        FocusStartRule.decide(at, end, rest, urgeEnds)
 
     @Test
     fun withNothingElseRunningItStartsNow() {
         assertEquals(FocusStart.Now, decide())
-    }
-
-    @Test
-    fun aStartOnAPunishmentDayIsSkipped() {
-        assertEquals(FocusStart.Skip(SkipReason.PUNISHMENT_DAY), decide(punishment = true))
     }
 
     @Test
@@ -55,8 +50,7 @@ class FocusStartRuleTest {
     }
 
     @Test
-    fun theDayBeatsARestDayAndAnUrgeLockWhenSeveralApply() {
-        assertEquals(FocusStart.Skip(SkipReason.PUNISHMENT_DAY), decide(punishment = true, rest = true, urgeEnds = now + minute))
+    fun aRestDayBeatsAnUrgeLockWhenBothApply() {
         assertEquals(FocusStart.Skip(SkipReason.REST_DAY), decide(rest = true, urgeEnds = now + minute))
     }
 }
