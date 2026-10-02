@@ -33,7 +33,7 @@ object UrgeFlowRules {
      * The breathing window for what [UrgeLockRule] decided (5.3). A fresh lock breathes for exactly
      * its ten minutes, from the moment it was stored ([lockStartedAt]). A lock already running (a second
      * tap, or one the journal started) breathes until it ends, never longer, and never extends it.
-     * Inside a focus block or a punishment day, or without Device Owner, no lock starts and the
+     * Inside a focus block, or without Device Owner, no lock starts and the
      * breathing still runs for the full ten minutes from [now].
      */
     fun breathingFor(start: UrgeStart, now: Long, lockStartedAt: Long? = null): BreathingWindow = when (start) {
@@ -70,6 +70,13 @@ object UrgeFlowRules {
         .filter { it.status == UrgeStatus.LOCKED || it.status == UrgeStatus.WRITING || it.status == UrgeStatus.QUESTIONS }
         .filter { (it.lockEndedAt ?: it.createdAt) + Rules.URGE_RESUME_WINDOW_MS > now }
         .maxByOrNull { it.createdAt }
+
+    /**
+     * An urge started from the locked screen runs the lock and the breathing and nothing more: the
+     * writing, the questions and the deep dive are private and wait for the pattern. True when the
+     * flow should step aside for the lock screen on [screen].
+     */
+    fun stepsAsideForPattern(holdPrivate: Boolean, screen: UrgeScreen): Boolean = holdPrivate && screen != UrgeScreen.BREATHING
 
     /** What the status of a brand-new entry is: the ongoing path starts locked, a slip goes straight to writing. */
     fun startingStatus(kind: UrgeKind): UrgeStatus = if (kind == UrgeKind.URGE) UrgeStatus.LOCKED else UrgeStatus.WRITING

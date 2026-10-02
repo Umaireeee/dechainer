@@ -17,7 +17,6 @@ import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.lock.LockRestrictions
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.lock.UrgeStart
 import io.github.warleysr.dechainer.store.DechainerDatabase
 import io.github.warleysr.dechainer.store.Store
@@ -171,7 +170,7 @@ class LockEngineSyncTest {
         // that one is the owner's check on the phone (blueprint section 15, check 1).
     }
 
-    // ---- The urge lock and the punishment day, end to end ----
+    // ---- The urge lock and the daily checklist, end to end ----
 
     @Test
     fun anUrgeLockTakesTheAppAwayAndASecondTapNeverExtendsIt() {
@@ -209,44 +208,29 @@ class LockEngineSyncTest {
     }
 
     @Test
-    fun aPunishmentDayHoldsThePhoneAndNoUrgeLockStartsInsideIt() {
+    fun everySyncClosesTheDaysThatEndedAndAShortDayNeverLocksThePhone() {
         makeDeviceOwner()
-        val now = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 60 * minute), "today")
+        val zone = TrustedClock.zone()
+        val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(ctx), zone)
+        // Rules confirmed three days ago, and no plan was ever written: every day fell short.
+        Store.appState(ctx).set(io.github.warleysr.dechainer.store.AppStateKeys.ACTIVATED_ON, today.minusDays(3).toString())
         LockEngine.sync(ctx)
-        assertTrue(dpm.isPackageSuspended(admin, games))
-        assertEquals(LockMode.PUNISHMENT_DAY, LockEngine.status.value?.primary)
-        assertTrue(ctx.let { ownedRestrictions() }.containsAll(LockRestrictions.BRICK))
-
-        val urge = LockEngine.startUrgeLock(ctx)
-        assertTrue("$urge", urge is UrgeStart.Covered)
-        assertEquals("no second lock was stored", 0L, LockStateStore.urge(ctx).endsAt)
-    }
-
-    @Test
-    fun aPunishmentDayThatHasEndedReleasesWhatItHeld() {
-        makeDeviceOwner()
-        val now = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - 60 * minute, now + 60 * minute), "today")
-        LockEngine.sync(ctx)
-        assertTrue(dpm.isPackageSuspended(admin, games))
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - 120 * minute, now - minute), "today")
-        LockEngine.sync(ctx)
-        assertFalse(dpm.isPackageSuspended(admin, games))
+        val days = Store.days(ctx)
+        val yesterday = days.day(today.minusDays(1))
+        assertTrue("the sync ran the day evaluation", yesterday?.evaluated == true)
+        assertEquals(io.github.warleysr.dechainer.day.Violation.PLAN_MISSING, yesterday?.violation)
+        assertFalse("nothing is locked because of it", dpm.isPackageSuspended(admin, games))
         assertEquals(null, LockEngine.status.value)
     }
 
     @Test
-    fun theCrashBreakerEndsAnUrgeLockAndAPunishmentDayOnRecord() {
+    fun theCrashBreakerEndsAnUrgeLockOnRecord() {
         makeDeviceOwner()
-        val now = TrustedClock.now(ctx)
         LockEngine.startUrgeLock(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - minute, now + 60 * minute), "today")
         LockEngine.sync(ctx)
         LockEngine.abortBrick(ctx)
         assertEquals(null, LockEngine.status.value)
         assertEquals(0L, LockStateStore.urge(ctx).endsAt)
-        assertFalse("the day is shortened to now", LockStateStore.punishment(ctx).endsAt > TrustedClock.now(ctx))
         LockEngine.sync(ctx)
         assertFalse("and it does not come back on the next pass", LockEngine.brickRunning(ctx))
     }

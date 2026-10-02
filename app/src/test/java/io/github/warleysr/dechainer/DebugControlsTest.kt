@@ -33,16 +33,16 @@ class DebugControlsTest {
         val offenders = File(module(), "src/main").walkTopDown()
             .filter { it.isFile && (it.extension == "kt" || it.extension == "xml") }
             .filter { f -> f.readText().let { "DebugControlReceiver" in it || "DEBUG_ABORT_BRICK" in it || "DEBUG_FOCUS_BLOCK" in it ||
-                "DEBUG_URGE_LOCK" in it || "DEBUG_PUNISHMENT_DAY" in it } }
+                "DEBUG_URGE_LOCK" in it } }
             .map { it.path }.toList()
         assertTrue("main must not know about the debug receiver: $offenders", offenders.isEmpty())
     }
 
     @Test
-    fun theDebugManifestListsTheUrgeLockAndPunishmentDayControls() {
+    fun theDebugManifestListsTheUrgeLockControlAndNoPunishmentDay() {
         val manifest = File(module(), "src/debug/AndroidManifest.xml").readText()
         assertTrue("DEBUG_URGE_LOCK" in manifest)
-        assertTrue("DEBUG_PUNISHMENT_DAY" in manifest)
+        assertTrue("the punishment day is gone", "DEBUG_PUNISHMENT_DAY" !in manifest)
     }
 
     @Test
@@ -54,6 +54,5 @@ class DebugControlsTest {
         val engine = File(module(), "src/main/java/io/github/warleysr/dechainer/lock/LockEngine.kt").readText()
         assertTrue(Regex("fun debugDropAlarms[^{]*\\{\\s*if \\(!BuildConfig\\.DEBUG\\) return").containsMatchIn(engine))
         assertTrue(Regex("fun debugStartUrgeLock[^{]*\\{\\s*if \\(!BuildConfig\\.DEBUG\\) return null").containsMatchIn(engine))
-        assertTrue(Regex("fun debugStartPunishment[^{]*\\{\\s*if \\(!BuildConfig\\.DEBUG\\) return").containsMatchIn(engine))
     }
 }

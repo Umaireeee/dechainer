@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.data
 
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.models.BlockSchedule
@@ -35,8 +34,6 @@ object ScheduleRepository {
      */
     private fun mutate(context: Context, change: (MutableList<BlockSchedule>) -> Unit): Boolean =
         synchronized(lock) {
-            // Frozen on a punishment day (blueprint 5.5): refused here, not only hidden in the UI.
-            if (!SettingsFreeze.allowWrite(context, "schedules")) return@synchronized false
             val read = parseSchedules(prefs(context).getString(KEY_SCHEDULES, null))
             if (!read.rootOk) {
                 Timber.e("Stored schedules could not be read; leaving them untouched")

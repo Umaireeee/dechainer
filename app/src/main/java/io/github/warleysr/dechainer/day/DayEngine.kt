@@ -12,8 +12,6 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.lock.LockEngine
-import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.store.AppStateKeys
 import io.github.warleysr.dechainer.store.Store
 import timber.log.Timber
@@ -45,7 +43,7 @@ object DayEngine {
         }
     }
 
-    /** Called by every sync pass, before the lock is planned, so a new punishment day is in the plan. Never throws. */
+    /** Called by every sync pass: closes the days that ended and arms the next wake-up. Locks nothing. Never throws. */
     fun runPass(ctx: Context, now: Long) {
         try {
             val zone = TrustedClock.zone()
@@ -55,12 +53,7 @@ object DayEngine {
             val activated = state.get(AppStateKeys.ACTIVATED_ON)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             if (activated != null) {
                 val repo = Store.days(ctx)
-                val today = DayWindow.dateOf(now, zone)
-                if (DayService.evaluate(repo, repo.stats(zone), activated, now, zone) &&
-                    state.get(AppStateKeys.PUNISHMENT_DATE) != today.toString()
-                ) {
-                    LockStateStore.setPunishment(ctx, PunishmentInput.wholeDay(today, zone), today.toString())
-                }
+                DayService.evaluate(repo, repo.stats(zone), activated, now, zone)
             }
             arm(ctx, now, zone)
         } catch (e: Exception) {
@@ -76,7 +69,15 @@ object DayEngine {
             DayWindow.endOf(today, zone) + 1000
         ).first { it > now }
         val am = ctx.getSystemService(AlarmManager::class.java)
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, TrustedClock.toWall(next, ctx), pending(ctx))
+        val at = TrustedClock.toWall(next, ctx)
+        // Exact where allowed, so the 20:00 and 23:00 reminders come on time even in Doze.
+        val exact = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        try {
+            if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(ctx))
+            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(ctx))
+        } catch (e: SecurityException) {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending(ctx))
+        }
     }
 
     private fun pending(ctx: Context) = PendingIntent.getBroadcast(

@@ -24,11 +24,19 @@ class DayRepository(private val database: DechainerDatabase) {
         database.readableDatabase.query("day", null, "date = ?", arrayOf(date.toString()), null, null, null)
             .use { c -> if (c.moveToFirst()) dayRow(c) else null }
 
+    /** The latest day whose result is recorded, or null: the catch-up starts after it. */
+    fun lastEvaluated(): LocalDate? =
+        database.readableDatabase.rawQuery("SELECT MAX(date) FROM day WHERE evaluated = 1", null)
+            .use { if (it.moveToFirst() && !it.isNull(0)) runCatching { LocalDate.parse(it.getString(0)) }.getOrNull() else null }
+
+    /** Whether [date] was declared a REST day. */
+    fun isRest(date: LocalDate): Boolean = day(date)?.kind == DayKind.REST
+
     /** When the first plan was written, or null: the first goal is a data point of the weekly report. */
     fun firstPlanAt(): Long? =
         database.readableDatabase.rawQuery("SELECT MIN(plan_written_at) FROM day", null).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 
-    /** Deletes the goal text of one day. The day row, its counts and its kind stay (they hold the punishment record). */
+    /** Deletes the goal text of one day. The day row, its counts and its result stay (the progress graphs read them). */
     fun deleteGoals(date: LocalDate): Int {
         var n = 0
         inTransaction { n = it.delete("goal", "day_date = ?", arrayOf(date.toString())) }
@@ -136,7 +144,7 @@ class DayRepository(private val database: DechainerDatabase) {
     private fun dayRow(c: Cursor): DayRow? = try {
         DayRow(
             date = LocalDate.parse(c.getString(c.getColumnIndexOrThrow("date"))),
-            kind = DayKind.valueOf(c.getString(c.getColumnIndexOrThrow("kind"))),
+            kind = DayKind.parse(c.getString(c.getColumnIndexOrThrow("kind"))),
             planWrittenAt = c.getColumnIndexOrThrow("plan_written_at").let { if (c.isNull(it)) null else c.getLong(it) },
             resolvedAt = c.getColumnIndexOrThrow("resolved_at").let { if (c.isNull(it)) null else c.getLong(it) },
             doneCount = c.getInt(c.getColumnIndexOrThrow("done_count")),

@@ -51,7 +51,7 @@ class DeviceOwnerViewModel : ViewModel() {
         processDeviceOwnerPrivileges(remove = true, ignoreScheduleLock = true)
     }
 
-    /** Returns false if removal was refused because a locked schedule or a brick (focus block, urge lock, punishment day) is running. */
+    /** Returns false if removal was refused because a locked schedule or a brick (focus block or urge lock) is running. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false, ignoreScheduleLock: Boolean = false): Boolean {
         if (remove) {
             val context = DechainerApplication.getInstance()

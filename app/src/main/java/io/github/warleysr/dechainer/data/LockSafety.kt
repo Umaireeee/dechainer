@@ -21,7 +21,7 @@ object LockSafety {
 
     /**
      * Whether Device Owner may not be removed right now: a locked schedule is open, or a brick is
-     * running ([brick]: a focus block, an urge lock or a punishment day). Forced removal, after its
+     * running ([brick]: a focus block or an urge lock). Forced removal, after its
      * own four-day wait, is the only exit and ignores all of them ([forced]).
      */
     fun removalBlocked(scheduleLocked: Boolean, brick: Boolean, forced: Boolean): Boolean =

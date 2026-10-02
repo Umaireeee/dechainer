@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.security
 
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
@@ -88,9 +87,76 @@ class SecurityManager {
         }
 
         fun setShuffleKeyboardEnabled(context: Context, enabled: Boolean) {
-            if (!SettingsFreeze.allowWrite(context, "keyboard setting")) return
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
+        }
+
+        private const val KEY_ENTRY_LOCK = "entry_lock"
+
+        /** Whether opening the app asks for the opening pattern first. On unless switched off. */
+        fun isEntryLockEnabled(context: Context): Boolean =
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).getBoolean(KEY_ENTRY_LOCK, true)
+
+        /** Switching it off loosens the lock, so callers ask for the recovery code first. */
+        fun setEntryLockEnabled(context: Context, enabled: Boolean) {
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit { putBoolean(KEY_ENTRY_LOCK, enabled) }
+        }
+
+        private const val KEY_ENTRY_HASH = "entry_pattern_hash"
+        private const val KEY_ENTRY_FAILS = "entry_failures"
+        private const val KEY_ENTRY_FAIL_AT = "entry_last_fail_elapsed"
+
+        private const val PRIVATE_OPEN_MS = 5 * 60_000L
+        private var privateOpenUntil = 0L
+
+        /** Urge entries, deep dives and reports are private: a pattern drawn in the last few minutes keeps them open. */
+        @Synchronized fun isPrivateOpen(): Boolean = SystemClock.elapsedRealtime() < privateOpenUntil
+        @Synchronized fun openPrivate() { privateOpenUntil = SystemClock.elapsedRealtime() + PRIVATE_OPEN_MS }
+        @Synchronized fun closePrivate() { privateOpenUntil = 0L }
+
+        /** Whether the opening pattern has been chosen. The pattern itself is only stored as a salted hash. */
+        fun hasEntryPattern(context: Context): Boolean = recoveryPrefs(context).getString(KEY_ENTRY_HASH, null) != null
+
+        /** Sets (or replaces) the opening pattern. False if it is not valid. */
+        fun setEntryPattern(context: Context, dots: List<Int>): Boolean {
+            if (!Pattern.isValid(dots)) return false
+            recoveryPrefs(context).edit(commit = true) {
+                putString(KEY_ENTRY_HASH, RecoveryCodeHash.create(Pattern.encode(dots)))
+                putInt(KEY_ENTRY_FAILS, 0)
+            }
+            openPrivate()
+            return true
+        }
+
+        /** Forgotten pattern: the recovery code (checked by the caller) clears it, and the next opening asks for a new one. */
+        fun clearEntryPattern(context: Context) {
+            recoveryPrefs(context).edit(commit = true) {
+                remove(KEY_ENTRY_HASH)
+                putInt(KEY_ENTRY_FAILS, 0)
+            }
+        }
+
+        fun entryWaitMs(context: Context): Long {
+            val p = recoveryPrefs(context)
+            return EntryLock.remainingWaitMs(p.getInt(KEY_ENTRY_FAILS, 0), p.getLong(KEY_ENTRY_FAIL_AT, 0L), SystemClock.elapsedRealtime())
+        }
+
+        /** One try at the opening pattern. Too many wrong ones in a row make the next try wait, longer each time. */
+        fun tryEntryPattern(context: Context, dots: List<Int>): EntryAttempt = synchronized(RECOVERY_LOCK) {
+            if (entryWaitMs(context) > 0L) return@synchronized EntryAttempt.WAIT
+            val p = recoveryPrefs(context)
+            val stored = p.getString(KEY_ENTRY_HASH, null) ?: return@synchronized EntryAttempt.OK
+            if (RecoveryCodeHash.verify(Pattern.encode(dots), stored)) {
+                p.edit(commit = true) { putInt(KEY_ENTRY_FAILS, 0) }
+                openPrivate()
+                EntryAttempt.OK
+            } else {
+                p.edit(commit = true) {
+                    putInt(KEY_ENTRY_FAILS, p.getInt(KEY_ENTRY_FAILS, 0) + 1)
+                    putLong(KEY_ENTRY_FAIL_AT, SystemClock.elapsedRealtime())
+                }
+                EntryAttempt.WRONG
+            }
         }
 
         fun generateRecoveryCode(length: Int = 16): String {
@@ -133,7 +199,6 @@ class SecurityManager {
         }
 
         fun saveRecoveryCode(context: Context, code: String) {
-            if (!SettingsFreeze.allowWrite(context, "recovery code")) return
             synchronized(RECOVERY_LOCK) {
                 recoveryPrefs(context).edit(commit = true) {
                     putString(KEY_RECOVERY_HASH, RecoveryCodeHash.create(code))
@@ -164,7 +229,6 @@ class SecurityManager {
             UnlockDelay.clampMinutes(securityPrefs(context).getInt(KEY_UNLOCK_DELAY_MIN, 0))
 
         fun setUnlockDelayMinutes(context: Context, minutes: Int) {
-            if (!SettingsFreeze.allowWrite(context, "unlock delay")) return
             securityPrefs(context).edit { putInt(KEY_UNLOCK_DELAY_MIN, UnlockDelay.clampMinutes(minutes)) }
         }
 
@@ -241,7 +305,6 @@ class SecurityManager {
         }
 
         fun startForcedRemoval(context: Context) = synchronized(forcedRemovalLock) {
-            if (!SettingsFreeze.allowWrite(context, "forced removal")) return@synchronized
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", true)
@@ -251,7 +314,6 @@ class SecurityManager {
             }
         }
         fun cancelForcedRemoval(context: Context) {
-            if (!SettingsFreeze.allowWrite(context, "forced removal")) return
             val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
             prefs.edit {
                 putBoolean("forced_removal_active", false)

@@ -51,6 +51,14 @@ class MigrationsTest {
     }
 
     @Test
+    fun theMonthlyAndYearlyReportsArriveInSchemaVersionSixKeyedByKindAndPeriod() {
+        assertFalse("period_report" in Migrations.statementsBetween(0, 5).joinToString(" ").lowercase())
+        val v6 = Migrations.statementsBetween(5, 6).joinToString(" ").lowercase()
+        assertTrue("create table period_report" in v6)
+        assertTrue("unique (kind, period_key)" in v6)
+    }
+
+    @Test
     fun aFreshDatabaseRunsEveryStepInOrder() {
         assertEquals(listOf("a1", "a2", "b1", "c1", "c2"), Migrations.statementsBetween(0, 3, chain))
     }

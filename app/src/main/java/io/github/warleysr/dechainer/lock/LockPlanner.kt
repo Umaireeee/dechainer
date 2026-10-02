@@ -23,9 +23,6 @@ object LockPlanner {
         val zoned = Instant.ofEpochMilli(now).atZone(zone)
         val local = zoned.toLocalDateTime()
         val schedulesNext = state.schedules.flatMap { it.boundariesAfter(zoned) }.map { it.toInstant().toEpochMilli() }
-        val punishmentActive = state.punishment.activeAt(now)
-        // A day that has not started yet is a wake-up: the brick must be on at 00:00, not at the next unrelated sync.
-        val punishmentStart = state.punishment.startsAt.takeIf { state.punishment.endsAt > now && it > now }
 
         if (!state.deviceOwner) {
             // Nothing can be applied without Device Owner; the alarm still wakes the engine at each
@@ -34,9 +31,9 @@ object LockPlanner {
             return LockPlan(
                 deviceOwner = false, holds = emptyList(), desiredApps = emptySet(),
                 desiredRestrictions = emptySet(), desiredSites = emptySet(), brick = false, brickStatus = null,
-                punishmentActive = punishmentActive, holdClock = false,
+                holdClock = false,
                 expiredFocusBlock = state.focus.brickEndsAt in 1..now,
-                nextWakeAt = (schedulesNext + listOfNotNull(punishmentStart, state.focus.wakeAt.takeIf { it > now }))
+                nextWakeAt = (schedulesNext + listOfNotNull(state.focus.wakeAt.takeIf { it > now }))
                     .filter { it > now }.minOrNull()
             )
         }
@@ -81,15 +78,6 @@ object LockPlanner {
             holds += Hold(LockMode.FOCUS_SESSION, null, focus.sessionLockEndsAt, allowOnlyBlocked(state.phone, focus.allowedApps))
         }
 
-        // A punishment day: the whole window, calls and the alarm only (plus the study-app list, empty by default).
-        if (punishmentActive) {
-            holds += Hold(
-                LockMode.PUNISHMENT_DAY, null, state.punishment.endsAt,
-                LockAllow.blocked(state.phone, LockAllow.PUNISHMENT, state.punishment.ownerApps)
-            )
-            running += RunningBrick(LockMode.PUNISHMENT_DAY, state.punishment.endsAt, state.punishment.ownerApps)
-        }
-
         // Daily limits: an app that has used its time stays paused until the day resets.
         if (state.limits.reachedApps.isNotEmpty() && state.limits.resetsAt > now) {
             holds += Hold(LockMode.DAILY_LIMIT, null, state.limits.resetsAt, state.limits.reachedApps)
@@ -111,10 +99,9 @@ object LockPlanner {
             desiredSites = activeSchedules.flatMapTo(mutableSetOf()) { it.websites },
             brick = brick,
             brickStatus = brickStatus,
-            punishmentActive = punishmentActive,
             holdClock = true,
             expiredFocusBlock = expiredFocusBlock,
-            nextWakeAt = (schedulesNext + holdEnds + listOfNotNull(punishmentStart, state.focus.wakeAt))
+            nextWakeAt = (schedulesNext + holdEnds + listOf(state.focus.wakeAt))
                 .filter { it > now }.minOrNull()
         )
     }
@@ -122,7 +109,7 @@ object LockPlanner {
     /**
      * Which brick the lock screen names, when the phone unlocks, and which owner apps may open pinned,
      * from the running bricks. The phone unlocks when the last one ends; the one that ends last is
-     * named, and when two end together the day wins over the urge and the urge over a focus block.
+     * named, and when two end together the urge wins over a focus block.
      */
     fun statusOf(bricks: List<RunningBrick>): BrickStatus? {
         if (bricks.isEmpty()) return null
@@ -140,12 +127,11 @@ object LockPlanner {
      * The same status from the raw stored inputs, without planning: the lock screen needs it on the
      * first frame, before any pass has run. Agrees with [plan] by construction (same rule, same inputs).
      */
-    fun quickStatus(now: Long, focus: FocusInput, urge: UrgeInput, punishment: PunishmentInput): BrickStatus? =
+    fun quickStatus(now: Long, focus: FocusInput, urge: UrgeInput): BrickStatus? =
         statusOf(
             listOfNotNull(
                 RunningBrick(LockMode.URGE_LOCK, urge.endsAt).takeIf { urge.endsAt > now },
-                RunningBrick(LockMode.FOCUS_BLOCK, focus.brickEndsAt, focus.allowedApps).takeIf { focus.brickEndsAt > now },
-                RunningBrick(LockMode.PUNISHMENT_DAY, punishment.endsAt, punishment.ownerApps).takeIf { punishment.activeAt(now) }
+                RunningBrick(LockMode.FOCUS_BLOCK, focus.brickEndsAt, focus.allowedApps).takeIf { focus.brickEndsAt > now }
             )
         )
 

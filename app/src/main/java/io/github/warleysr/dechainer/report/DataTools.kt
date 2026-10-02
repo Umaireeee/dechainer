@@ -5,7 +5,6 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import io.github.warleysr.dechainer.day.DayWindow
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import io.github.warleysr.dechainer.store.AppStateKeys
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.urge.UrgeKind
@@ -19,9 +18,6 @@ import java.time.ZoneId
 enum class DeleteResult {
     DELETED,
 
-    /** A punishment day runs: Reports are read only (blueprint 6.4). */
-    FROZEN,
-
     /** The rules of 6.4 say no: the open week's goals, a slip or session whose day is not settled, one still running. */
     NOT_ALLOWED,
     MISSING
@@ -31,20 +27,19 @@ enum class DeleteResult {
 data class ImportResult(val ok: Boolean, val added: Int, val skipped: Int)
 
 /** What a wipe removed and what it had to keep. */
-data class WipeResult(val frozen: Boolean, val removed: Int, val kept: Int)
+data class WipeResult(val removed: Int, val kept: Int)
 
 /**
- * Delete, wipe, export and import (blueprint 6.6). Every write here refuses on a punishment day.
- * Nothing here touches `app_state`, `day` rows, rest days, `activatedOn` or `weekAnchor`, so deleting
- * data never cancels, resets or shortens a punishment. The wipe's recovery code is asked by the screen.
+ * Delete, wipe, export and import (blueprint 6.6). Nothing here touches `app_state`, `day` rows,
+ * rest days, `activatedOn` or `weekAnchor`, so the daily results the progress graphs read stay. The
+ * wipe's recovery code is asked by the screen.
  */
 class DataTools(private val ctx: Context, private val zone: ZoneId, private val now: () -> Long) {
     private val urges = Store.urgeEntries(ctx)
     private val focus = Store.focus(ctx)
     private val days = Store.days(ctx)
     private val reports = Store.reports(ctx)
-
-    private fun frozen(what: String) = !SettingsFreeze.allowWrite(ctx, what)
+    private val periodReports = Store.periodReports(ctx)
 
     private fun measuredOk(at: Long): Boolean =
         ReportRules.canDeleteMeasured(at, now(), zone, days.goals(DayWindow.dateOf(at, zone)))
@@ -54,19 +49,16 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
             (e.kind != UrgeKind.SLIP || measuredOk(e.createdAt))
 
     fun deleteUrge(id: Long): DeleteResult {
-        if (frozen("delete an urge entry")) return DeleteResult.FROZEN
         val e = urges.get(id) ?: return DeleteResult.MISSING
         if (!urgeDeletable(e)) return DeleteResult.NOT_ALLOWED
         return if (urges.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
     fun deleteDeepDive(id: Long): DeleteResult {
-        if (frozen("delete a deep dive")) return DeleteResult.FROZEN
         return if (urges.deleteDeepDive(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
     fun deleteSession(id: Long): DeleteResult {
-        if (frozen("delete a focus session")) return DeleteResult.FROZEN
         val s = focus.session(id) ?: return DeleteResult.MISSING
         if (s.endedAt == null || !measuredOk(s.startedAt)) return DeleteResult.NOT_ALLOWED
         focus.delete(id)
@@ -74,22 +66,23 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     }
 
     fun deleteReport(id: Long): DeleteResult {
-        if (frozen("delete a weekly report")) return DeleteResult.FROZEN
         return if (reports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
+
+    /** Deletes a monthly or yearly report's text; the row stays so the period is not built again. */
+    fun deletePeriodReport(id: Long): DeleteResult =
+        if (periodReports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
 
     /** Whether the goal text of [date] may go: a report must cover the day (blueprint 6.4). */
     fun canDeleteGoals(date: LocalDate): Boolean = ReportRules.canDeleteGoals(date, reports.latestEnd(), zone)
 
     fun deleteGoals(date: LocalDate): DeleteResult {
-        if (frozen("delete goal text")) return DeleteResult.FROZEN
         if (!canDeleteGoals(date)) return DeleteResult.NOT_ALLOWED
         return if (days.deleteGoals(date) > 0) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
     /** Wipe all data: everything the rules allow to go. The caller has asked for the recovery code. */
     fun wipeAll(): WipeResult {
-        if (frozen("wipe all data")) return WipeResult(frozen = true, removed = 0, kept = 0)
         var removed = 0
         var kept = 0
         urges.all().forEach { e ->
@@ -102,12 +95,13 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         }
         days.datesWithGoals().forEach { d -> if (canDeleteGoals(d)) { days.deleteGoals(d); removed++ } else kept++ }
         reports.deleteAll()
-        return WipeResult(frozen = false, removed = removed, kept = kept)
+        periodReports.deleteAll()
+        return WipeResult(removed = removed, kept = kept)
     }
 
     // ---- export and import ----
 
-    /** The whole store, except `app_state` (punishment, activation and rest-day state are never exported). */
+    /** The whole store, except `app_state` (activation and rest-day state are never exported). */
     fun export(): String {
         val db = Store.raw(ctx).readableDatabase
         return JSONObject()
@@ -119,12 +113,11 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
 
     /**
      * Reads a file made by [export] back in. It only adds: a row already here is left exactly as it is,
-     * so an import can neither rewrite a day's verdict nor bring back a punishment-free past. Days and
+     * so an import can never rewrite a day's recorded result. Days and
      * their goals come back only from before `activatedOn`, reports only if they belong to this store's
      * weeks, and an entry that was mid-flow is kept as a counted stub.
      */
     fun import(json: String): ImportResult {
-        if (frozen("import data")) return ImportResult(false, 0, 0)
         val root = runCatching { JSONObject(json) }.getOrNull()
         if (root == null || root.optString("format") != FORMAT || root.optInt("version", -1) !in 1..VERSION) return ImportResult(false, 0, 0)
 
@@ -205,6 +198,19 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                     put("summary_json", r.optString("summary_json", ""))
                 }); added++
             }
+            // Monthly and yearly reports are keyed by the calendar, so they fit any store.
+            for (r in rows("period_report")) {
+                val kind = PeriodKind.entries.firstOrNull { it.name == r.optString("kind") }
+                val key = r.optString("period_key")
+                if (kind == null || !PeriodMath.isValid(kind, key) || r.optString("body_md").isBlank() ||
+                    exists(db, "period_report", "kind = ? AND period_key = ?", kind.name, key)
+                ) { skipped++; continue }
+                db.insertOrThrow("period_report", null, ContentValues().apply {
+                    put("kind", kind.name); put("period_key", key); put("period_start", r.getLong("period_start")); put("period_end", r.getLong("period_end"))
+                    put("created_at", r.getLong("created_at")); put("status", "DONE"); put("body_md", r.getString("body_md"))
+                    put("summary_json", r.optString("summary_json", ""))
+                }); added++
+            }
             db.setTransactionSuccessful()
         } catch (e: Exception) {
             // One bad row stops the import and nothing of it is kept.
@@ -219,7 +225,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         db.query(table, arrayOf("1"), where, arrayOf(*args), null, null, null, "1").use { it.moveToFirst() }
 
     private fun dump(db: SQLiteDatabase, table: String): JSONArray = JSONArray().also { out ->
-        db.query(table, null, if (table == "weekly_report") "status = 'DONE'" else null, null, null, null, null).use { c ->
+        db.query(table, null, if (table == "weekly_report" || table == "period_report") "status = 'DONE'" else null, null, null, null, null).use { c ->
             while (c.moveToNext()) {
                 val o = JSONObject()
                 for (i in 0 until c.columnCount) {
@@ -242,6 +248,6 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     companion object {
         const val FORMAT = "dechainer-export"
         const val VERSION = 1
-        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin", "day", "goal", "weekly_report")
+        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin", "day", "goal", "weekly_report", "period_report")
     }
 }

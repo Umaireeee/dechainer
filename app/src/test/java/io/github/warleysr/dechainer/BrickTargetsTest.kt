@@ -34,18 +34,6 @@ class BrickTargetsTest {
         )
     }
 
-    @Test
-    fun aPunishmentDayLeavesTheAlarmAndOnlyTheStudyAppsTheOwnerChose() {
-        assertEquals(
-            setOf("chrome", "games", "com.android.emergency", "notes", "sms"),
-            LockAllow.blocked(phone, LockAllow.PUNISHMENT, ownerApps = emptySet())
-        )
-        assertEquals(
-            setOf("chrome", "games", "com.android.emergency", "sms"),
-            LockAllow.blocked(phone, LockAllow.PUNISHMENT, ownerApps = setOf("notes"))
-        )
-    }
-
     // The app itself, the system UI and the phone are never blocked by anything.
     @Test
     fun theAppTheSystemUiAndThePhoneAreNeverBlockedByAnything() {

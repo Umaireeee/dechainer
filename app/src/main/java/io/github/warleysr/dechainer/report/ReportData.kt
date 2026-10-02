@@ -72,7 +72,8 @@ data class ReportSummary(
     val checkinNo: Int,
     val goalsDone: Int,
     val goalsTotal: Int,
-    val punishmentDays: Int,
+    /** Finished days that fell short of their plan (a reason is recorded). */
+    val daysMissed: Int,
     /** The "Next week" advice the report gave, so the next one can follow up honestly. Empty when none. */
     val advice: String = ""
 )

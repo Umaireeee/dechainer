@@ -13,8 +13,8 @@ class UrgeLockRuleTest {
     private val now = 1_800_000_000_000L
 
     private fun decide(
-        at: Long = now, running: Long = 0L, focus: Boolean = false, punishment: Boolean = false, deviceOwner: Boolean = true
-    ) = UrgeLockRule.decide(at, running, focus, punishment, deviceOwner)
+        at: Long = now, running: Long = 0L, focus: Boolean = false, deviceOwner: Boolean = true
+    ) = UrgeLockRule.decide(at, running, focus, deviceOwner)
 
     @Test
     fun anUrgeLockIsTenMinutesFromTheMomentItIsChosen() {
@@ -43,20 +43,10 @@ class UrgeLockRuleTest {
     }
 
     @Test
-    fun anUrgeInsideAPunishmentDayStartsNoSecondLockButTheBreathingStillRunsTenMinutes() {
-        assertEquals(UrgeStart.Covered(LockMode.PUNISHMENT_DAY, now + 10 * minute), decide(punishment = true))
-    }
-
-    @Test
-    fun theDayIsNamedBeforeAFocusBlockWhenBothHoldThePhone() {
-        assertEquals(UrgeStart.Covered(LockMode.PUNISHMENT_DAY, now + 10 * minute), decide(focus = true, punishment = true))
-    }
-
-    @Test
     fun aRunningUrgeLockStaysTheAnswerEvenInsideAFocusBlock() {
         // The urge lock came first and is already running: it is left alone, not replaced by "covered".
         val end = now + 5 * minute
-        assertEquals(UrgeStart.AlreadyRunning(end), decide(running = end, focus = true, punishment = true))
+        assertEquals(UrgeStart.AlreadyRunning(end), decide(running = end, focus = true))
     }
 
     @Test

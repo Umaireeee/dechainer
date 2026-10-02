@@ -12,7 +12,7 @@ class RemovalSafetyTest {
     fun removalIsRefusedWhileAScheduleOrABrickRuns() {
         assertFalse(LockSafety.removalBlocked(false, false, forced = false))
         assertTrue(LockSafety.removalBlocked(true, false, forced = false))
-        // A brick is a focus block, an urge lock or a punishment day.
+        // A brick is a focus block or an urge lock.
         assertTrue(LockSafety.removalBlocked(false, true, forced = false))
     }
 

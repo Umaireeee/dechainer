@@ -27,8 +27,8 @@ class FocusTimetableTest {
 
     private fun due(
         now: Long, schedules: List<BlockSchedule>, settled: Set<String> = emptySet(),
-        punishment: Boolean = false, rest: Boolean = false, urgeEnds: Long = 0L
-    ) = FocusTimetable.due(now, utc, schedules, settled, punishment, rest, urgeEnds)
+        rest: Boolean = false, urgeEnds: Long = 0L
+    ) = FocusTimetable.due(now, utc, schedules, settled, rest, urgeEnds)
 
     @Test
     fun aFocusWindowThatIsOpenStartsAtOnce() {
@@ -101,13 +101,6 @@ class FocusTimetableTest {
     fun aWindowLongerThanEightHoursIsCappedAtEight() {
         val d = due(at(10), listOf(focus("long", 8 * 60, 20 * 60)))!!
         assertEquals(at(16), d.window.endsAt)
-    }
-
-    @Test
-    fun aPunishmentDaySkipsTheStart() {
-        val d = due(at(14), listOf(focus("study", 14 * 60, 16 * 60)), punishment = true)!!
-        assertEquals(FocusStart.Skip(SkipReason.PUNISHMENT_DAY), d.decision)
-        assertTrue("settled, so it does not start when the punishment ends mid-window", d.settled)
     }
 
     @Test

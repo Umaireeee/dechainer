@@ -13,37 +13,50 @@ class DayEvaluatorTest {
     private fun goals(vararg s: GoalState, type: GoalType = GoalType.MANUAL) =
         s.mapIndexed { i, st -> Goal(i.toLong(), i, "g$i", type, if (type == GoalType.FOCUS_MINUTES) 60 else null, st) }
 
-    private fun eval(prev: DayKind = DayKind.NORMAL, g: List<Goal>, plan: Int = 3, rest: Boolean = false) =
-        DayEvaluator.evaluate(prev, g, plan, rest)
+    private fun close(g: List<Goal>, next: Int = 3, kind: DayKind = DayKind.NORMAL) = DayEvaluator.close(kind, g, next)
 
     private val done = GoalState.DONE
     private val not = GoalState.NOT_DONE
     private val open = GoalState.OPEN
 
-    @Test fun missingPlanPunishes() {
-        val v = eval(g = goals(done, done, done), plan = 0)
-        assertEquals(DayKind.PUNISHMENT, v.kind); assertEquals(Violation.PLAN_MISSING, v.violation)
-        assertEquals(Violation.PLAN_MISSING, eval(g = goals(done, done, done), plan = 2).violation)
+    @Test fun aDayWithHalfOrMoreDoneAndTomorrowPlannedIsOnPlan() {
+        assertNull(close(goals(done, done, not, not)).violation)
+        assertNull(close(goals(done, done, done)).violation)
+        assertEquals(DayKind.NORMAL, close(goals(done, done, not, not)).kind)
     }
-    @Test fun twoOfFourDoesNotPunish() = assertEquals(DayKind.NORMAL, eval(g = goals(done, done, not, not)).kind)
-    @Test fun oneOfThreePunishes() = assertEquals(Violation.UNDER_HALF, eval(g = goals(done, not, not)).violation)
-    @Test fun oneOfFourPunishes() = assertEquals(Violation.UNDER_HALF, eval(g = goals(done, not, not, not)).violation)
-    @Test fun unresolvedManualGoalPunishes() = assertEquals(Violation.UNRESOLVED, eval(g = goals(done, done, open)).violation)
-    @Test fun zeroGoalsNeverUnderHalf() = assertEquals(DayKind.NORMAL, eval(g = emptyList()).kind)
-    @Test fun zeroGoalsStillNeedTomorrowsPlan() = assertEquals(Violation.PLAN_MISSING, eval(g = emptyList(), plan = 0).violation)
-
-    @Test fun punishmentNeverFollowsPunishment() {
-        assertEquals(DayKind.NORMAL, eval(DayKind.PUNISHMENT, goals(not, not, not), plan = 0).kind)
-        assertNull(eval(DayKind.PUNISHMENT, goals(open, not), plan = 0).violation)
+    @Test fun underHalfIsRecordedAsWhyTheDayFellShort() {
+        assertEquals(Violation.UNDER_HALF, close(goals(done, not, not)).violation)
+        assertEquals(Violation.UNDER_HALF, close(goals(done, not, not, not)).violation)
     }
-    @Test fun restWaivesItsOwnResultsOnly() {
-        assertEquals(DayKind.NORMAL, eval(DayKind.REST, goals(not, not, not)).kind)
-        assertEquals(Violation.PLAN_MISSING, eval(DayKind.REST, goals(done, done, done), plan = 0).violation)
+    @Test fun anOpenManualGoalIsRecordedFirst() =
+        assertEquals(Violation.UNRESOLVED, close(goals(not, not, open), next = 0).violation)
+    @Test fun noPlanForTomorrowIsRecorded() {
+        assertEquals(Violation.PLAN_MISSING, close(goals(done, done, done), next = 0).violation)
+        assertEquals(Violation.PLAN_MISSING, close(goals(done, done, done), next = 2).violation)
     }
-    @Test fun decliningRestNeverCancelsAPunishment() {
-        assertEquals(DayKind.PUNISHMENT, eval(g = goals(not, not, not), rest = true).kind)
-        assertEquals(DayKind.PUNISHMENT, eval(g = goals(done, done, done), plan = 0, rest = true).kind)
-        assertEquals(DayKind.REST, eval(g = goals(done, done, done), rest = true).kind)
+    @Test fun aDayWithNoGoalsIsNeverUnderHalfButStillNeedsTomorrowsPlan() {
+        assertNull(close(emptyList()).violation)
+        assertEquals(Violation.PLAN_MISSING, close(emptyList(), next = 0).violation)
+    }
+    @Test fun aRestDayWaivesItsOwnGoalsButNotTomorrowsPlan() {
+        assertNull(close(goals(not, not, open), kind = DayKind.REST).violation)
+        assertEquals(DayKind.REST, close(goals(not, not, not), kind = DayKind.REST).kind)
+        assertEquals(Violation.PLAN_MISSING, close(goals(done), next = 0, kind = DayKind.REST).violation)
+    }
+    @Test fun closingNeverChangesTheKindOfTheDay() {
+        // There is no punishment day: a short day stays a normal day with a reason on record.
+        assertEquals(setOf(DayKind.NORMAL, DayKind.REST), DayKind.entries.toSet())
+        assertEquals(DayKind.NORMAL, close(goals(not, not, not), next = 0).kind)
+    }
+    @Test fun anOldStoredPunishmentKindReadsAsNormal() {
+        assertEquals(DayKind.NORMAL, DayKind.parse("PUNISHMENT"))
+        assertEquals(DayKind.REST, DayKind.parse("REST"))
+        assertEquals(DayKind.NORMAL, DayKind.parse(null))
+    }
+    @Test fun percentDoneIsNullWithoutGoals() {
+        assertNull(DayEvaluator.percentDone(emptyList()))
+        assertEquals(50, DayEvaluator.percentDone(goals(done, not)))
+        assertEquals(33, DayEvaluator.percentDone(goals(done, not, open)))
     }
 
     @Test fun settleResolvesMeasuredGoalsByAuto() {

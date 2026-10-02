@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.ImageSearch
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.NoAdultContent
 import androidx.compose.material.icons.outlined.NotificationsActive
@@ -88,6 +89,8 @@ fun ConfigTab(
     val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
+    var entryLock by remember { mutableStateOf(SecurityManager.isEntryLockEnabled(context)) }
+    var showNewPatternDialog by remember { mutableStateOf(false) }
 
     var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
     RepeatWhileVisible(60_000) {
@@ -215,6 +218,47 @@ fun ConfigTab(
                     leadingContent = { IconTile(Icons.Outlined.Shield) },
                     trailingContent = { Chevron() },
                     modifier = Modifier.clickable { navViewModel.navigateTo(Route.URGE_SETTINGS) }
+                ) }
+            }
+            item {
+                GroupedRow(GroupPos.Middle) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.entry_lock_title)) },
+                    supportingContent = { Text(stringResource(R.string.entry_lock_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.Lock) },
+                    trailingContent = {
+                        Switch(
+                            checked = entryLock,
+                            onCheckedChange = { on ->
+                                // Turning it on tightens, so it is one tap (a pattern is drawn first if
+                                // there is none). Turning it off needs the code.
+                                if (on) {
+                                    if (SecurityManager.hasEntryPattern(context)) {
+                                        entryLock = true
+                                        SecurityManager.setEntryLockEnabled(context, true)
+                                    } else {
+                                        showNewPatternDialog = true
+                                    }
+                                } else {
+                                    recoveryGate.run {
+                                        entryLock = false
+                                        SecurityManager.setEntryLockEnabled(context, false)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                ) }
+            }
+            item {
+                GroupedRow(GroupPos.Middle) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.entry_change_title)) },
+                    supportingContent = { Text(stringResource(R.string.entry_change_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.VpnKey) },
+                    trailingContent = { Chevron() },
+                    // A new opening pattern replaces the old one, so it needs the code like any loosening.
+                    modifier = Modifier.clickable { recoveryGate.run { showNewPatternDialog = true } }
                 ) }
             }
             item {
@@ -381,6 +425,17 @@ fun ConfigTab(
                     }
                 }
             }
+        )
+    }
+
+    if (showNewPatternDialog) {
+        io.github.warleysr.dechainer.screens.common.ChangePatternDialog(
+            onDone = {
+                showNewPatternDialog = false
+                entryLock = true
+                SecurityManager.setEntryLockEnabled(context, true)
+            },
+            onDismiss = { showNewPatternDialog = false }
         )
     }
 

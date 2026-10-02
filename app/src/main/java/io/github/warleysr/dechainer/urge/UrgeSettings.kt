@@ -3,12 +3,10 @@ package io.github.warleysr.dechainer.urge
 import android.content.Context
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.Rules
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 
 /**
  * The owner's urge settings: the personal reason (D5, shown as a breathing prompt) and the crisis
- * contact (D4). Both stay on the phone. Writes are refused on a punishment day (blueprint 5.5);
- * reading is always allowed, so the breathing screen and the crisis card work on any day.
+ * contact (D4). Both stay on the phone.
  */
 class UrgeSettings(context: Context) {
     private val ctx = context.applicationContext
@@ -19,17 +17,13 @@ class UrgeSettings(context: Context) {
     val contact: CrisisContact
         get() = CrisisContact(prefs.getString(KEY_CONTACT_NAME, "") ?: "", prefs.getString(KEY_CONTACT_NUMBER, "") ?: "")
 
-    val frozen: Boolean get() = SettingsFreeze.isFrozen(ctx)
-
-    /** One line the owner writes on a calm day. Returns false if a punishment day refused it. */
+    /** One line the owner writes on a calm day. */
     fun setReason(text: String): Boolean {
-        if (!SettingsFreeze.allowWrite(ctx, "personal reason")) return false
         prefs.edit { putString(KEY_REASON, text.trim().replace('\n', ' ').take(Rules.MAX_REASON_CHARS)) }
         return true
     }
 
     fun setContact(name: String, number: String): Boolean {
-        if (!SettingsFreeze.allowWrite(ctx, "crisis contact")) return false
         val c = CrisisContact.of(name, number)
         prefs.edit { putString(KEY_CONTACT_NAME, c.name); putString(KEY_CONTACT_NUMBER, c.number) }
         return true

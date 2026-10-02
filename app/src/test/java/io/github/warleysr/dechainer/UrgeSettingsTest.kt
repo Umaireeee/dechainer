@@ -8,7 +8,6 @@ import io.github.warleysr.dechainer.ai.AiSettings
 import io.github.warleysr.dechainer.ai.Provider
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.PunishmentInput
 import io.github.warleysr.dechainer.store.DechainerDatabase
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.urge.UrgeSettings
@@ -22,15 +21,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * The new settings of Phase 3 (the AI choices, the personal reason, the crisis contact) obey the
- * settings freeze at the layer that writes them, and reading stays open on a punishment day.
- */
+/** The settings of the urge flow and the AI: the personal reason, the crisis contact, provider, model and consent. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
-class UrgeSettingsFreezeTest {
+class UrgeSettingsTest {
     private lateinit var ctx: Context
-    private val hour = 3_600_000L
     private val prefs = listOf("ai", "urge_settings", "lock_settings")
 
     @Before
@@ -52,11 +47,6 @@ class UrgeSettingsFreezeTest {
         LockStateStore.resetForTests()
     }
 
-    private fun startDay() {
-        val now = TrustedClock.now(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now - hour, now + hour), "today")
-    }
-
     @Test
     fun theReasonAndTheContactAreSavedTrimmedAndCapped() {
         val s = UrgeSettings(ctx)
@@ -75,41 +65,6 @@ class UrgeSettingsFreezeTest {
         val s = UrgeSettings(ctx)
         assertEquals("", s.reason)
         assertFalse(s.contact.usable)
-    }
-
-    @Test
-    fun theReasonAndTheContactCannotBeChangedOnAPunishmentDayButCanBeRead() {
-        val s = UrgeSettings(ctx)
-        s.setReason("before")
-        s.setContact("Sam", "123")
-        startDay()
-        assertTrue(s.frozen)
-        assertFalse(s.setReason("after"))
-        assertFalse(s.setContact("Else", "999"))
-        assertEquals("before", s.reason)
-        assertEquals("123", s.contact.number)
-    }
-
-    @Test
-    fun everyAiSettingIsRefusedOnAPunishmentDay() {
-        val ai = AiSettings(ctx)
-        assertTrue(ai.setProvider(Provider.DEEPSEEK))
-        assertTrue(ai.setModel("m1"))
-        assertTrue(ai.setConsent(true))
-        assertEquals(Provider.DEEPSEEK, ai.provider)
-        assertTrue(ai.consent)
-
-        startDay()
-        assertTrue(ai.frozen)
-        assertFalse(ai.setProvider(Provider.OPENAI))
-        assertFalse(ai.setModel("m2"))
-        assertFalse(ai.setCustomBase("https://example.com"))
-        assertFalse(ai.setConsent(false))
-        assertEquals(AiSettings.KeySave.REFUSED_FROZEN, ai.saveKey("sk-abc"))
-        assertEquals(Provider.DEEPSEEK, ai.provider)
-        assertEquals("m1", ai.model)
-        assertTrue("consent stays as it was", ai.consent)
-        assertEquals("", ai.key)
     }
 
     @Test
@@ -144,7 +99,7 @@ class UrgeSettingsFreezeTest {
     }
 
     @Test
-    fun clearingTheKeyIsSavedOnAnyDayThatIsNotFrozen() {
+    fun clearingTheKeyIsSaved() {
         val ai = AiSettings(ctx)
         assertEquals(AiSettings.KeySave.SAVED, ai.saveKey("   "))
         assertEquals("", ai.key)

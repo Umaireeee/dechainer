@@ -42,7 +42,10 @@ import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.screens.apps.AppsScreen
+import io.github.warleysr.dechainer.screens.common.EntryGate
+import io.github.warleysr.dechainer.screens.common.PrivateArea
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
+import io.github.warleysr.dechainer.security.EntryLock
 import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
 import io.github.warleysr.dechainer.screens.focus.FocusLogScreen
 import io.github.warleysr.dechainer.screens.focus.FocusScreen
@@ -69,8 +72,8 @@ class MainActivity : ComponentActivity() {
     private val urgeVm: UrgeViewModel by viewModels()
 
     /**
-     * Pins the phone to Déchaîner while any brick runs (an urge lock, a focus block, a punishment
-     * day), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
+     * Pins the phone to Déchaîner while any brick runs (an urge lock or a focus
+     * block), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
      * let through ([io.github.warleysr.dechainer.lock.BrickStatus.ownerApps]). Only as device owner: without it, Android would show its
      * own "pin this app?" prompt instead. If the app crashes, Android drops the pin by itself:
      * the phone is never trapped, and suspension keeps blocking underneath.
@@ -98,6 +101,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The lock at the front door (see [EntryLock]). False on every cold start, so opening the app
+     * always asks first. Kept in the activity, not in Compose state, so a rotation does not ask again.
+     */
+    private var entryUnlocked by mutableStateOf(false)
+    private var leftAt = 0L
+
+    /** Whether the locked screen covers the app right now (a brick does not lift this for the private steps). */
+    private fun lockScreenCovers(): Boolean =
+        SecurityManager.isEntryLockEnabled(this) && SecurityManager.hasRecoveryCode(this) && !entryUnlocked
+
+    override fun onStop() {
+        super.onStop()
+        leftAt = android.os.SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Back after more than a minute away: ask again. A short trip (a call, the shade) does not.
+        if (EntryLock.shouldRelock(leftAt, android.os.SystemClock.elapsedRealtime())) {
+            entryUnlocked = false
+            SecurityManager.closePrivate()
+        }
+        leftAt = 0L
+    }
+
     override fun onResume() {
         super.onResume()
         // Coming back to the app is a wake-up: the lock is recomputed from stored data, so a block
@@ -108,7 +137,8 @@ class MainActivity : ComponentActivity() {
         if (status != null) syncBrickPin(true, status.ownerApps)
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
         // An urge that was left half-written opens straight back into its step.
-        urgeVm.resumeIfAny()
+        // Not while the locked screen covers the app: the writing is private and waits for the pattern.
+        if (!lockScreenCovers()) urgeVm.resumeIfAny()
         // A weekly report that came due while the phone was off is queued again (blueprint 6.5).
         thread { io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(applicationContext) }
     }
@@ -123,7 +153,8 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra(EXTRA_URGE_SOURCE)
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
-        urgeVm.startOngoing(source)
+        // From the tile or shortcut with the app locked: the lock and breathing only, the rest waits for the pattern.
+        urgeVm.startOngoing(source, holdPrivate = lockScreenCovers())
     }
 
     private val openTodayRequest = mutableStateOf(false)
@@ -139,7 +170,16 @@ class MainActivity : ComponentActivity() {
     /** The weekly report notification opens that report. -1 when none was asked for. */
     private val openReportRequest = mutableLongStateOf(-1L)
 
+    /** The monthly or yearly report notification opens that report. -1 when none was asked for. */
+    private val openPeriodReportRequest = mutableLongStateOf(-1L)
+
     private fun handleReportIntent(intent: Intent?) {
+        val periodId = intent?.getLongExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_PERIOD_REPORT, -1L) ?: -1L
+        if (periodId >= 0) {
+            intent!!.removeExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_PERIOD_REPORT)
+            if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) openPeriodReportRequest.longValue = periodId
+            return
+        }
         val id = intent?.getLongExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT, -1L) ?: -1L
         if (id < 0) return
         intent!!.removeExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT)
@@ -176,7 +216,7 @@ class MainActivity : ComponentActivity() {
             val focusState by Pomodoro.state.collectAsState()
             val lockStatus by LockEngine.status.collectAsState()
             val urge by urgeVm.state.collectAsState()
-            // A punishment day (or an urge lock the flow has not picked up yet) shows Home with its end
+            // An urge lock the flow has not picked up yet shows Home with its end
             // time; a focus block shows the Focus page. When bricks overlap, the one that ends last is named.
             val lockedHome = lockStatus?.takeIf { it.primary != LockMode.FOCUS_BLOCK }
             val brick = focusState.inBlock || lockStatus != null
@@ -193,7 +233,7 @@ class MainActivity : ComponentActivity() {
             }
             // Every urge lock gets its counted entry and its breathing, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
-                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
+                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock(holdPrivate = lockScreenCovers())
             }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
@@ -215,10 +255,13 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(brick) {
                     if (brick) navViewModel.navigateTo(Route.HOME)
                 }
-                LaunchedEffect(openReportRequest.longValue) {
-                    if (openReportRequest.longValue >= 0 && !focusBrick && !urge.active) navViewModel.navigateTo(Route.REPORTS)
+                LaunchedEffect(openReportRequest.longValue, openPeriodReportRequest.longValue) {
+                    if ((openReportRequest.longValue >= 0 || openPeriodReportRequest.longValue >= 0) && !focusBrick && !urge.active)
+                        navViewModel.navigateTo(Route.REPORTS)
                 }
-                LaunchedEffect(route) { if (route != Route.REPORTS) openReportRequest.longValue = -1L }
+                LaunchedEffect(route) {
+                    if (route != Route.REPORTS) { openReportRequest.longValue = -1L; openPeriodReportRequest.longValue = -1L }
+                }
                 LaunchedEffect(openTodayRequest.value) {
                     if (openTodayRequest.value) {
                         openTodayRequest.value = false
@@ -226,7 +269,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // An urge lock or a punishment day ends any open recovery session, so the code can't
+                // The pattern was drawn: an urge that stopped after its breathing carries on to the writing.
+                LaunchedEffect(entryUnlocked) { if (entryUnlocked) urgeVm.resumeIfAny() }
+
+                // An urge lock ends any open recovery session, so the code can't
                 // be used until the lock runs out.
                 LaunchedEffect(lockedHome != null) {
                     if (lockedHome != null) SecurityManager.endSession()
@@ -257,8 +303,18 @@ class MainActivity : ComponentActivity() {
 
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
 
+                // Before anything else: opening the app asks for the opening pattern. A brick and the
+                // urge flow are never behind it, so the Urge button always works.
+                val gateShown = EntryLock.required(
+                    enabled = SecurityManager.isEntryLockEnabled(context),
+                    recoverySet = recoverySet,
+                    unlocked = entryUnlocked,
+                    brick = brick,
+                    urgeActive = urge.active
+                )
+
                 // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
-                val showTopBar = recoverySet && !urge.active && (focusBrick || route != Route.HOME)
+                val showTopBar = recoverySet && !gateShown && !urge.active && (focusBrick || route != Route.HOME)
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -303,6 +359,8 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when {
+                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.startOngoing(UrgeSource.HOME, holdPrivate = true) })
+
                         !recoverySet -> SetupRecovery(innerPadding)
 
                         !rulesConfirmed && !urge.active && lockedHome == null && !brick ->
@@ -349,11 +407,14 @@ class MainActivity : ComponentActivity() {
                                     Route.FOCUS -> FocusScreen(onOpenLog = { navViewModel.navigateTo(Route.FOCUS_LOG) })
                                     Route.FOCUS_LOG -> FocusLogScreen()
                                     Route.TODAY -> io.github.warleysr.dechainer.screens.TodayScreen()
-                                    Route.REPORTS -> io.github.warleysr.dechainer.screens.ReportsScreen(
-                                        openReportId = openReportRequest.longValue.takeIf { it >= 0 },
-                                        onOpenData = { navViewModel.navigateTo(Route.DATA) }
-                                    )
-                                    Route.DATA -> io.github.warleysr.dechainer.screens.DataScreen()
+                                    Route.REPORTS -> PrivateArea {
+                                        io.github.warleysr.dechainer.screens.ReportsScreen(
+                                            openReportId = openReportRequest.longValue.takeIf { it >= 0 },
+                                        openPeriodReportId = openPeriodReportRequest.longValue.takeIf { it >= 0 },
+                                            onOpenData = { navViewModel.navigateTo(Route.DATA) }
+                                        )
+                                    }
+                                    Route.DATA -> PrivateArea { io.github.warleysr.dechainer.screens.DataScreen() }
                                     Route.APPS -> AppsScreen()
                                     Route.SCHEDULES -> SchedulesScreen()
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()

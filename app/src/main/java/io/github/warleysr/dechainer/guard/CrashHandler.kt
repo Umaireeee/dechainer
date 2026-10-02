@@ -43,8 +43,7 @@ object CrashHandler {
     private fun brickIsRunning(ctx: Context): Boolean {
         val now = try { TrustedClock.now(ctx) } catch (_: Throwable) { System.currentTimeMillis() }
         return Pomodoro.storedBlockEndsAt(ctx) > now ||
-            LockStateStore.urge(ctx).endsAt > now ||
-            LockStateStore.punishment(ctx).activeAt(now)
+            LockStateStore.urge(ctx).endsAt > now
     }
 
     /** Crashes in SharedPreferences, written with `commit()` so they are on disk before the process dies. */

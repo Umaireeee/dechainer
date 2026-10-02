@@ -138,5 +138,16 @@ class DechainerApplication : Application() {
                 false
             }
         }
+        // The punishment day was removed (blueprint 1.2). Anything an older build stored for it goes,
+        // so no leftover window can ever hold the phone.
+        state.runOnce("punishment_removed_v1") {
+            try {
+                io.github.warleysr.dechainer.lock.LockStateStore.clearLegacyPunishment(this)
+                true
+            } catch (e: Exception) {
+                Timber.w(e, "Old punishment state not removed")
+                false
+            }
+        }
     }
 }

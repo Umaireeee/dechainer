@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name" translatable="false">Déchaîner</string>
-    <string name="attention">Attention!</string>
+    <string name="attention">Before you go on</string>
     <string name="self_lock_risk">This app uses Device Owner privileges to block system components and control access to other apps. There is a risk of "locking yourself out" and being unable to regain access to the blocked features. To prevent this, you must have a recovery code. This code can be generated below and should be saved in a secure location—preferably in physical form, on paper.</string>
     <string name="confirm_key_saved">I confirm that I have saved the code</string>
     <string name="proceed">Proceed</string>
@@ -13,7 +13,7 @@
     <string name="device_owner_description">Needed to suspend apps and apply rules</string>
     <string name="dns_description">Blocks adult sites across the whole phone</string>
     <string name="dns_settings">Private DNS</string>
-    <string name="get_owner_privileges_first">Get owner privileges first!</string>
+    <string name="get_owner_privileges_first">Get owner privileges first.</string>
     <string name="granted">Granted</string>
     <string name="not_granted">Not granted</string>
     <string name="shizuku_not_installed">Shizuku is not installed. It is required to obtain owner privileges.</string>
@@ -24,8 +24,8 @@
     <string name="ask_shizuku_permission">Ask permission</string>
     <string name="already_owner">There is already another app with owner privileges on this device. Only one app can have this privilege, confirm that you want to remove the privilege from the app below:</string>
     <string name="get_owner_privileges">Grant privileges</string>
-    <string name="privileges_description">All set! To finish, click the button below to grant device owner privileges.</string>
-    <string name="remove_privileges_description">Privileges granted! To remove, click the button below.</string>
+    <string name="privileges_description">Almost done. To finish, tap the button below to grant device owner privileges.</string>
+    <string name="remove_privileges_description">Privileges granted. To remove them, tap the button below.</string>
     <string name="remove_privileges">Remove privileges</string>
     <string name="remove_accounts">Remove accounts</string>
     <string name="no_account_allowed">There can be no accounts on the device. Remove all accounts below:</string>
@@ -207,7 +207,7 @@
     <string name="schedule_error_no_days">Select at least one day</string>
     <string name="schedule_error_nothing">Select at least one app, service or website</string>
     <string name="removal_needs_code">Set a recovery code first. Device Owner can\'t be removed without one, except through Forced removal.</string>
-    <string name="schedule_locked_blocks_removal">A locked schedule or a brick (focus block, urge lock, punishment day) is running. Device Owner can only be removed after it ends, or through Forced removal.</string>
+    <string name="schedule_locked_blocks_removal">A locked schedule or a brick (focus block or urge lock) is running. Device Owner can only be removed after it ends, or through Forced removal.</string>
     <string name="schedule_error_not_saved">Could not save this schedule. Nothing was changed; try again.</string>
     <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
     <string name="schedule_long_lock_title">Lock this for %1$s?</string>
@@ -265,14 +265,6 @@
     <plurals name="proof_card_text">
         <item quantity="one">%d minute of focus. Write what you studied and what you remember.</item>
         <item quantity="other">%d minutes of focus. Write what you studied and what you remember.</item>
-    </plurals>
-    <plurals name="star_minutes">
-        <item quantity="one">%d minute of focus</item>
-        <item quantity="other">%d minutes of focus</item>
-    </plurals>
-    <plurals name="today_streak">
-        <item quantity="one">%d day of study in a row</item>
-        <item quantity="other">%d days of study in a row</item>
     </plurals>
     <!-- Study pings -->
     <!-- Screen explainers (the ⓘ in the top bar) -->
@@ -390,9 +382,7 @@
     <string name="dns_error_unreachable">This network can\'t reach that provider on port 853, which Private DNS needs: the network may be blocking it, or the server is too far away. Pick one with a ✓, or try Wi-Fi.</string>
     <string name="focus_brick_source">Focus block</string>
     <string name="urge_lock_source">Urge lock</string>
-    <string name="punishment_day_source">Punishment day</string>
     <string name="locked_until">Locked until %1$s</string>
-    <string name="locked_punishment_body">Today is locked. Calls, the alarm clock and anything you chose for study stay open. It ends at midnight, and settings cannot be changed until then.</string>
     <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge Journal (from its Quick Settings tile) and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_next_subject">Next session is for:</string>
     <string name="focus_block_start">Start focus block</string>
@@ -505,7 +495,6 @@
     <!-- Urge and AI settings -->
     <string name="urge_settings_title">Urge and AI</string>
     <string name="urge_settings_desc">Your reason, someone to call, and the AI behind your deep dives</string>
-    <string name="urge_frozen">Settings cannot be changed today.</string>
     <string name="urge_saved">Saved.</string>
     <string name="urge_save">Save</string>
     <string name="urge_reason_section">Your reason</string>
@@ -516,7 +505,7 @@
     <string name="urge_contact_name">Name</string>
     <string name="urge_contact_number">Phone number</string>
     <string name="ai_section">AI</string>
-    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive. The note is deleted from this phone once its deep dive exists. Nothing else about you is sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
+    <string name="ai_privacy">What goes to the AI you choose: for an urge, your note and your answers, with a short summary of your last month (when earlier urges happened, and the earliest link and plan their deep dives found). The note is deleted from this phone once its deep dive exists. For the weekly, monthly and yearly reports: counts, times, answers, deep dives, focus sessions and your goals, never a note. Your reason and the person to call never leave the phone. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
     <string name="ai_provider">Provider</string>
     <string name="ai_key_label">API key</string>
     <string name="ai_key_none">No key is saved.</string>
@@ -569,10 +558,9 @@
     <string name="evening_late">One hour left to finish your checklist</string>
     <string name="today_tab">Today</string>
     <string name="today_title">Today</string>
-    <string name="today_punishment">Today is a punishment day: %1$s</string>
-    <string name="today_why_plan_missing">there was no plan with at least 3 goals.</string>
-    <string name="today_why_unresolved">some goals were left unresolved.</string>
-    <string name="today_why_under_half">fewer than half of yesterday\'s goals were done.</string>
+    <string name="today_why_plan_missing">No plan was written for the next day.</string>
+    <string name="today_why_unresolved">Some goals were left open.</string>
+    <string name="today_why_under_half">Fewer than half of the goals were done.</string>
     <string name="today_rest">Today is a rest day.</string>
     <string name="today_goals">Today\'s goals</string>
     <string name="today_no_goals">No goals for today.</string>
@@ -582,27 +570,81 @@
     <string name="today_tomorrow_locked">Tomorrow\'s plan can be written from 20:00 to 23:59 tonight.</string>
     <string name="today_goal_hint">Goal %1$d</string>
     <string name="today_add_goal">Add a goal</string>
-    <string name="today_save_plan">Save plan (3 to 7 goals)</string>
+    <string name="today_save_plan">Save plan</string>
     <string name="today_rest_tomorrow">Make tomorrow a rest day</string>
     <string name="today_rest_cancel">Cancel tomorrow\'s rest day</string>
+    <string name="today_yesterday">Yesterday: %1$d of %2$d goals done.</string>
+    <string name="today_open">Open</string>
+    <string name="today_mark_done">Mark done: %1$s</string>
+    <string name="today_close_hint">Tick a goal done any time today. From 20:00 you can also mark what was not done.</string>
+    <string name="today_plan_hint">3 to 7 goals, one line each. Tap the label under a goal to make it measured: focus minutes or no slip.</string>
+    <string name="today_carry_over">Carry over unfinished goals</string>
+    <string name="today_remove_goal">Remove goal %1$d</string>
+    <string name="today_type_change">%1$s · change</string>
+    <string name="today_type_manual">Ticked by you</string>
+    <string name="today_type_focus">Focus %1$d min, measured</string>
+    <string name="today_type_noslip">No slip, measured</string>
+    <string name="today_goal_focus_text">Focus %d minutes</string>
+    <string name="today_goal_noslip_text">No slip today</string>
+    <string name="today_focus_progress">%1$d of %2$d focus minutes</string>
+    <string name="today_noslip_hint">Done at midnight if no slip is recorded today.</string>
+    <string name="today_plan_saved">Plan saved.</string>
+    <string name="today_plan_too_few">Write at least 3 goals.</string>
+    <string name="today_plan_window_closed">The evening window has closed. The plan stays as it was.</string>
+    <string name="today_rest_hint">One rest day in any seven days. It skips that day\'s goals and its scheduled focus sessions.</string>
+    <string name="today_rest_used">A rest day was already taken in these seven days.</string>
     <string name="info_today_what">Your daily checklist.</string>
     <string name="info_today_does">Each evening, from 20:00, you write tomorrow\'s 3 to 7 goals and close today.</string>
-    <string name="info_today_how">Fewer than half of the goals done, an unresolved goal or a missing plan makes the next day a punishment day. A punishment day never follows a punishment day.</string>
+    <string name="info_today_how">Each finished day is recorded: how many goals were done, and why a day fell short. Nothing is locked by it. The results show in Reports as a graph and go into your weekly, monthly and yearly reports.</string>
 
     <!-- Reports and data tools (Phase 6) -->
     <string name="reports_tab">Reports</string>
     <string name="data_title">Your data</string>
-    <string name="report_channel">Weekly report</string>
+    <string name="report_channel">Reports</string>
     <string name="report_ready">Your weekly report is ready</string>
+    <string name="report_ready_month">Your monthly report is ready</string>
+    <string name="report_ready_year">Your yearly report is ready</string>
     <string name="reports_empty">The first report is made when your first week with something recorded has ended. It needs an AI key, your consent and a connection; if the phone was off, it is made the next time it is on and online.</string>
-    <string name="reports_progress">Daily checklist results</string>
-    <string name="reports_progress_none">No finished days yet.</string>
-    <string name="reports_progress_desc">Line of the share of goals done each day over the last four weeks. Punishment days are marked.</string>
+    <string name="reports_progress">Progress</string>
     <string name="reports_week">%1$s to %2$s</string>
     <string name="reports_back">Back to the list</string>
+    <string name="reports_loading">Reading your data.</string>
+    <string name="backup_reminder">Your history lives only on this phone. It has been a month or more since the last backup, so a lost or wiped phone would take it with it.</string>
+    <string name="backup_reminder_action">Save a backup</string>
+    <string name="reports_list">Reports</string>
+    <string name="reports_weekly">Weekly</string>
+    <string name="reports_monthly">Monthly</string>
+    <string name="reports_yearly">Yearly</string>
+    <string name="reports_year_title">The year %1$s</string>
+    <string name="reports_empty_month">The first monthly report is made when the first calendar month with something recorded has ended. Like the weekly one, it needs an AI key, your consent and a connection.</string>
+    <string name="reports_empty_year">The first yearly report is made when the first calendar year with something recorded has ended.</string>
+    <string name="progress_days">28 days</string>
+    <string name="progress_weeks">12 weeks</string>
+    <string name="progress_months">12 months</string>
+    <string name="progress_urges">Urges</string>
+    <string name="progress_slips">Slips</string>
+    <string name="progress_focus">Focus hours</string>
+    <string name="progress_goals">Goals done</string>
+    <string name="progress_hours">%1$d h</string>
+    <string name="progress_week_of">Week of %1$s</string>
+    <string name="progress_so_far">%1$s, so far</string>
+    <string name="progress_focus_n">%1$s h focus</string>
+    <string name="progress_goals_n">%1$d%% of goals done (%2$d of %3$d)</string>
+    <string name="progress_show_table">Show as a table</string>
+    <string name="progress_hide_table">Hide the table</string>
+    <plurals name="progress_urges_n">
+        <item quantity="one">%1$d urge</item>
+        <item quantity="other">%1$d urges</item>
+    </plurals>
+    <plurals name="progress_slips_n">
+        <item quantity="one">%1$d slip</item>
+        <item quantity="other">%1$d slips</item>
+    </plurals>
+    <plurals name="progress_short_n">
+        <item quantity="one">%1$d day short of plan</item>
+        <item quantity="other">%1$d days short of plan</item>
+    </plurals>
     <string name="reports_your_data">Your data</string>
-    <string name="reports_frozen">Reports are read only today.</string>
-    <string name="data_frozen">A punishment day is running. Your data can be read, but not changed, until midnight.</string>
     <string name="data_export_section">Backup</string>
     <string name="data_export_hint">The file holds your entries, sessions, goals and reports. Entries still waiting for a deep dive keep their text in it. Keep it somewhere private.</string>
     <string name="data_export">Save a backup file</string>
@@ -626,13 +668,13 @@
     <string name="data_not_allowed">That cannot be deleted yet. A slip or a session can go once its day is closed, and goal text once a weekly report covers its day.</string>
     <string name="data_goals_row">Goals of %1$s</string>
     <string name="data_wipe_section">Wipe all data</string>
-    <string name="data_wipe_hint">Removes what the rules allow: entries, sessions, reports and old goal text. Punishment days, rest days and your weeks are not reset. It asks for the recovery code.</string>
+    <string name="data_wipe_hint">Removes what the rules allow: entries, sessions, reports and old goal text. Your daily results, rest days and your weeks are not reset. It asks for the recovery code.</string>
     <string name="data_wipe">Wipe all data</string>
     <string name="data_wipe_confirm_title">Wipe all data?</string>
-    <string name="data_wipe_confirm">This cannot be undone. Nothing that sets a punishment is touched.</string>
+    <string name="data_wipe_confirm">This cannot be undone. Your daily results, used by the progress graphs, are kept.</string>
     <string name="data_wipe_done">Wiped: %1$d removed, %2$d kept because the rules say so.</string>
-    <string name="info_reports_what">Your weekly reports and the daily checklist results.</string>
-    <string name="info_reports_does">When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, sessions and goals. It never sees your raw urge notes.</string>
+    <string name="info_reports_what">Your progress graphs and your weekly, monthly and yearly reports.</string>
+    <string name="info_reports_does">The graphs show urges, slips, focus hours and goals done over the last 28 days, 12 weeks or 12 months; tap a bar to see that period. When a week, a calendar month or a year with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, sessions and goals. It never sees your raw urge notes.</string>
     <string name="info_reports_how">It needs a key, your consent and a connection. If the phone was off, the report is made the next time it is on and online. Deleting and backup are under Your data.</string>
     <string name="focus_channel">Focus</string>
     <string name="focus_channel_desc">The end of a focus session, and the question that follows. The running timer is silent.</string>
@@ -652,13 +694,35 @@
     <string name="setup_item_ai">AI key</string>
     <string name="setup_item_rules">Checklist rules confirmed</string>
     <string name="rules_title">The daily checklist</string>
-    <string name="rules_intro">Read these once. They start when you confirm.</string>
+    <string name="rules_intro">Read this once. Your days are recorded from when you confirm.</string>
     <string name="rules_plan">Each evening from 20:00 to 23:59 you write tomorrow\'s plan: 3 to 7 goals. The plan locks at 23:59.</string>
-    <string name="rules_review">In the same evening window you close today: each goal is done or not done.</string>
-    <string name="rules_punishment">The next day is a punishment day if tomorrow has no plan, if a goal of today is left unresolved, or if fewer than half of today\'s goals are done. The phone stays locked all that day except calls and the alarm clock, and settings cannot be changed.</string>
-    <string name="rules_rest">You may declare one rest day in any seven days. A rest day skips that day\'s goals and focus sessions, but never cancels a punishment.</string>
-    <string name="rules_first_evening">Nothing is judged before the first evening. If you write no plan that evening, the next day is a punishment day.</string>
+    <string name="rules_review">In the same evening you close today: each goal is done or not done. A goal can be ticked done at any time during its day.</string>
+    <string name="rules_record">Each day is recorded honestly: how much was done, and why a day fell short. Nothing locks the phone because of it. Your reports and progress graphs show where you are heading.</string>
+    <string name="rules_rest">You may declare one rest day in any seven days. A rest day skips that day\'s goals and its scheduled focus sessions.</string>
     <string name="rules_loosening">Making a rule stricter is one tap. Loosening anything needs your recovery code and the unlock delay, and never works on a running lock.</string>
-    <string name="rules_understood">I have read this and I want these rules.</string>
-    <string name="rules_confirm">Start the rules</string>
+    <string name="rules_understood">I have read this.</string>
+    <string name="rules_confirm">Start</string>
+    <!-- The lock at the front door -->
+    <string name="entry_gate_title">Déchaîner is locked</string>
+    <string name="private_title">Private</string>
+    <string name="entry_gate_draw">Draw your pattern to continue.</string>
+    <string name="entry_gate_urge">Urge hit? Start the lock</string>
+    <string name="pattern_pad">Pattern pad. Drag your finger across the dots.</string>
+    <string name="entry_gate_wrong">That is not the pattern.</string>
+    <string name="entry_gate_wait">Too many tries. Wait %1$s.</string>
+    <string name="entry_gate_forgot">Forgot the pattern</string>
+    <string name="entry_gate_create_title">Draw a pattern</string>
+    <string name="entry_gate_create_text">You will draw it each time you open Déchaîner and its private pages: urges, deep dives and reports. Make it different from your phone\'s lock.</string>
+    <string name="entry_draw_new">Draw a pattern of at least 4 dots.</string>
+    <string name="entry_draw_again">Draw it again to confirm.</string>
+    <string name="entry_pattern_short">Join at least 4 dots.</string>
+    <string name="entry_pattern_mismatch">The two do not match. Start again.</string>
+    <string name="entry_pattern_refused">That pattern could not be saved. Try again.</string>
+    <string name="entry_forgot_title">Forgot the pattern</string>
+    <string name="entry_forgot_text">Enter your recovery code. The pattern is cleared and you draw a new one.</string>
+    <string name="entry_forgot_code">Recovery code</string>
+    <string name="entry_lock_title">Lock when opening</string>
+    <string name="entry_lock_desc">Ask for the opening pattern each time you open the app. Turning it off needs the recovery code.</string>
+    <string name="entry_change_title">Opening pattern</string>
+    <string name="entry_change_desc">Draw a new pattern. Needs the recovery code.</string>
 </resources>

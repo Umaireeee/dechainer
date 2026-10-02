@@ -84,8 +84,8 @@ class UrgeFlowRulesTest {
     }
 
     @Test
-    fun insideAFocusBlockOrAPunishmentDayTheBreathingStillRunsTenMinutesWithoutALock() {
-        for (by in listOf(LockMode.FOCUS_BLOCK, LockMode.PUNISHMENT_DAY)) {
+    fun insideAFocusBlockTheBreathingStillRunsTenMinutesWithoutALock() {
+        for (by in listOf(LockMode.FOCUS_BLOCK)) {
             val w = UrgeFlowRules.breathingFor(UrgeStart.Covered(by, now + 10 * minute), now)
             assertEquals(10 * minute, w.totalMs)
             assertFalse(w.lockStarted)

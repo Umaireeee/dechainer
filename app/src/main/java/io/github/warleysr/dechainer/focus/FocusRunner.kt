@@ -71,7 +71,7 @@ object FocusRunner {
 
     /**
      * The owner started a block from the Focus screen: ends at [endsAt], usual or special, for
-     * [purpose]. False if it was refused: a punishment day, a block already running, a length outside
+     * [purpose]. False if it was refused: a block already running, a length outside
      * 10 minutes to 8 hours, or no purpose of at least three characters.
      */
     fun startManual(context: Context, endsAt: Long, flavor: Flavor, purpose: String?): Boolean {
@@ -202,10 +202,16 @@ object FocusRunner {
         val schedules = ScheduleRepository.getSchedules(ctx)
         if (schedules.none { it.isFocus }) return false
         val settled = readSettled(ctx)
-        // The rest day is Phase 5's; until it exists no day is one.
+        // A declared rest day skips scheduled focus; block schedules and limits still run (D18).
+        val restDay = try {
+            Store.days(ctx).isRest(io.github.warleysr.dechainer.day.DayWindow.dateOf(now, TrustedClock.zone()))
+        } catch (e: Exception) {
+            Timber.w(e, "Rest day not readable; the focus entry runs")
+            false
+        }
         val due = FocusTimetable.due(
             now = now, zone = TrustedClock.zone(), schedules = schedules, settledKeys = settled,
-            punishmentActive = LockStateStore.punishment(ctx).activeAt(now), restDay = false,
+            restDay = restDay,
             urgeEndsAt = LockStateStore.urge(ctx).endsAt
         ) ?: return false
         return when (val decision = due.decision) {

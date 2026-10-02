@@ -3,7 +3,7 @@ package io.github.warleysr.dechainer.lock
 import io.github.warleysr.dechainer.models.BlockSchedule
 
 /**
- * The modes the engine can be holding the phone in (blueprint 5.2). The three brick modes pin the
+ * The modes the engine can be holding the phone in (blueprint 5.2). The two brick modes pin the
  * phone to this app; [SCHEDULE] and [DAILY_LIMIT] only suspend apps. [FOCUS_SESSION], the old "lock
  * apps during a session" option, is not in the blueprint; it is carried unchanged until Phase 4.
  */
@@ -12,11 +12,10 @@ enum class LockMode(val isBrick: Boolean) {
     DAILY_LIMIT(false),
     FOCUS_SESSION(false),
     URGE_LOCK(true),
-    FOCUS_BLOCK(true),
-    PUNISHMENT_DAY(true);
+    FOCUS_BLOCK(true);
 
-    /** When several bricks end together, the one named on the lock screen: the day first, then the urge. */
-    val labelRank: Int get() = when (this) { PUNISHMENT_DAY -> 3; URGE_LOCK -> 2; FOCUS_BLOCK -> 1; else -> 0 }
+    /** When several bricks end together, the one named on the lock screen: the urge first. */
+    val labelRank: Int get() = when (this) { URGE_LOCK -> 2; FOCUS_BLOCK -> 1; else -> 0 }
 }
 
 /**
@@ -66,25 +65,6 @@ data class LimitInput(val reachedApps: Set<String> = emptySet(), val resetsAt: L
 /** A running urge lock: when it ends, or 0 when there is none. */
 data class UrgeInput(val endsAt: Long = 0L)
 
-/**
- * A punishment day: the window in which it holds, [startsAt] inclusive to [endsAt] exclusive, on the
- * trusted clock. A whole local day normally; the debug build uses a few minutes. [ownerApps] is the
- * study-app list (empty by default, changed only with the recovery code).
- */
-data class PunishmentInput(val startsAt: Long = 0L, val endsAt: Long = 0L, val ownerApps: Set<String> = emptySet()) {
-    fun activeAt(now: Long): Boolean = endsAt > now && startsAt <= now
-
-    companion object {
-        /** The whole local day [date]: from 00:00 to the next 00:00 in [zone]. */
-        fun wholeDay(date: java.time.LocalDate, zone: java.time.ZoneId, ownerApps: Set<String> = emptySet()) =
-            PunishmentInput(
-                date.atStartOfDay(zone).toInstant().toEpochMilli(),
-                date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
-                ownerApps
-            )
-    }
-}
-
 /** Everything [LockPlanner.plan] decides from. */
 data class LockState(
     val deviceOwner: Boolean,
@@ -92,14 +72,12 @@ data class LockState(
     val phone: PhoneFacts,
     val focus: FocusInput = FocusInput(),
     val limits: LimitInput = LimitInput(),
-    val urge: UrgeInput = UrgeInput(),
-    val punishment: PunishmentInput = PunishmentInput()
+    val urge: UrgeInput = UrgeInput()
 )
 
 /**
  * What holds the phone right now, for the lock screen and the pin: the brick that decides what is
- * shown ([primary]: the one that ends last, the day before the urge before a focus block when they
- * end together), when the phone unlocks ([endsAt]: only when every brick has ended), and all of them.
+ * shown ([primary]: the one that ends last, the urge before a focus block when they end together), when the phone unlocks ([endsAt]: only when every brick has ended), and all of them.
  */
 data class BrickStatus(
     val primary: LockMode,
@@ -124,12 +102,10 @@ data class LockPlan(
     val desiredApps: Set<String>,
     val desiredRestrictions: Set<String>,
     val desiredSites: Set<String>,
-    /** The phone is pinned to this app: an urge lock, a focus block or a punishment day is running. */
+    /** The phone is pinned to this app: an urge lock or a focus block is running. */
     val brick: Boolean,
     /** Which bricks run and until when, or null when none does. */
     val brickStatus: BrickStatus?,
-    /** A punishment day is running: settings writes are refused (blueprint 5.5). */
-    val punishmentActive: Boolean,
     /** Automatic date, time and time zone must be forced on, and the settings locked. */
     val holdClock: Boolean,
     /**

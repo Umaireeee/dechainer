@@ -110,7 +110,10 @@ fun UrgeFlowHost(vm: UrgeViewModel, modifier: Modifier = Modifier) {
             if (state.choosing) UrgeChoice(vm, owner)
         } else {
             val screen = if (state.deepDive != DeepDiveUi.Idle) UrgeScreen.DEEP_DIVE else UrgeFlowRules.screenFor(entry, now)
-            when (screen) {
+            if (UrgeFlowRules.stepsAsideForPattern(state.holdPrivate, screen)) {
+                // Started from the locked screen: the private steps wait for the pattern.
+                LaunchedEffect(entry.id) { vm.leaveForLock() }
+            } else when (screen) {
                 UrgeScreen.BREATHING -> BreathingScreen(
                     startsAt = entry.lockStartedAt ?: entry.createdAt,
                     endsAt = entry.lockEndedAt ?: now,

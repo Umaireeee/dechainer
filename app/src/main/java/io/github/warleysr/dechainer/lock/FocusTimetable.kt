@@ -40,17 +40,17 @@ object FocusTimetable {
      * several are open the one that ends last is taken, and the others are settled with it: one
      * block covers them.
      *
-     * [urgeEndsAt] and the two flags come from the other locks (5.3); the rest day is Phase 5's.
+     * [urgeEndsAt] comes from the urge lock (5.3); [restDay] is today's declared rest day (D18).
      */
     fun due(
         now: Long, zone: ZoneId, schedules: List<BlockSchedule>, settledKeys: Set<String>,
-        punishmentActive: Boolean, restDay: Boolean, urgeEndsAt: Long
+        restDay: Boolean, urgeEndsAt: Long
     ): FocusDue? {
         val window = openWindows(now, zone, schedules)
             .filter { it.key !in settledKeys }
             .maxByOrNull { it.endsAt } ?: return null
         val decision = FocusStartRule.decide(
-            now, window.endsAt, punishmentActive, restDay, urgeEndsAt, minLeftMs = Rules.FOCUS_BLOCK_MIN_MS
+            now, window.endsAt, restDay, urgeEndsAt, minLeftMs = Rules.FOCUS_BLOCK_MIN_MS
         )
         return FocusDue(window, decision)
     }

@@ -9,6 +9,7 @@ import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.DnsGuard
+import io.github.warleysr.dechainer.day.DayEngine
 import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.ScheduleRepository
@@ -51,7 +52,7 @@ object LockEngine {
     private val _status = MutableStateFlow<BrickStatus?>(null)
 
     /**
-     * What holds the phone right now (an urge lock, a focus block, a punishment day), for the lock
+     * What holds the phone right now (an urge lock or a focus block), for the lock
      * screen and the pin; null when nothing does. Every pass publishes the plan's answer, and
      * [refreshStatus] fills it in at once, before any pass has run.
      */
@@ -128,7 +129,10 @@ object LockEngine {
             // The wake-up reading is written down before anything is decided on it.
             val now = TrustedClock.checkpoint(ctx)
             val zone = TrustedClock.zone()
-            // The focus session's own clock first (prompt and check-in timeouts, the reset, a FOCUS
+            // The daily checklist first: it closes the days that ended and arms the evening and midnight
+            // wake-ups. It locks nothing, and it must know today's rest day before a FOCUS entry starts.
+            DayEngine.runPass(ctx, now)
+            // The focus session's own clock next (prompt and check-in timeouts, the reset, a FOCUS
             // timetable entry that is due): it can start or end a block, which the plan below must see.
             try {
                 FocusRunner.advance(ctx, now)
@@ -171,13 +175,11 @@ object LockEngine {
                 LockMode.FOCUS_BLOCK -> R.string.focus_brick_source
                 LockMode.FOCUS_SESSION -> R.string.focus_lock_source
                 LockMode.URGE_LOCK -> R.string.urge_lock_source
-                LockMode.PUNISHMENT_DAY -> R.string.punishment_day_source
             }
         )
-        // The urge lock and the punishment day come from `app_state`; they are known on any phone, so
-        // the settings freeze and the status never depend on Device Owner being asked.
+        // The urge lock comes from `app_state`; it is known on any phone, so the status never
+        // depends on Device Owner being asked.
         val urge = LockStateStore.urge(ctx)
-        val punishment = LockStateStore.punishment(ctx)
 
         Pomodoro.ensureLoaded(ctx)
         val st = Pomodoro.state.value
@@ -189,7 +191,7 @@ object LockEngine {
                     deviceOwner = false, schedules = schedules, phone = none,
                     // Only so an ended block gets closed; without Device Owner nothing is applied.
                     focus = FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L, wakeAt = FocusRunner.nextWake(ctx)),
-                    urge = urge, punishment = punishment
+                    urge = urge
                 ),
                 ScheduleEnforcer.ApplyExtras(emptySet(), null, ::label)
             )
@@ -218,7 +220,7 @@ object LockEngine {
         val limits = LimitInput(limitStatus.reached, TimeLimits.midnightMillis(now))
 
         return Gathered(
-            LockState(true, schedules, phone, focus, limits, urge, punishment),
+            LockState(true, schedules, phone, focus, limits, urge),
             ScheduleEnforcer.ApplyExtras(protectedPkgs, limitStatus.nextCheckDelayMs, ::label)
         )
     }
@@ -240,8 +242,7 @@ object LockEngine {
                 LockPlanner.quickStatus(
                     TrustedClock.now(ctx),
                     FocusInput(brickEndsAt = if (st.inBlock) st.blockEndsAt else 0L, allowedApps = Pomodoro.allowedApps.value),
-                    LockStateStore.urge(ctx),
-                    LockStateStore.punishment(ctx)
+                    LockStateStore.urge(ctx)
                 )
             }
         } catch (e: Exception) {
@@ -252,13 +253,13 @@ object LockEngine {
         return status
     }
 
-    /** True while an urge lock, a focus block or a punishment day holds the phone. */
+    /** True while an urge lock or a focus block holds the phone. */
     fun brickRunning(context: Context): Boolean = refreshStatus(context) != null
 
     /**
      * The owner asked for an urge lock (the panic button, the Quick Settings tile, the door; blueprint
      * 5.2). The rule is [UrgeLockRule]: ten minutes, never extended by a second tap, no second lock
-     * inside a focus block or a punishment day. The lock is stored and shown before this returns and
+     * inside a focus block. The lock is stored and shown before this returns and
      * before the caller does anything else: it never waits on the network. Returns what happened.
      */
     fun startUrgeLock(context: Context): UrgeStart = startUrgeLock(context, Rules.URGE_LOCK_MS)
@@ -272,7 +273,6 @@ object LockEngine {
                 now = now,
                 runningUrgeEndsAt = LockStateStore.urge(ctx).endsAt,
                 focusBlockActive = Pomodoro.brickActive(),
-                punishmentActive = LockStateStore.punishment(ctx).activeAt(now),
                 deviceOwner = isDeviceOwner(ctx),
                 lockMs = lockMs
             )
@@ -319,12 +319,8 @@ object LockEngine {
         _status.value = null
         // The session is closed on record as ended by the system, so it is not taken for the owner's doing.
         bounded("focus session record") { FocusRunner.abort(ctx) }
-        // The urge lock is dropped and a punishment day is ended on record (by the system, so it is not
-        // taken for the owner's doing). Without that the next pass would put the brick straight back.
-        bounded("urge lock and punishment records") {
-            LockStateStore.clearUrge(ctx)
-            LockStateStore.endPunishmentBySystem(ctx, TrustedClock.now(ctx))
-        }
+        // The urge lock is dropped. Without that the next pass would put the brick straight back.
+        bounded("urge lock record") { LockStateStore.clearUrge(ctx) }
         bounded("home screen") { ScheduleEnforcer.releaseBrickHome(ctx) }
         bounded("restrictions and apps") { ScheduleEnforcer.releaseAll(ctx) }
     }
@@ -348,16 +344,6 @@ object LockEngine {
     fun debugStartUrgeLock(context: Context, minutes: Int): UrgeStart? {
         if (!BuildConfig.DEBUG) return null
         return startUrgeLock(context, minutes * 60_000L)
-    }
-
-    /** Debug builds only: a punishment day of [minutes] starting now, recorded like a real one. A release build refuses. */
-    fun debugStartPunishment(context: Context, minutes: Int) {
-        if (!BuildConfig.DEBUG) return
-        val ctx = context.applicationContext
-        val now = TrustedClock.checkpoint(ctx)
-        LockStateStore.setPunishment(ctx, PunishmentInput(now, now + minutes * 60_000L), "debug")
-        refreshStatus(ctx)
-        requestSync(ctx)
     }
 
     /**

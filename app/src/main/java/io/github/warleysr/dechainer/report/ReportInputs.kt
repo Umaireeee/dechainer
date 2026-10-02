@@ -41,7 +41,7 @@ object ReportInputs {
             checkinNo = checks.count { it == CheckinAnswer.NO },
             goalsDone = goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE },
             goalsTotal = goals.size,
-            punishmentDays = data.days.count { it.kind == io.github.warleysr.dechainer.day.DayKind.PUNISHMENT },
+            daysMissed = data.days.count { it.violation != null },
             advice = advice.take(MAX_ADVICE)
         )
     }
@@ -51,7 +51,7 @@ object ReportInputs {
         .put("focusSessions", s.focusSessions).put("focusMinutes", s.focusMinutes)
         .put("checkinYes", s.checkinYes).put("checkinNo", s.checkinNo)
         .put("goalsDone", s.goalsDone).put("goalsTotal", s.goalsTotal)
-        .put("punishmentDays", s.punishmentDays).put("advice", s.advice)
+        .put("daysMissed", s.daysMissed).put("advice", s.advice)
         .toString()
 
     /** Forgiving: a stored value that does not parse is null, and nothing is written back from a failed read. */
@@ -61,7 +61,7 @@ object ReportInputs {
         return ReportSummary(
             o.optInt("urges"), o.optInt("slips"), o.optInt("focusSessions"), o.optInt("focusMinutes"),
             o.optInt("checkinYes"), o.optInt("checkinNo"), o.optInt("goalsDone"), o.optInt("goalsTotal"),
-            o.optInt("punishmentDays"), o.optString("advice", "")
+            o.optInt("daysMissed"), o.optString("advice", "")
         )
     }
 
@@ -69,9 +69,9 @@ object ReportInputs {
      * The "Next week" section of a finished report, kept in its summary so the next report can say
      * whether the advice helped. Empty when the report has no such section.
      */
-    fun adviceOf(markdown: String): String {
+    fun adviceOf(markdown: String, heading: String = "next week"): String {
         val lines = markdown.lines()
-        val start = lines.indexOfFirst { it.trim().startsWith("#") && it.contains("next week", ignoreCase = true) }
+        val start = lines.indexOfFirst { it.trim().startsWith("#") && it.contains(heading, ignoreCase = true) }
         if (start < 0) return ""
         val body = lines.drop(start + 1).takeWhile { !it.trim().startsWith("#") }
         return body.joinToString("\n").trim().take(MAX_ADVICE)
@@ -87,7 +87,13 @@ object ReportInputs {
         appendLine("TOTALS")
         appendLine("urges: ${s.urges}; slips: ${s.slips}")
         appendLine("focus sessions: ${s.focusSessions}; focused minutes: ${s.focusMinutes}; check-in yes: ${s.checkinYes}; check-in no: ${s.checkinNo}")
-        appendLine("checklist goals done: ${s.goalsDone} of ${s.goalsTotal}; punishment days: ${s.punishmentDays}")
+        appendLine("checklist goals done: ${s.goalsDone} of ${s.goalsTotal}; days that fell short of the plan: ${s.daysMissed}")
+        appendLine(ReportPatterns.ratesLine(s))
+        appendLine(ReportPatterns.daysLine(data.days))
+
+        appendLine()
+        appendLine("PATTERNS")
+        ReportPatterns.lines(data.urges, data.days).forEach { appendLine(it) }
 
         appendLine()
         appendLine("URGES AND SLIPS")
@@ -112,8 +118,8 @@ object ReportInputs {
         if (data.days.isEmpty()) appendLine("no days recorded")
         data.days.sortedBy { it.date }.forEach { d ->
             val done = d.goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE }
-            val why = d.violation?.let { ", because ${it.name.lowercase()}" }.orEmpty()
-            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day$why; $done of ${d.goals.size} goals done; focus minutes that day: ${d.focusMinutes}")
+            val why = d.violation?.let { "; fell short: ${it.name.lowercase()}" }.orEmpty()
+            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day; $done of ${d.goals.size} goals done$why; focus minutes that day: ${d.focusMinutes}")
             d.goals.forEach { g ->
                 val target = if (g.type == io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES && g.targetMinutes != null) " ${g.targetMinutes} min" else ""
                 appendLine("    [${g.state.name.lowercase()}] (${g.type.name.lowercase()}$target) ${clip(g.text, MAX_GOAL)}")
@@ -125,7 +131,7 @@ object ReportInputs {
         if (data.past.isEmpty()) appendLine("none")
         data.past.forEach { p ->
             val x = p.summary
-            appendLine("- ${p.firstDate} to ${p.lastDate}: urges ${x.urges}, slips ${x.slips}, focus ${x.focusMinutes} min in ${x.focusSessions} sessions, check-in yes ${x.checkinYes} no ${x.checkinNo}, goals ${x.goalsDone}/${x.goalsTotal}, punishment days ${x.punishmentDays}")
+            appendLine("- ${p.firstDate} to ${p.lastDate}: urges ${x.urges}, slips ${x.slips}, focus ${x.focusMinutes} min in ${x.focusSessions} sessions, check-in yes ${x.checkinYes} no ${x.checkinNo}, goals ${x.goalsDone}/${x.goalsTotal}, days short of plan ${x.daysMissed}")
             if (x.advice.isNotBlank()) appendLine("  advice given then: ${clip(x.advice, MAX_ADVICE)}")
         }
     }.trimEnd()

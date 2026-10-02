@@ -30,8 +30,8 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.day.DayEngine
 
 /**
- * The last step of setup (blueprint 11, step 9 and 6.4): the checklist rules in plain words, and one
- * explicit confirmation. Enforcement starts when it is confirmed, not at a first plan.
+ * The last step of setup (blueprint 11, step 9 and 6.4): how the daily plan works, in plain words,
+ * and one confirmation. Days are recorded from then on; nothing here ever locks the phone.
  */
 @Composable
 fun RulesOnboarding(paddingValues: PaddingValues, onConfirmed: () -> Unit) {
@@ -44,8 +44,8 @@ fun RulesOnboarding(paddingValues: PaddingValues, onConfirmed: () -> Unit) {
         Text(stringResource(R.string.rules_title), style = MaterialTheme.typography.headlineSmall)
         Text(stringResource(R.string.rules_intro), style = MaterialTheme.typography.bodyLarge)
         listOf(
-            R.string.rules_plan, R.string.rules_review, R.string.rules_punishment, R.string.rules_rest,
-            R.string.rules_first_evening, R.string.rules_loosening
+            R.string.rules_plan, R.string.rules_review, R.string.rules_record, R.string.rules_rest,
+            R.string.rules_loosening
         ).forEach { Text("• " + stringResource(it), style = MaterialTheme.typography.bodyLarge) }
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(understood, role = Role.Checkbox) { understood = it },

@@ -8,8 +8,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * What may be deleted, and when (blueprint 6.4 and 6.6). Pure. Deleting data never cancels, resets
- * or shortens a punishment: punishment state lives in `app_state` and `day`, which none of this touches.
+ * What may be deleted, and when (blueprint 6.4 and 6.6). Pure. Deleting data never touches `app_state`
+ * or the `day` rows, so the daily results the progress graphs read stay.
  */
 object ReportRules {
     /**

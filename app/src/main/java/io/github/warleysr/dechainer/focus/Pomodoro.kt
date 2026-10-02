@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer.focus
 
 import io.github.warleysr.dechainer.lock.LockStateStore
-import io.github.warleysr.dechainer.lock.SettingsFreeze
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -179,8 +178,6 @@ object Pomodoro {
      */
     fun startBlock(context: Context, endsAt: Long, phases: Boolean = true): Boolean {
         ensureLoaded(context)
-        // A punishment day is no time to start another lock; the Focus screen is not one of the things that stay available (6.4).
-        if (LockStateStore.punishment(context).activeAt(now())) return false
         val left = endsAt - now()
         // Blueprint 5.2: a block is at least ten minutes and at most eight hours.
         if (left < Rules.FOCUS_BLOCK_MIN_MS || left > Rules.FOCUS_BLOCK_MAX_MS) return false
@@ -253,7 +250,6 @@ object Pomodoro {
     }
 
     fun updateSettings(context: Context, new: PomodoroSettings) {
-        if (!SettingsFreeze.allowWrite(context, "focus settings")) return
         ensureLoaded(context)
         val s = new.clamped()
         synchronized(lock) {
@@ -273,7 +269,6 @@ object Pomodoro {
     }
 
     fun toggleAllowedApp(context: Context, pkg: String) {
-        if (!SettingsFreeze.allowWrite(context, "focus allow list")) return
         ensureLoaded(context)
         synchronized(lock) {
             _allowed.value = if (pkg in _allowed.value) _allowed.value - pkg else _allowed.value + pkg
