@@ -47,6 +47,18 @@ class AiCalls(
         return markdown(chat(config, req.system, req.user, AiLimits.WEEKLY))
     }
 
+    /** The monthly report as Markdown, from derived data only. */
+    fun monthlyReport(config: AiConfig, derivedInputs: String): MarkdownOutcome {
+        val req = AiPrompts.monthlyReport(derivedInputs)
+        return markdown(chat(config, req.system, req.user, AiLimits.LONG_REPORT))
+    }
+
+    /** The yearly report as Markdown, from derived data only. */
+    fun yearlyReport(config: AiConfig, derivedInputs: String): MarkdownOutcome {
+        val req = AiPrompts.yearlyReport(derivedInputs)
+        return markdown(chat(config, req.system, req.user, AiLimits.LONG_REPORT))
+    }
+
     private fun markdown(r: AiResult): MarkdownOutcome = when (r) {
         // A reply that is not Markdown is a failed call, so the note is kept and tried again.
         is AiResult.Ok -> MarkdownReply.clean(r.text)?.let { MarkdownOutcome.Ok(it) } ?: MarkdownOutcome.Failed(AiError.EMPTY)

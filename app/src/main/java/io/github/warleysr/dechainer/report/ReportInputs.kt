@@ -88,6 +88,12 @@ object ReportInputs {
         appendLine("urges: ${s.urges}; slips: ${s.slips}")
         appendLine("focus sessions: ${s.focusSessions}; focused minutes: ${s.focusMinutes}; check-in yes: ${s.checkinYes}; check-in no: ${s.checkinNo}")
         appendLine("checklist goals done: ${s.goalsDone} of ${s.goalsTotal}; days that fell short of the plan: ${s.daysMissed}")
+        appendLine(ReportPatterns.ratesLine(s))
+        appendLine(ReportPatterns.daysLine(data.days))
+
+        appendLine()
+        appendLine("PATTERNS")
+        ReportPatterns.lines(data.urges, data.days).forEach { appendLine(it) }
 
         appendLine()
         appendLine("URGES AND SLIPS")
@@ -112,8 +118,8 @@ object ReportInputs {
         if (data.days.isEmpty()) appendLine("no days recorded")
         data.days.sortedBy { it.date }.forEach { d ->
             val done = d.goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE }
-            val why = d.violation?.let { ", because ${it.name.lowercase()}" }.orEmpty()
-            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day$why; $done of ${d.goals.size} goals done; focus minutes that day: ${d.focusMinutes}")
+            val why = d.violation?.let { "; fell short: ${it.name.lowercase()}" }.orEmpty()
+            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day; $done of ${d.goals.size} goals done$why; focus minutes that day: ${d.focusMinutes}")
             d.goals.forEach { g ->
                 val target = if (g.type == io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES && g.targetMinutes != null) " ${g.targetMinutes} min" else ""
                 appendLine("    [${g.state.name.lowercase()}] (${g.type.name.lowercase()}$target) ${clip(g.text, MAX_GOAL)}")

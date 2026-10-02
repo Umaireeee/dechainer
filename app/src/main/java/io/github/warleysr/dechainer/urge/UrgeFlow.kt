@@ -267,7 +267,14 @@ class UrgeFlow(
             at = Instant.ofEpochMilli(e.createdAt).atZone(TrustedClock.zone()),
             note = note,
             answers = UrgeJson.answersFromJson(e.answersJson),
-            flagged = Safety.needsSupport(note)
+            flagged = Safety.needsSupport(note),
+            // The last month as earlier deep dives summed it up, so a repeat is named and an old plan followed up.
+            history = runCatching {
+                io.github.warleysr.dechainer.ai.DeepDiveHistory.from(repo.all(), e.id, e.createdAt, TrustedClock.zone())
+            }.getOrElse {
+                Timber.w(it, "History not readable; the deep dive goes without it")
+                io.github.warleysr.dechainer.ai.DeepDiveHistory.NONE
+            }
         )
     }
 

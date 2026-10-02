@@ -505,7 +505,7 @@
     <string name="urge_contact_name">Name</string>
     <string name="urge_contact_number">Phone number</string>
     <string name="ai_section">AI</string>
-    <string name="ai_privacy">Only what you write about an urge goes to the AI you choose: your note and your answers, for the questions and the deep dive. The note is deleted from this phone once its deep dive exists. Nothing else about you is sent. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
+    <string name="ai_privacy">What goes to the AI you choose: for an urge, your note and your answers, with a short summary of your last month (when earlier urges happened, and the earliest link and plan their deep dives found). The note is deleted from this phone once its deep dive exists. For the weekly, monthly and yearly reports: counts, times, answers, deep dives, focus sessions and your goals, never a note. Your reason and the person to call never leave the phone. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
     <string name="ai_provider">Provider</string>
     <string name="ai_key_label">API key</string>
     <string name="ai_key_none">No key is saved.</string>
@@ -600,7 +600,7 @@
     <!-- Reports and data tools (Phase 6) -->
     <string name="reports_tab">Reports</string>
     <string name="data_title">Your data</string>
-    <string name="report_channel">Weekly report</string>
+    <string name="report_channel">Reports</string>
     <string name="report_ready">Your weekly report is ready</string>
     <string name="reports_empty">The first report is made when your first week with something recorded has ended. It needs an AI key, your consent and a connection; if the phone was off, it is made the next time it is on and online.</string>
     <string name="reports_progress">Daily checklist results</string>

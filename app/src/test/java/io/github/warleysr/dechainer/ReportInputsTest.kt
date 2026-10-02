@@ -69,7 +69,7 @@ class ReportInputsTest {
         val text = ReportInputs.build(data(past = listOf(past)))
         assertTrue(text.contains("[done] (manual) Read chapter 4"))
         assertTrue(text.contains("[not_done] (focus_minutes 90 min) Focus"))
-        assertTrue(text.contains("normal day, because under_half; 1 of 2 goals done; focus minutes that day: 50"))
+        assertTrue(text.contains("normal day; 1 of 2 goals done; fell short: under_half; focus minutes that day: 50"))
         assertTrue(text.contains("advice given then: Phone out of the bedroom."))
         assertTrue(text.contains("check-in yes: 1; check-in no: 1"))
     }
