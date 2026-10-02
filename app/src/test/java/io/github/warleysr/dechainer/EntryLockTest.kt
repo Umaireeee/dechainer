@@ -6,7 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Pins the lock at the front door: when it asks, how long a password may be, and the wait after wrong tries. */
+/** Pins the lock at the front door: when it asks, and the wait after wrong tries. */
 class EntryLockTest {
     private fun required(
         enabled: Boolean = true, recoverySet: Boolean = true,
@@ -37,13 +37,6 @@ class EntryLockTest {
 
     /** Uptime restarts at zero on reboot: a backwards clock locks, it never opens. */
     @Test fun aBackwardsClockRelocks() = assertTrue(EntryLock.shouldRelock(leftAt = 9_000_000, now = 100))
-
-    @Test fun aPasswordIsFourToSixtyFourCharacters() {
-        assertFalse(EntryLock.isValidPassword("abc"))
-        assertTrue(EntryLock.isValidPassword("abcd"))
-        assertTrue(EntryLock.isValidPassword("x".repeat(64)))
-        assertFalse(EntryLock.isValidPassword("x".repeat(65)))
-    }
 
     @Test fun theFirstFiveWrongTriesCostNothingThenTheWaitDoublesToACap() {
         assertEquals(0L, EntryLock.waitAfterFailures(4))

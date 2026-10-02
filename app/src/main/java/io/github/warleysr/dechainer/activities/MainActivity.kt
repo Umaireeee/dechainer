@@ -43,6 +43,7 @@ import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.screens.apps.AppsScreen
 import io.github.warleysr.dechainer.screens.common.EntryGate
+import io.github.warleysr.dechainer.screens.common.PrivateArea
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import io.github.warleysr.dechainer.security.EntryLock
 import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
@@ -115,7 +116,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         // Back after more than a minute away: ask again. A short trip (a call, the shade) does not.
-        if (EntryLock.shouldRelock(leftAt, android.os.SystemClock.elapsedRealtime())) entryUnlocked = false
+        if (EntryLock.shouldRelock(leftAt, android.os.SystemClock.elapsedRealtime())) {
+            entryUnlocked = false
+            SecurityManager.closePrivate()
+        }
         leftAt = 0L
     }
 
@@ -278,7 +282,7 @@ class MainActivity : ComponentActivity() {
 
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
 
-                // Before anything else: opening the app asks for the opening password. A brick and the
+                // Before anything else: opening the app asks for the opening pattern. A brick and the
                 // urge flow are never behind it, so the Urge button always works.
                 val gateShown = EntryLock.required(
                     enabled = SecurityManager.isEntryLockEnabled(context),
@@ -334,7 +338,7 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when {
-                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true })
+                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.openChoice(UrgeSource.HOME) })
 
                         !recoverySet -> SetupRecovery(innerPadding)
 
@@ -382,11 +386,13 @@ class MainActivity : ComponentActivity() {
                                     Route.FOCUS -> FocusScreen(onOpenLog = { navViewModel.navigateTo(Route.FOCUS_LOG) })
                                     Route.FOCUS_LOG -> FocusLogScreen()
                                     Route.TODAY -> io.github.warleysr.dechainer.screens.TodayScreen()
-                                    Route.REPORTS -> io.github.warleysr.dechainer.screens.ReportsScreen(
-                                        openReportId = openReportRequest.longValue.takeIf { it >= 0 },
-                                        onOpenData = { navViewModel.navigateTo(Route.DATA) }
-                                    )
-                                    Route.DATA -> io.github.warleysr.dechainer.screens.DataScreen()
+                                    Route.REPORTS -> PrivateArea {
+                                        io.github.warleysr.dechainer.screens.ReportsScreen(
+                                            openReportId = openReportRequest.longValue.takeIf { it >= 0 },
+                                            onOpenData = { navViewModel.navigateTo(Route.DATA) }
+                                        )
+                                    }
+                                    Route.DATA -> PrivateArea { io.github.warleysr.dechainer.screens.DataScreen() }
                                     Route.APPS -> AppsScreen()
                                     Route.SCHEDULES -> SchedulesScreen()
                                     Route.SCHEDULE_EDITOR -> ScheduleEditorScreen()

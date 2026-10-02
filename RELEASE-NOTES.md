@@ -6,7 +6,7 @@ One app, one lock engine, one store. The Urge Journal is merged in and its modul
 - Focus sessions (usual, special, reset, plain timer) and a weekly timetable with FOCUS entries.
 - The daily checklist, rest day and punishment day; settings freeze on a punishment day.
 - Weekly reports, the Reports screen, delete, backup and wipe.
-- New: **Lock when opening.** The app asks for its own password (not your phone's lock, not the recovery code) before it shows anything, on a cold start and after a minute away. A running lock and the Urge flow are never behind it. Wrong tries slow down. Settings, Lock when opening (off or a new password needs the recovery code).
+- New: **Lock when opening.** The app asks for its own pattern (not your phone's lock, not the recovery code) before it shows anything, on a cold start and after a minute away. The opening screen has an Urge button that starts the lock without the pattern. Urge entries, deep dives and reports ask for the pattern again. Wrong tries slow down. Settings, Lock when opening (off or a new pattern needs the recovery code).
 - Removed: the door to the old journal, the old biometric entry gate (replaced by the one above) and the maths and word challenges, subjects, targets, lectures, the focus chart and CSV, the old migrations, and the journal module.
 - Three notification channels: Weekly report, Focus, Evening checklist.
 - Install over the old Déchaîner (same app id and key), then uninstall the Urge Journal. The journal's data is not migrated.

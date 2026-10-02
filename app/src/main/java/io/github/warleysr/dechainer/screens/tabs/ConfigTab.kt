@@ -90,7 +90,7 @@ fun ConfigTab(
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
     var entryLock by remember { mutableStateOf(SecurityManager.isEntryLockEnabled(context)) }
-    var showNewPasswordDialog by remember { mutableStateOf(false) }
+    var showNewPatternDialog by remember { mutableStateOf(false) }
 
     var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
     RepeatWhileVisible(60_000) {
@@ -230,14 +230,14 @@ fun ConfigTab(
                         Switch(
                             checked = entryLock,
                             onCheckedChange = { on ->
-                                // Turning it on tightens, so it is one tap (a password is chosen first if
+                                // Turning it on tightens, so it is one tap (a pattern is drawn first if
                                 // there is none). Turning it off needs the code.
                                 if (on) {
-                                    if (SecurityManager.hasEntryPassword(context)) {
+                                    if (SecurityManager.hasEntryPattern(context)) {
                                         entryLock = true
                                         SecurityManager.setEntryLockEnabled(context, true)
                                     } else {
-                                        showNewPasswordDialog = true
+                                        showNewPatternDialog = true
                                     }
                                 } else {
                                     recoveryGate.run {
@@ -257,8 +257,8 @@ fun ConfigTab(
                     supportingContent = { Text(stringResource(R.string.entry_change_desc)) },
                     leadingContent = { IconTile(Icons.Outlined.VpnKey) },
                     trailingContent = { Chevron() },
-                    // A new opening password replaces the old one, so it needs the code like any loosening.
-                    modifier = Modifier.clickable { recoveryGate.run { showNewPasswordDialog = true } }
+                    // A new opening pattern replaces the old one, so it needs the code like any loosening.
+                    modifier = Modifier.clickable { recoveryGate.run { showNewPatternDialog = true } }
                 ) }
             }
             item {
@@ -428,14 +428,14 @@ fun ConfigTab(
         )
     }
 
-    if (showNewPasswordDialog) {
-        io.github.warleysr.dechainer.screens.common.ChangePasswordDialog(
+    if (showNewPatternDialog) {
+        io.github.warleysr.dechainer.screens.common.ChangePatternDialog(
             onDone = {
-                showNewPasswordDialog = false
+                showNewPatternDialog = false
                 entryLock = true
                 SecurityManager.setEntryLockEnabled(context, true)
             },
-            onDismiss = { showNewPasswordDialog = false }
+            onDismiss = { showNewPatternDialog = false }
         )
     }
 

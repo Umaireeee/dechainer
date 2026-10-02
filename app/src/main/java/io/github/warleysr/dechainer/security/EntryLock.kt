@@ -1,10 +1,10 @@
 package io.github.warleysr.dechainer.security
 
-/** What came of one try at the opening password. */
+/** What came of one try at the opening pattern. */
 enum class EntryAttempt { OK, WRONG, WAIT }
 
 /**
- * The lock at the front door: opening Déchaîner asks for the app's own password first. It is not
+ * The lock at the front door: opening Déchaîner asks for the app's own pattern first. It is not
  * the phone's screen lock and not the recovery code (that one belongs with a trusted person).
  *
  * Pure rules only (no Android types), so they are unit tested. The screen that asks lives in
@@ -15,15 +15,10 @@ object EntryLock {
     /** Leaving for less than this (a call, the notification shade) does not lock the app again. */
     const val GRACE_MS = 60_000L
 
-    const val MIN_LENGTH = 4
-    const val MAX_LENGTH = 64
-
     /** Wrong tries allowed before the waiting starts. */
     const val FREE_TRIES = 5
     private const val FIRST_WAIT_MS = 30_000L
     private const val MAX_WAIT_MS = 15 * 60_000L
-
-    fun isValidPassword(password: String): Boolean = password.length in MIN_LENGTH..MAX_LENGTH
 
     /**
      * True when the app was left long enough ago to lock again. [leftAt] is 0 when it was never
