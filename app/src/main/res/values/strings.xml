@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name" translatable="false">Déchaîner</string>
-    <string name="attention">Attention!</string>
+    <string name="attention">Before you go on</string>
     <string name="self_lock_risk">This app uses Device Owner privileges to block system components and control access to other apps. There is a risk of "locking yourself out" and being unable to regain access to the blocked features. To prevent this, you must have a recovery code. This code can be generated below and should be saved in a secure location—preferably in physical form, on paper.</string>
     <string name="confirm_key_saved">I confirm that I have saved the code</string>
     <string name="proceed">Proceed</string>
@@ -13,7 +13,7 @@
     <string name="device_owner_description">Needed to suspend apps and apply rules</string>
     <string name="dns_description">Blocks adult sites across the whole phone</string>
     <string name="dns_settings">Private DNS</string>
-    <string name="get_owner_privileges_first">Get owner privileges first!</string>
+    <string name="get_owner_privileges_first">Get owner privileges first.</string>
     <string name="granted">Granted</string>
     <string name="not_granted">Not granted</string>
     <string name="shizuku_not_installed">Shizuku is not installed. It is required to obtain owner privileges.</string>
@@ -24,8 +24,8 @@
     <string name="ask_shizuku_permission">Ask permission</string>
     <string name="already_owner">There is already another app with owner privileges on this device. Only one app can have this privilege, confirm that you want to remove the privilege from the app below:</string>
     <string name="get_owner_privileges">Grant privileges</string>
-    <string name="privileges_description">All set! To finish, click the button below to grant device owner privileges.</string>
-    <string name="remove_privileges_description">Privileges granted! To remove, click the button below.</string>
+    <string name="privileges_description">Almost done. To finish, tap the button below to grant device owner privileges.</string>
+    <string name="remove_privileges_description">Privileges granted. To remove them, tap the button below.</string>
     <string name="remove_privileges">Remove privileges</string>
     <string name="remove_accounts">Remove accounts</string>
     <string name="no_account_allowed">There can be no accounts on the device. Remove all accounts below:</string>
@@ -265,14 +265,6 @@
     <plurals name="proof_card_text">
         <item quantity="one">%d minute of focus. Write what you studied and what you remember.</item>
         <item quantity="other">%d minutes of focus. Write what you studied and what you remember.</item>
-    </plurals>
-    <plurals name="star_minutes">
-        <item quantity="one">%d minute of focus</item>
-        <item quantity="other">%d minutes of focus</item>
-    </plurals>
-    <plurals name="today_streak">
-        <item quantity="one">%d day of study in a row</item>
-        <item quantity="other">%d days of study in a row</item>
     </plurals>
     <!-- Study pings -->
     <!-- Screen explainers (the ⓘ in the top bar) -->
@@ -661,4 +653,13 @@
     <string name="rules_loosening">Making a rule stricter is one tap. Loosening anything needs your recovery code and the unlock delay, and never works on a running lock.</string>
     <string name="rules_understood">I have read this and I want these rules.</string>
     <string name="rules_confirm">Start the rules</string>
+    <!-- The lock at the front door -->
+    <string name="entry_gate_title">Déchaîner is locked</string>
+    <string name="entry_gate_text">Use your phone\'s screen lock to open it.</string>
+    <string name="entry_gate_unlock">Unlock</string>
+    <string name="entry_gate_prompt_title">Open Déchaîner</string>
+    <string name="entry_gate_prompt_text">Confirm your screen lock to continue.</string>
+    <string name="entry_lock_title">Lock when opening</string>
+    <string name="entry_lock_desc">Ask for your phone\'s screen lock each time you open the app. Turning it off needs the recovery code.</string>
+    <string name="entry_lock_no_screen_lock">Set a screen lock on your phone first. Without one there is nothing to ask for.</string>
 </resources>

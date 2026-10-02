@@ -42,7 +42,10 @@ import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.screens.apps.AppsScreen
+import io.github.warleysr.dechainer.screens.common.EntryGate
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
+import io.github.warleysr.dechainer.screens.common.deviceHasScreenLock
+import io.github.warleysr.dechainer.security.EntryLock
 import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
 import io.github.warleysr.dechainer.screens.focus.FocusLogScreen
 import io.github.warleysr.dechainer.screens.focus.FocusScreen
@@ -96,6 +99,25 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             timber.log.Timber.w(e, "Brick pin not changed")
         }
+    }
+
+    /**
+     * The lock at the front door (see [EntryLock]). False on every cold start, so opening the app
+     * always asks first. Kept in the activity, not in Compose state, so a rotation does not ask again.
+     */
+    private var entryUnlocked by mutableStateOf(false)
+    private var leftAt = 0L
+
+    override fun onStop() {
+        super.onStop()
+        leftAt = android.os.SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Back after more than a minute away: ask again. A short trip (a call, the shade) does not.
+        if (EntryLock.shouldRelock(leftAt, android.os.SystemClock.elapsedRealtime())) entryUnlocked = false
+        leftAt = 0L
     }
 
     override fun onResume() {
@@ -257,8 +279,19 @@ class MainActivity : ComponentActivity() {
 
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
 
+                // Before anything else: opening the app asks for the phone's screen lock. A brick and the
+                // urge flow are never behind it, so the Urge button always works.
+                val gateShown = EntryLock.required(
+                    enabled = SecurityManager.isEntryLockEnabled(context),
+                    recoverySet = recoverySet,
+                    deviceSecure = deviceHasScreenLock(context),
+                    unlocked = entryUnlocked,
+                    brick = brick,
+                    urgeActive = urge.active
+                )
+
                 // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
-                val showTopBar = recoverySet && !urge.active && (focusBrick || route != Route.HOME)
+                val showTopBar = recoverySet && !gateShown && !urge.active && (focusBrick || route != Route.HOME)
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -303,6 +336,8 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when {
+                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true })
+
                         !recoverySet -> SetupRecovery(innerPadding)
 
                         !rulesConfirmed && !urge.active && lockedHome == null && !brick ->

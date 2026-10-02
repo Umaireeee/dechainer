@@ -93,6 +93,18 @@ class SecurityManager {
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
         }
 
+        private const val KEY_ENTRY_LOCK = "entry_lock"
+
+        /** Whether opening the app asks for the phone's screen lock first. On unless switched off. */
+        fun isEntryLockEnabled(context: Context): Boolean =
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).getBoolean(KEY_ENTRY_LOCK, true)
+
+        /** Switching it off loosens the lock, so callers ask for the recovery code first. */
+        fun setEntryLockEnabled(context: Context, enabled: Boolean) {
+            if (!SettingsFreeze.allowWrite(context, "entry lock")) return
+            context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit { putBoolean(KEY_ENTRY_LOCK, enabled) }
+        }
+
         fun generateRecoveryCode(length: Int = 16): String {
             val random = SecureRandom()
             return (1..length)
