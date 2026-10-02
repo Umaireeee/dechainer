@@ -52,12 +52,10 @@ class ReportService(
         return anchor
     }
 
-    /** Everything period [k] is made from. Derived data only: see [ReportData]. */
-    fun load(anchor: LocalDate, k: Int, zone: ZoneId): ReportData {
-        val from = WeekMath.periodStart(anchor, k, zone)
-        val to = WeekMath.periodEnd(anchor, k, zone)
-        val first = WeekMath.startDate(anchor, k)
-        val last = WeekMath.lastDate(anchor, k)
+    /** The urges, sessions and days between two local dates, both inclusive. Derived data only. */
+    fun loadRange(first: LocalDate, last: LocalDate, zone: ZoneId): ReportData {
+        val from = DayWindow.startOf(first, zone)
+        val to = DayWindow.endOf(last, zone)
 
         val urges = Store.urgeEntries(ctx).between(from, to).map { ReportInputs.urgeFact(it, zone) }
 
@@ -70,8 +68,9 @@ class ReportService(
         }
 
         val days = Store.days(ctx)
+        val dayRows = days.daysBetween(first, last).associateBy { it.date }
         val dayFacts = generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.mapNotNull { date ->
-            val row = days.day(date)
+            val row = dayRows[date]
             val goals = days.goals(date)
             if (row == null && goals.isEmpty()) null
             else DayFact(
@@ -82,6 +81,14 @@ class ReportService(
                 focusMinutes = sessions.filter { it.date == date }.sumOf { it.minutes }
             )
         }.toList()
+        return ReportData(first, last, urges, sessions, dayFacts, emptyList())
+    }
+
+    /** Everything period [k] is made from. Derived data only: see [ReportData]. */
+    fun load(anchor: LocalDate, k: Int, zone: ZoneId): ReportData {
+        val first = WeekMath.startDate(anchor, k)
+        val last = WeekMath.lastDate(anchor, k)
+        val range = loadRange(first, last, zone)
 
         val past = reports.before(k, 4).mapNotNull { r ->
             val summary = ReportInputs.summaryFromJson(r.summaryJson) ?: return@mapNotNull null
@@ -91,7 +98,7 @@ class ReportService(
                 summary = summary
             )
         }
-        return ReportData(first, last, urges, sessions, dayFacts, past)
+        return range.copy(past = past)
     }
 
     /** The ended periods that still need a report and have a data point, oldest first. */

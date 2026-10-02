@@ -39,6 +39,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     private val focus = Store.focus(ctx)
     private val days = Store.days(ctx)
     private val reports = Store.reports(ctx)
+    private val periodReports = Store.periodReports(ctx)
 
     private fun measuredOk(at: Long): Boolean =
         ReportRules.canDeleteMeasured(at, now(), zone, days.goals(DayWindow.dateOf(at, zone)))
@@ -68,6 +69,10 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         return if (reports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
+    /** Deletes a monthly or yearly report's text; the row stays so the period is not built again. */
+    fun deletePeriodReport(id: Long): DeleteResult =
+        if (periodReports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
+
     /** Whether the goal text of [date] may go: a report must cover the day (blueprint 6.4). */
     fun canDeleteGoals(date: LocalDate): Boolean = ReportRules.canDeleteGoals(date, reports.latestEnd(), zone)
 
@@ -90,6 +95,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         }
         days.datesWithGoals().forEach { d -> if (canDeleteGoals(d)) { days.deleteGoals(d); removed++ } else kept++ }
         reports.deleteAll()
+        periodReports.deleteAll()
         return WipeResult(removed = removed, kept = kept)
     }
 
@@ -192,6 +198,19 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                     put("summary_json", r.optString("summary_json", ""))
                 }); added++
             }
+            // Monthly and yearly reports are keyed by the calendar, so they fit any store.
+            for (r in rows("period_report")) {
+                val kind = PeriodKind.entries.firstOrNull { it.name == r.optString("kind") }
+                val key = r.optString("period_key")
+                if (kind == null || !PeriodMath.isValid(kind, key) || r.optString("body_md").isBlank() ||
+                    exists(db, "period_report", "kind = ? AND period_key = ?", kind.name, key)
+                ) { skipped++; continue }
+                db.insertOrThrow("period_report", null, ContentValues().apply {
+                    put("kind", kind.name); put("period_key", key); put("period_start", r.getLong("period_start")); put("period_end", r.getLong("period_end"))
+                    put("created_at", r.getLong("created_at")); put("status", "DONE"); put("body_md", r.getString("body_md"))
+                    put("summary_json", r.optString("summary_json", ""))
+                }); added++
+            }
             db.setTransactionSuccessful()
         } catch (e: Exception) {
             // One bad row stops the import and nothing of it is kept.
@@ -206,7 +225,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         db.query(table, arrayOf("1"), where, arrayOf(*args), null, null, null, "1").use { it.moveToFirst() }
 
     private fun dump(db: SQLiteDatabase, table: String): JSONArray = JSONArray().also { out ->
-        db.query(table, null, if (table == "weekly_report") "status = 'DONE'" else null, null, null, null, null).use { c ->
+        db.query(table, null, if (table == "weekly_report" || table == "period_report") "status = 'DONE'" else null, null, null, null, null).use { c ->
             while (c.moveToNext()) {
                 val o = JSONObject()
                 for (i in 0 until c.columnCount) {
@@ -229,6 +248,6 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     companion object {
         const val FORMAT = "dechainer-export"
         const val VERSION = 1
-        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin", "day", "goal", "weekly_report")
+        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin", "day", "goal", "weekly_report", "period_report")
     }
 }

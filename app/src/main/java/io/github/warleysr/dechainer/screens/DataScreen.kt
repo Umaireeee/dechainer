@@ -44,6 +44,9 @@ fun DataScreen(modifier: Modifier = Modifier) {
     val urges = remember(version) { Store.urgeEntries(ctx).all().asReversed() }
     val sessions = remember(version) { Store.focus(ctx).sessions().asReversed() }
     val reports = remember(version) { Store.reports(ctx).all().filter { !it.deleted } }
+    val periodReports = remember(version) {
+        io.github.warleysr.dechainer.report.PeriodKind.entries.flatMap { Store.periodReports(ctx).all(it) }.filter { !it.deleted }
+    }
     val goalDays = remember(version) { Store.days(ctx).datesWithGoals().asReversed() }
 
     val savedMsg = stringResource(R.string.data_exported)
@@ -116,11 +119,17 @@ fun DataScreen(modifier: Modifier = Modifier) {
         }
 
         item { Text(stringResource(R.string.data_reports), style = MaterialTheme.typography.titleLarge) }
-        if (reports.isEmpty()) item { Text(stringResource(R.string.data_none)) }
+        if (reports.isEmpty() && periodReports.isEmpty()) item { Text(stringResource(R.string.data_none)) }
         items(reports, key = { "r${it.id}" }) { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(at(r.periodStart), Modifier.weight(1f))
                 TextButton({ report(tools.deleteReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
+            }
+        }
+        items(periodReports, key = { "p${it.id}" }) { r ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(io.github.warleysr.dechainer.report.PeriodInputs.label(r.kind, r.key), Modifier.weight(1f))
+                TextButton({ report(tools.deletePeriodReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
 

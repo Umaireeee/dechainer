@@ -69,9 +69,9 @@ object ReportInputs {
      * The "Next week" section of a finished report, kept in its summary so the next report can say
      * whether the advice helped. Empty when the report has no such section.
      */
-    fun adviceOf(markdown: String): String {
+    fun adviceOf(markdown: String, heading: String = "next week"): String {
         val lines = markdown.lines()
-        val start = lines.indexOfFirst { it.trim().startsWith("#") && it.contains("next week", ignoreCase = true) }
+        val start = lines.indexOfFirst { it.trim().startsWith("#") && it.contains(heading, ignoreCase = true) }
         if (start < 0) return ""
         val body = lines.drop(start + 1).takeWhile { !it.trim().startsWith("#") }
         return body.joinToString("\n").trim().take(MAX_ADVICE)

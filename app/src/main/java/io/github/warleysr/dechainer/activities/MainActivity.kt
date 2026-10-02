@@ -170,7 +170,16 @@ class MainActivity : ComponentActivity() {
     /** The weekly report notification opens that report. -1 when none was asked for. */
     private val openReportRequest = mutableLongStateOf(-1L)
 
+    /** The monthly or yearly report notification opens that report. -1 when none was asked for. */
+    private val openPeriodReportRequest = mutableLongStateOf(-1L)
+
     private fun handleReportIntent(intent: Intent?) {
+        val periodId = intent?.getLongExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_PERIOD_REPORT, -1L) ?: -1L
+        if (periodId >= 0) {
+            intent!!.removeExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_PERIOD_REPORT)
+            if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) openPeriodReportRequest.longValue = periodId
+            return
+        }
         val id = intent?.getLongExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT, -1L) ?: -1L
         if (id < 0) return
         intent!!.removeExtra(io.github.warleysr.dechainer.report.ReportNotifier.EXTRA_OPEN_REPORT)
@@ -246,10 +255,13 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(brick) {
                     if (brick) navViewModel.navigateTo(Route.HOME)
                 }
-                LaunchedEffect(openReportRequest.longValue) {
-                    if (openReportRequest.longValue >= 0 && !focusBrick && !urge.active) navViewModel.navigateTo(Route.REPORTS)
+                LaunchedEffect(openReportRequest.longValue, openPeriodReportRequest.longValue) {
+                    if ((openReportRequest.longValue >= 0 || openPeriodReportRequest.longValue >= 0) && !focusBrick && !urge.active)
+                        navViewModel.navigateTo(Route.REPORTS)
                 }
-                LaunchedEffect(route) { if (route != Route.REPORTS) openReportRequest.longValue = -1L }
+                LaunchedEffect(route) {
+                    if (route != Route.REPORTS) { openReportRequest.longValue = -1L; openPeriodReportRequest.longValue = -1L }
+                }
                 LaunchedEffect(openTodayRequest.value) {
                     if (openTodayRequest.value) {
                         openTodayRequest.value = false
@@ -398,6 +410,7 @@ class MainActivity : ComponentActivity() {
                                     Route.REPORTS -> PrivateArea {
                                         io.github.warleysr.dechainer.screens.ReportsScreen(
                                             openReportId = openReportRequest.longValue.takeIf { it >= 0 },
+                                        openPeriodReportId = openPeriodReportRequest.longValue.takeIf { it >= 0 },
                                             onOpenData = { navViewModel.navigateTo(Route.DATA) }
                                         )
                                     }

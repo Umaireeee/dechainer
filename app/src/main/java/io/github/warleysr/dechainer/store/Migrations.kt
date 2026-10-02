@@ -90,6 +90,18 @@ object Migrations {
                     "period_start INTEGER NOT NULL, period_end INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
                     "status TEXT NOT NULL, body_md TEXT NOT NULL DEFAULT '', summary_json TEXT NOT NULL DEFAULT '')"
             )
+        ),
+        // Blueprint 1.2: the monthly and yearly reports. `kind` is MONTH or YEAR, `period_key` the calendar
+        // month (2026-10) or year (2026); the pair is unique, so a period is never built twice. A deleted
+        // report keeps its row (status DELETED, text emptied), like a weekly one.
+        Migration(
+            from = 5, to = 6,
+            statements = listOf(
+                "CREATE TABLE period_report (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, " +
+                    "period_key TEXT NOT NULL, period_start INTEGER NOT NULL, period_end INTEGER NOT NULL, " +
+                    "created_at INTEGER NOT NULL, status TEXT NOT NULL, body_md TEXT NOT NULL DEFAULT '', " +
+                    "summary_json TEXT NOT NULL DEFAULT '', UNIQUE (kind, period_key))"
+            )
         )
     )
 

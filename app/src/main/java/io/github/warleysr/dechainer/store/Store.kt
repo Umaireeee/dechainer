@@ -29,6 +29,8 @@ object Store {
 
     fun reports(context: Context): WeeklyReportRepository = WeeklyReportRepository(database(context))
 
+    fun periodReports(context: Context): PeriodReportRepository = PeriodReportRepository(database(context))
+
     /** The open database, for the export and import. */
     internal fun raw(context: Context): DechainerDatabase = database(context)
 
@@ -48,6 +50,7 @@ object Store {
         db.execSQL("DELETE FROM focus_checkin")
         db.execSQL("DELETE FROM focus_session")
         db.execSQL("DELETE FROM weekly_report")
+        db.execSQL("DELETE FROM period_report")
         db.execSQL("DELETE FROM goal")
         db.execSQL("DELETE FROM day")
         db.execSQL("DELETE FROM app_state")
