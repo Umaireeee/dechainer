@@ -609,6 +609,8 @@
     <string name="reports_week">%1$s to %2$s</string>
     <string name="reports_back">Back to the list</string>
     <string name="reports_loading">Reading your data.</string>
+    <string name="backup_reminder">Your history lives only on this phone. It has been a month or more since the last backup, so a lost or wiped phone would take it with it.</string>
+    <string name="backup_reminder_action">Save a backup</string>
     <string name="reports_list">Reports</string>
     <string name="reports_weekly">Weekly</string>
     <string name="reports_monthly">Monthly</string>

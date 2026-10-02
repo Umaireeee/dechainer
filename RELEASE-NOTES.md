@@ -1,10 +1,21 @@
+## Déchaîner 2.1
+
+- **The punishment day is gone** (your decision). The daily checklist stays: each finished day is recorded with how much was done and why it fell short, and nothing locks the phone because of it. The settings freeze went with it.
+- **Fixed:** the daily checklist was never evaluated and the 20:00 and 23:00 reminders never armed (the evaluation was never called). A declared rest day now really skips that day's scheduled focus sessions.
+- **Today:** carry over unfinished goals with one tap; measured goals (focus minutes, no slip); a message when a plan is not saved; yesterday's result at the top.
+- **Deeper deep dives:** they see your last month through earlier deep dives (never notes), name a pattern that repeats, say whether last time's plan was used, and write the next plan as "If ..., then I will ...".
+- **Better weekly reports** with ready-made pattern counts (time of day, day of the week, goals that keep coming back) and a "What went well" section.
+- **New: monthly and yearly reports**, and **progress graphs** on Reports (28 days, 12 weeks, 12 months), with a table view.
+- **Backup reminder** on Reports when your last backup is a month old.
+- The weekly report channel is now called **Reports** and carries all three.
+
 ## Déchaîner 2.0
 
 One app, one lock engine, one store. The Urge Journal is merged in and its module is gone.
 
 - Home with the Urge button, the Urge flow (lock, breathing, questions, deep dive) and the AI client.
 - Focus sessions (usual, special, reset, plain timer) and a weekly timetable with FOCUS entries.
-- The daily checklist, rest day and punishment day; settings freeze on a punishment day.
+- The daily checklist, rest day and punishment day; settings freeze on a punishment day (both removed in 2.1).
 - Weekly reports, the Reports screen, delete, backup and wipe.
 - New: **Lock when opening.** The app asks for its own pattern (not your phone's lock, not the recovery code) before it shows anything, on a cold start and after a minute away. The opening screen has an Urge button that starts the lock and the breathing without the pattern; the writing, questions and deep dive wait for it. Urge entries, deep dives and reports ask for the pattern again. Wrong tries slow down. Settings, Lock when opening (off or a new pattern needs the recovery code).
 - Removed: the door to the old journal, the old biometric entry gate (replaced by the one above) and the maths and word challenges, subjects, targets, lectures, the focus chart and CSV, the old migrations, and the journal module.

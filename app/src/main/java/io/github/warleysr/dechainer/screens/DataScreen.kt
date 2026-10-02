@@ -67,6 +67,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) message = runCatching {
             ctx.contentResolver.openOutputStream(uri)!!.use { it.write(tools.export().toByteArray(Charsets.UTF_8)) }
+            io.github.warleysr.dechainer.report.BackupReminder.markDone(ctx)
         }.fold({ savedMsg }, { saveFailedMsg })
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -88,7 +89,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         item { Text(stringResource(R.string.data_export_hint), style = MaterialTheme.typography.bodySmall) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ exportLauncher.launch("dechainer-backup.json") }) { Text(stringResource(R.string.data_export)) }
+                OutlinedButton({ exportLauncher.launch("dechainer-backup-" + java.time.LocalDate.now() + ".json") }) { Text(stringResource(R.string.data_export)) }
                 OutlinedButton({ importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
                     Text(stringResource(R.string.data_import))
                 }

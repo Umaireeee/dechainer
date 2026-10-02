@@ -76,6 +76,9 @@ fun ReportsScreen(openReportId: Long?, openPeriodReportId: Long?, onOpenData: ()
     val points by produceState<List<ProgressPoint>?>(null, granularity) {
         value = withContext(Dispatchers.IO) { runCatching { loadProgress(ctx, granularity, zone) }.getOrDefault(emptyList()) }
     }
+    val backupDue by produceState(false) {
+        value = withContext(Dispatchers.IO) { io.github.warleysr.dechainer.report.BackupReminder.isDue(ctx) }
+    }
     val items by produceState<List<ReportItem>?>(null) {
         value = withContext(Dispatchers.IO) { runCatching { loadReports(ctx, zone) }.getOrDefault(emptyList()) }
     }
@@ -91,6 +94,17 @@ fun ReportsScreen(openReportId: Long?, openPeriodReportId: Long?, onOpenData: ()
     }
 
     LazyColumn(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (backupDue) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                CalmCard(Modifier.fillMaxWidth(), highlighted = true) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.backup_reminder), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onOpenData) { Text(stringResource(R.string.backup_reminder_action)) }
+                    }
+                }
+            }
+        }
         item {
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.reports_progress), style = MaterialTheme.typography.headlineSmall)

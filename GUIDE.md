@@ -44,17 +44,19 @@ If the AI cannot be reached, the note stays on the phone, the entry waits for it
 3. **Usual:** Pomodoro phases inside the lock, with "Did you do the work?" after each focus phase. **No** starts a reset (5 minutes of meditation, 5 of something physical) and then asks if you are ready. If you are not, the rest of the block is a plain countdown. **Special:** one continuous lock and one question at the end.
 4. The phone is locked until the end time, breaks included, and **nothing ends it early, not even your recovery code**. Start with a short one. Choose the apps allowed during a block in the timer settings; keep browsers off that list.
 
-## Step 8: The daily checklist and the punishment day
-Open **Today**. Each evening from 20:00 to 23:59 you write tomorrow's plan (3 to 7 goals) and close today's goals (done or not done). Manual goals can be ticked done at any time during the day.
+## Step 8: The daily checklist
+Open **Today**. Each evening from 20:00 to 23:59 you write tomorrow's plan (3 to 7 goals) and close today's goals (done or not done). Manual goals can be ticked done at any time during the day. Tap the label under a goal to make it measured: **focus minutes** (ticks itself when your focus sessions reach it) or **no slip** (done at midnight if no slip was recorded). **Carry over unfinished goals** copies today's open goals into tomorrow's plan.
 
-The next day is a **punishment day** if tomorrow has no plan, if a goal of today is left unresolved, or if fewer than half of today's goals are done. On a punishment day the phone is locked from 00:00 to 23:59:59 (calls and the alarm clock stay open), settings are frozen, and only the Urge flow, Today and Reports work. A punishment day never follows a punishment day.
+Each finished day is recorded: how many goals were done and, if it fell short, why (a goal left open, fewer than half done, or no plan for the next day). Nothing locks the phone because of it. Yesterday's result shows at the top of Today, and every day goes into the graphs and the reports.
 
-You may declare **one rest day** in any seven days from Today, in the evening window. It skips that day's goals and focus sessions, but it never cancels a punishment.
+You may declare **one rest day** in any seven days from Today, in the evening window. It skips that day's goals and its scheduled focus sessions.
 
-## Step 9: Weekly reports and your data
-When a week with something recorded ends, the AI writes a report (week at a glance, urge and slip chains, focus, progress, where you are heading, follow-up, three actions for next week). It needs a key, your consent and a connection; if the phone was off, it is made the next time it is on and online. A notification opens it. **Reports** also shows a line of your daily checklist results.
+## Step 9: Reports, graphs and your data
+When a week with something recorded ends, the AI writes a report (week at a glance, what went well, urge and slip chains, focus, progress, where you are heading, follow-up, three if-then plans for next week). When a calendar month ends you also get a monthly report (what changed, the patterns that held, what worked, next month), and when a year ends a yearly one. They need a key, your consent and a connection; if the phone was off, they are made the next time it is on and online. A notification opens each one.
 
-**Reports → Your data:** delete a single entry, session, deep dive or report, back up everything to a file and read it back, or wipe all data (it asks for the recovery code). Punishment days, rest days and your weeks are never reset by deleting. A slip or session of today cannot be deleted until its day is over, and goal text can be deleted once a report covers its day.
+**Reports** opens on your progress graphs: urges, slips, focus hours and goals done, over 28 days, 12 weeks or 12 months. Tap a bar to see that period's numbers in every chart, or show them as a table. Below them are the Weekly, Monthly and Yearly reports.
+
+**Reports → Your data:** delete a single entry, session, deep dive or report, back up everything to a file and read it back, or wipe all data (it asks for the recovery code). Your daily results, rest days and your weeks are never reset by deleting. A slip or session of today cannot be deleted until its day is over, and goal text can be deleted once a report covers its day.
 
 ## Step 10: Make your first schedule (5 minutes)
 1. Open **Schedules**.
@@ -76,7 +78,7 @@ On **Apps and limits**, flip the switch next to any app to pause it. Open an app
 1. Morning: look at Today, then start a focus session.
 2. When an urge hits: tap Urge instead of arguing with yourself.
 3. Evening, 20:00: write tomorrow's goals and close today.
-4. Sunday: read your weekly report, and keep a backup file.
+4. Sunday: read your weekly report. At the start of each month, read the monthly one and save a backup file (Reports reminds you).
 
 ## Be realistic
 This app removes access and adds friction. It doesn't fix boredom, stress or loneliness, and it can't touch your other devices. If phone or porn use is seriously hurting your life, pair the app with a friend, counsellor or doctor.

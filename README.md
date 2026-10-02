@@ -2,8 +2,8 @@
 
 A calm, minimal Android app that locks your phone when you need it locked, and shows you the truth about yourself. It runs as Device Owner and does two jobs:
 
-1. **Lock the phone when it is needed:** a ten-minute urge lock, scheduled focus sessions, a punishment day, recurring app-block schedules and daily time limits, all on one lock engine.
-2. **Show you the truth about yourself:** it records urges, slips, focus check-ins and a daily checklist, and an AI you choose turns that data into a deep dive after every urge and a weekly report.
+1. **Lock the phone when it is needed:** a ten-minute urge lock, scheduled focus sessions, recurring app-block schedules and daily time limits, all on one lock engine.
+2. **Show you the truth about yourself:** it records urges, slips, focus check-ins and a daily checklist, and an AI you choose turns that data into a deep dive after every urge and weekly, monthly and yearly reports, with progress graphs.
 
 > An unofficial fork of [Déchaîner](https://github.com/warleysr/dechainer) by **@warleysr**. All credit for the original app and its blocking engine goes to him. This build is not an official release and is not supported by him.
 
@@ -24,11 +24,11 @@ Home is a large clock and one button, **Urge**. Tap the clock or swipe up for th
 ### Focus sessions
 A focus block is a committed lock until an end time you pick (10 minutes to 8 hours), or a **FOCUS** entry in the weekly timetable that starts it by itself. A usual session runs Pomodoro phases with a check-in, "Did you do the work?", after each focus phase; answering No starts a ten-minute reset (meditation, then something physical) inside the block. A special session is one continuous lock with a single question at the end. The end time never moves.
 
-### The daily checklist and the punishment day
-Each evening, 20:00 to 23:59, you write tomorrow's 3 to 7 goals and close today. A missing plan, an unresolved goal, or fewer than half of the goals done makes the next day a **punishment day**: the phone is locked all day except calls and the alarm clock, and settings are frozen. A punishment day never follows a punishment day, and a declared rest day (one per week) never cancels one. Enforcement starts when you confirm the rules at the end of setup.
+### The daily checklist
+Each evening, 20:00 to 23:59, you write tomorrow's 3 to 7 goals and close today. A goal can be ticked by you, or measured (focus minutes reached, or no slip that day); unfinished goals can be carried over with one tap. Each finished day is recorded honestly: how much was done and, if it fell short, why. Nothing locks the phone because of it; the results show on Today, in the graphs and in the reports. One rest day in any seven days skips that day's goals and scheduled focus sessions.
 
-### Weekly report
-When a week with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** also shows a progress line of your daily checklist results. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
+### Reports and progress graphs
+When a week, a calendar month or a year with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals: what went well, the patterns that repeat (time of day, day of the week, the earliest link), how the period compares with the ones before, and a few if-then plans for the next one. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** opens on graphs of urges, slips, focus hours and goals done over 28 days, 12 weeks or 12 months; tap a bar to see that period, or show them as a table. It reminds you to save a backup when the last one is a month old. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
 
 ### Blocking
 - **Apps:** suspend any app with one switch; suspended apps are greyed out and cannot open.
@@ -91,7 +91,7 @@ Locally: open the project in Android Studio, or run `./gradlew assembleDebug`.
 ---
 
 ## Privacy
-Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), and the weekly report gets numbers, answers, deep dives, sessions and checklist goals, never raw notes. Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
+Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), the deep dive also gets a short summary of your last month (when earlier urges happened, the earliest link and plan their deep dives found), and the reports get numbers, answers, deep dives, sessions and checklist goals, never raw notes. Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
 
 ---
 
