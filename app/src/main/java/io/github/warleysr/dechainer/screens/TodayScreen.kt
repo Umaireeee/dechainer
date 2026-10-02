@@ -53,6 +53,8 @@ import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.ui.theme.CalmCard
+import io.github.warleysr.dechainer.ui.theme.Eyebrow
+import io.github.warleysr.dechainer.ui.theme.Space
 import java.time.format.DateTimeFormatter
 
 /**
@@ -89,14 +91,18 @@ fun TodayScreen(modifier: Modifier = Modifier) {
     val noSlipText = stringResource(R.string.today_goal_noslip_text)
 
     LazyColumn(
-        modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier.fillMaxSize().padding(horizontal = Space.gutter),
+        verticalArrangement = Arrangement.spacedBy(Space.item)
     ) {
         item {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+            Eyebrow(today.format(DateTimeFormatter.ofPattern("EEEE d MMMM")))
+            val done = goals.count { it.state == GoalState.DONE }
             Text(
-                today.format(DateTimeFormatter.ofPattern("EEEE d MMMM")),
-                style = MaterialTheme.typography.headlineSmall
+                if (goals.isEmpty()) stringResource(R.string.today_headline_none)
+                else stringResource(R.string.today_headline, done, goals.size),
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(top = 6.dp)
             )
             val status = when {
                 row?.kind == DayKind.REST -> stringResource(R.string.today_rest)
@@ -112,13 +118,14 @@ fun TodayScreen(modifier: Modifier = Modifier) {
         }
 
         // ---- today's goals ----
+        item { Spacer(Modifier.height(Space.item)); Eyebrow(stringResource(R.string.today_goals)) }
         item {
             CalmCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(R.string.today_goals), style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                     if (goals.isEmpty()) {
                         Text(
                             stringResource(R.string.today_no_goals),
+                            Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -136,6 +143,7 @@ fun TodayScreen(modifier: Modifier = Modifier) {
                     if (goals.any { it.type == GoalType.MANUAL && it.state == GoalState.OPEN } && !evening) {
                         Text(
                             stringResource(R.string.today_close_hint),
+                            Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -145,10 +153,10 @@ fun TodayScreen(modifier: Modifier = Modifier) {
         }
 
         // ---- tomorrow's plan ----
+        item { Spacer(Modifier.height(Space.item)); Eyebrow(stringResource(R.string.today_tomorrow)) }
         item {
             CalmCard(Modifier.fillMaxWidth(), highlighted = canEdit) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.today_tomorrow), style = MaterialTheme.typography.titleLarge)
+                Column(Modifier.padding(Space.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!canEdit) {
                         if (plan.isEmpty()) {
                             Text(

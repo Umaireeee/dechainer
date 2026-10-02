@@ -40,6 +40,12 @@ import io.github.warleysr.dechainer.screens.report.ProgressSection
 import io.github.warleysr.dechainer.screens.urge.MarkdownText
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.ui.theme.CalmCard
+import io.github.warleysr.dechainer.ui.theme.Eyebrow
+import io.github.warleysr.dechainer.ui.theme.NavRow
+import io.github.warleysr.dechainer.ui.theme.RowDivider
+import io.github.warleysr.dechainer.ui.theme.ScreenTitle
+import io.github.warleysr.dechainer.ui.theme.Segmented
+import io.github.warleysr.dechainer.ui.theme.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -51,7 +57,7 @@ import java.time.format.FormatStyle
 private enum class ReportTab { WEEK, MONTH, YEAR }
 
 /** One report in a list, whatever its kind. */
-private data class ReportItem(val tab: ReportTab, val id: Long, val title: String, val body: String)
+private data class ReportItem(val tab: ReportTab, val id: Long, val title: String, val subtitle: String, val body: String)
 
 /**
  * Reports (blueprint 6.5, 1.2): the progress graphs, then the weekly, monthly and yearly reports.
@@ -85,70 +91,90 @@ fun ReportsScreen(openReportId: Long?, openPeriodReportId: Long?, onOpenData: ()
 
     val open = items?.firstOrNull { (if (it.tab == ReportTab.WEEK) "W" else "P") + it.id == openKey }
     if (open != null) {
-        LazyColumn(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Spacer(Modifier.height(8.dp)); Text(open.title, style = MaterialTheme.typography.headlineSmall) }
-            item { MarkdownText(open.body) }
+        LazyColumn(
+            modifier.fillMaxSize().padding(horizontal = Space.gutter),
+            verticalArrangement = Arrangement.spacedBy(Space.item)
+        ) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                ScreenTitle(stringResource(kindLabel(open.tab)), open.title, open.subtitle)
+            }
+            item { Spacer(Modifier.height(4.dp)); MarkdownText(open.body) }
             item { TextButton({ openKey = null }) { Text(stringResource(R.string.reports_back)) } }
+            item { Spacer(Modifier.height(Space.section)) }
         }
         return
     }
 
-    LazyColumn(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        modifier.fillMaxSize().padding(horizontal = Space.gutter),
+        verticalArrangement = Arrangement.spacedBy(Space.item)
+    ) {
+        item { Spacer(Modifier.height(4.dp)) }
         if (backupDue) {
             item {
-                Spacer(Modifier.height(8.dp))
                 CalmCard(Modifier.fillMaxWidth(), highlighted = true) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(Space.cardPadding), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Eyebrow(stringResource(R.string.backup_eyebrow))
                         Text(stringResource(R.string.backup_reminder), style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onOpenData) { Text(stringResource(R.string.backup_reminder_action)) }
+                        TextButton(onOpenData, Modifier.padding(top = 4.dp)) { Text(stringResource(R.string.backup_reminder_action)) }
                     }
                 }
             }
         }
+        item { Eyebrow(stringResource(R.string.reports_progress)) }
         item {
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.reports_progress), style = MaterialTheme.typography.headlineSmall)
-        }
-        item {
-            CalmCard(Modifier.fillMaxWidth()) {
-                val p = points
-                if (p == null) {
-                    Text(stringResource(R.string.reports_loading), Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    ProgressSection(p, granularity, { granularity = it }, Modifier.padding(16.dp))
-                }
+            val p = points
+            if (p == null) {
+                Text(stringResource(R.string.reports_loading), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                ProgressSection(p, granularity, { granularity = it })
             }
         }
 
         item {
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.reports_list), style = MaterialTheme.typography.headlineSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReportTab.entries.forEach { t ->
-                    FilterChip(selected = t == tab, onClick = { tab = t }, label = { Text(stringResource(tabLabel(t))) })
-                }
-            }
-        }
-        val shown = items.orEmpty().filter { it.tab == tab }
-        if (items != null && shown.isEmpty()) {
-            item {
-                Text(
-                    stringResource(emptyText(tab)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(Modifier.height(Space.section - Space.item))
+            Column(verticalArrangement = Arrangement.spacedBy(Space.item)) {
+                Eyebrow(stringResource(R.string.reports_list))
+                Segmented(
+                    options = ReportTab.entries,
+                    selected = tab,
+                    label = { stringResource(tabLabel(it)) },
+                    onSelect = { tab = it },
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
-        items(shown, key = { "${it.tab}${it.id}" }) { r ->
-            CalmCard(Modifier.fillMaxWidth().clickable { openKey = (if (r.tab == ReportTab.WEEK) "W" else "P") + r.id }) {
-                Column(Modifier.padding(16.dp).heightIn(min = 24.dp)) {
-                    Text(r.title, style = MaterialTheme.typography.titleMedium)
+        val shown = items.orEmpty().filter { it.tab == tab }
+        item {
+            CalmCard(Modifier.fillMaxWidth()) {
+                if (items != null && shown.isEmpty()) {
+                    Text(
+                        stringResource(emptyText(tab)),
+                        Modifier.padding(Space.cardPadding),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                shown.forEachIndexed { i, r ->
+                    if (i > 0) RowDivider()
+                    NavRow(r.title, r.subtitle, onClick = { openKey = (if (r.tab == ReportTab.WEEK) "W" else "P") + r.id })
                 }
             }
         }
-        item { TextButton(onOpenData) { Text(stringResource(R.string.reports_your_data)) } }
-        item { Spacer(Modifier.height(24.dp)) }
+        item {
+            CalmCard(Modifier.fillMaxWidth()) {
+                NavRow(stringResource(R.string.reports_your_data), stringResource(R.string.reports_your_data_hint), onClick = onOpenData)
+            }
+        }
+        item { Spacer(Modifier.height(Space.section)) }
     }
+}
+
+private fun kindLabel(t: ReportTab): Int = when (t) {
+    ReportTab.WEEK -> R.string.reports_kind_week
+    ReportTab.MONTH -> R.string.reports_kind_month
+    ReportTab.YEAR -> R.string.reports_kind_year
 }
 
 private fun tabLabel(t: ReportTab): Int = when (t) {
@@ -182,14 +208,14 @@ private fun loadReports(ctx: android.content.Context, zone: ZoneId): List<Report
     val fmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
     fun date(ms: Long) = fmt.format(Instant.ofEpochMilli(ms).atZone(zone).toLocalDate())
     val weekly = Store.reports(ctx).all().filter { !it.deleted }.map {
-        ReportItem(ReportTab.WEEK, it.id, ctx.getString(R.string.reports_week, date(it.periodStart), date(it.periodEnd - 1)), it.bodyMd)
+        ReportItem(ReportTab.WEEK, it.id, ctx.getString(R.string.reports_week, date(it.periodStart), date(it.periodEnd - 1)), ctx.getString(R.string.reports_written, date(it.createdAt)), it.bodyMd)
     }
     val periods = Store.periodReports(ctx)
     val monthly = periods.all(PeriodKind.MONTH).filter { !it.deleted }.map {
-        ReportItem(ReportTab.MONTH, it.id, PeriodInputs.label(PeriodKind.MONTH, it.key), it.bodyMd)
+        ReportItem(ReportTab.MONTH, it.id, PeriodInputs.label(PeriodKind.MONTH, it.key), ctx.getString(R.string.reports_written, date(it.createdAt)), it.bodyMd)
     }
     val yearly = periods.all(PeriodKind.YEAR).filter { !it.deleted }.map {
-        ReportItem(ReportTab.YEAR, it.id, ctx.getString(R.string.reports_year_title, it.key), it.bodyMd)
+        ReportItem(ReportTab.YEAR, it.id, ctx.getString(R.string.reports_year_title, it.key), ctx.getString(R.string.reports_written, date(it.createdAt)), it.bodyMd)
     }
     return weekly + monthly + yearly
 }

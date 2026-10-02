@@ -144,28 +144,52 @@ fun MenuSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
-            MenuRow(Icons.Outlined.WbTwilight, stringResource(R.string.menu_urge), onUrge)
+            io.github.warleysr.dechainer.ui.theme.Eyebrow(
+                stringResource(R.string.menu_title),
+                Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+            MenuRow(Icons.Outlined.WbTwilight, stringResource(R.string.menu_urge), stringResource(R.string.menu_hint_urge), onUrge)
             routes.forEach { route ->
-                route.icon?.let { icon -> MenuRow(icon, stringResource(route.menuTitle)) { onRoute(route) } }
+                route.icon?.let { icon -> MenuRow(icon, stringResource(route.menuTitle), menuHint(route)?.let { stringResource(it) }) { onRoute(route) } }
             }
         }
     }
 }
 
+/** One line under each menu entry: what that screen is for. */
+private fun menuHint(route: Route): Int? = when (route) {
+    Route.TODAY -> R.string.menu_hint_today
+    Route.FOCUS -> R.string.menu_hint_focus
+    Route.SCHEDULES -> R.string.menu_hint_schedules
+    Route.APPS -> R.string.menu_hint_apps
+    Route.REPORTS -> R.string.menu_hint_reports
+    Route.SETTINGS -> R.string.menu_hint_settings
+    else -> null
+}
+
 @Composable
-private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun MenuRow(icon: ImageVector, label: String, hint: String?, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 24.dp),
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(20.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Text(label, style = MaterialTheme.typography.titleMedium)
+        io.github.warleysr.dechainer.ui.theme.IconBadge {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
     }
 }

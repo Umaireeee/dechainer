@@ -19,6 +19,16 @@ import io.github.warleysr.dechainer.report.DeleteResult
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.store.Store
+import io.github.warleysr.dechainer.ui.theme.CalmCard
+import io.github.warleysr.dechainer.ui.theme.Eyebrow
+import io.github.warleysr.dechainer.ui.theme.RowDivider
+import io.github.warleysr.dechainer.ui.theme.Space
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeStatus
 import java.time.Instant
@@ -82,72 +92,97 @@ fun DataScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    LazyColumn(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        message?.let { m -> item { Text(m, color = MaterialTheme.colorScheme.primary) } }
-
-        item { Text(stringResource(R.string.data_export_section), style = MaterialTheme.typography.titleLarge) }
-        item { Text(stringResource(R.string.data_export_hint), style = MaterialTheme.typography.bodySmall) }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ exportLauncher.launch("dechainer-backup-" + java.time.LocalDate.now() + ".json") }) { Text(stringResource(R.string.data_export)) }
-                OutlinedButton({ importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
-                    Text(stringResource(R.string.data_import))
+    LazyColumn(
+        modifier.fillMaxSize().padding(horizontal = Space.gutter),
+        verticalArrangement = Arrangement.spacedBy(Space.item)
+    ) {
+        item { Spacer(Modifier.height(4.dp)) }
+        message?.let { m ->
+            item {
+                CalmCard(Modifier.fillMaxWidth(), highlighted = true) {
+                    Text(m, Modifier.padding(Space.cardPadding), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
 
-        item { Text(stringResource(R.string.data_entries), style = MaterialTheme.typography.titleLarge) }
-        if (urges.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(urges, key = { "u${it.id}" }) { e ->
-            Column(Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.data_urge_row, at(e.createdAt),
-                    stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge), e.status.name.lowercase().replace('_', ' ')))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ report(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
+        item { Eyebrow(stringResource(R.string.data_export_section)) }
+        item {
+            CalmCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(Space.cardPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.data_export_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button({ exportLauncher.launch("dechainer-backup-" + java.time.LocalDate.now() + ".json") }, Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.data_export))
+                        }
+                        OutlinedButton({ importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.data_import))
+                        }
+                    }
+                }
+            }
+        }
+
+        section(R.string.data_entries, urges.isEmpty()) {
+            urges.forEachIndexed { i, e ->
+                if (i > 0) RowDivider()
+                DataRow(
+                    title = stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge),
+                    subtitle = at(e.createdAt) + " · " + e.status.name.lowercase().replace('_', ' ')
+                ) {
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
                         TextButton({ report(tools.deleteDeepDive(e.id)) }) { Text(stringResource(R.string.data_delete_deep_dive)) }
+                    TextButton({ report(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
                 }
             }
         }
 
-        item { Text(stringResource(R.string.data_sessions), style = MaterialTheme.typography.titleLarge) }
-        if (sessions.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(sessions, key = { "s${it.id}" }) { s ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { "-" }), Modifier.weight(1f))
-                TextButton({ report(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
+        section(R.string.data_sessions, sessions.isEmpty()) {
+            sessions.forEachIndexed { i, s ->
+                if (i > 0) RowDivider()
+                DataRow(s.purpose.ifBlank { "–" }, at(s.startedAt) + " · " + s.focusedMinutes + " min") {
+                    TextButton({ report(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
+                }
             }
         }
 
-        item { Text(stringResource(R.string.data_reports), style = MaterialTheme.typography.titleLarge) }
-        if (reports.isEmpty() && periodReports.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(reports, key = { "r${it.id}" }) { r ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(at(r.periodStart), Modifier.weight(1f))
-                TextButton({ report(tools.deleteReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
+        section(R.string.data_reports, reports.isEmpty() && periodReports.isEmpty()) {
+            reports.forEachIndexed { i, r ->
+                if (i > 0) RowDivider()
+                DataRow(stringResource(R.string.reports_kind_week), at(r.periodStart)) {
+                    TextButton({ report(tools.deleteReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
+                }
             }
-        }
-        items(periodReports, key = { "p${it.id}" }) { r ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(io.github.warleysr.dechainer.report.PeriodInputs.label(r.kind, r.key), Modifier.weight(1f))
-                TextButton({ report(tools.deletePeriodReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
-            }
-        }
-
-        item { Text(stringResource(R.string.data_goals), style = MaterialTheme.typography.titleLarge) }
-        if (goalDays.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(goalDays, key = { "g$it" }) { d ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.data_goals_row, d.toString()), Modifier.weight(1f))
-                TextButton({ report(tools.deleteGoals(d)) }, enabled = tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
+            periodReports.forEachIndexed { i, r ->
+                if (i > 0 || reports.isNotEmpty()) RowDivider()
+                DataRow(io.github.warleysr.dechainer.report.PeriodInputs.label(r.kind, r.key), null) {
+                    TextButton({ report(tools.deletePeriodReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
+                }
             }
         }
 
-        item { Text(stringResource(R.string.data_wipe_section), style = MaterialTheme.typography.titleLarge) }
-        item { Text(stringResource(R.string.data_wipe_hint), style = MaterialTheme.typography.bodySmall) }
+        section(R.string.data_goals, goalDays.isEmpty()) {
+            goalDays.forEachIndexed { i, d ->
+                if (i > 0) RowDivider()
+                DataRow(stringResource(R.string.data_goals_row, d.toString()), null) {
+                    TextButton({ report(tools.deleteGoals(d)) }, enabled = tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(Space.item)); Eyebrow(stringResource(R.string.data_wipe_section)) }
         item {
-            OutlinedButton({ gate.run { confirmWipe = true } }) { Text(stringResource(R.string.data_wipe)) }
+            CalmCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(Space.cardPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.data_wipe_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(
+                        { gate.run { confirmWipe = true } },
+                        Modifier.heightIn(min = 48.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text(stringResource(R.string.data_wipe)) }
+                }
+            }
         }
+        item { Spacer(Modifier.height(Space.section)) }
     }
 
     if (confirmWipe) {
@@ -167,4 +202,34 @@ fun DataScreen(modifier: Modifier = Modifier) {
         )
     }
     RecoveryGateDialog(gate)
+}
+
+/** One titled section of the Data screen: an eyebrow and a card of rows, or "nothing here". */
+private fun androidx.compose.foundation.lazy.LazyListScope.section(title: Int, empty: Boolean, rows: @Composable () -> Unit) {
+    item { Spacer(Modifier.height(Space.item)); Eyebrow(stringResource(title)) }
+    item {
+        CalmCard(Modifier.fillMaxWidth()) {
+            if (empty) Text(
+                stringResource(R.string.data_none),
+                Modifier.padding(Space.cardPadding),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            ) else rows()
+        }
+    }
+}
+
+/** A row of the Data screen: what it is, when, and its actions at the end. */
+@Composable
+private fun DataRow(title: String, subtitle: String?, actions: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = Space.cardPadding, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        actions()
+    }
 }
