@@ -16,14 +16,14 @@ object Migrations {
         Migration(
             from = 0, to = 1,
             statements = listOf(
-                "CREATE TABLE app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)"
             )
         ),
         // Phase 3: the urge journal (blueprint section 7). Times are trusted-clock epoch millis.
         Migration(
             from = 1, to = 2,
             statements = listOf(
-                """CREATE TABLE urge_entry (
+                """CREATE TABLE IF NOT EXISTS urge_entry (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at INTEGER NOT NULL,
                     kind TEXT NOT NULL,
@@ -36,7 +36,7 @@ object Migrations {
                     answers_json TEXT,
                     deep_dive TEXT
                 )""",
-                "CREATE INDEX urge_entry_status ON urge_entry (status)"
+                "CREATE INDEX IF NOT EXISTS urge_entry_status ON urge_entry (status)"
             )
         ),
         // Phase 4: focus sessions and their check-ins (blueprint section 7).
@@ -45,7 +45,7 @@ object Migrations {
             statements = listOf(
                 // `id` is the start time in epoch millis (bumped by one on a clash), so a session keeps the
                 // identity the old log gave it: notifications, the log screen and the import all name it.
-                """CREATE TABLE focus_session (
+                """CREATE TABLE IF NOT EXISTS focus_session (
                     id INTEGER PRIMARY KEY NOT NULL,
                     source TEXT NOT NULL,
                     flavor TEXT NOT NULL,
@@ -56,28 +56,28 @@ object Migrations {
                     focused_minutes INTEGER NOT NULL DEFAULT 0,
                     outcome TEXT
                 )""",
-                """CREATE TABLE focus_checkin (
+                """CREATE TABLE IF NOT EXISTS focus_checkin (
                     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                     session_id INTEGER NOT NULL,
                     at INTEGER NOT NULL,
                     answer TEXT NOT NULL,
                     reset_result TEXT NOT NULL DEFAULT 'NONE'
                 )""",
-                "CREATE INDEX focus_checkin_session ON focus_checkin (session_id)",
-                "CREATE INDEX focus_session_started ON focus_session (started_at)"
+                "CREATE INDEX IF NOT EXISTS focus_checkin_session ON focus_checkin (session_id)",
+                "CREATE INDEX IF NOT EXISTS focus_session_started ON focus_session (started_at)"
             )
         ),
         // Phase 5: the daily checklist (blueprint sections 6.4 and 7).
         Migration(
             from = 3, to = 4,
             statements = listOf(
-                "CREATE TABLE day (date TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL DEFAULT 'NORMAL', " +
+                "CREATE TABLE IF NOT EXISTS day (date TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL DEFAULT 'NORMAL', " +
                     "plan_written_at INTEGER, resolved_at INTEGER, done_count INTEGER NOT NULL DEFAULT 0, " +
                     "total_count INTEGER NOT NULL DEFAULT 0, evaluated INTEGER NOT NULL DEFAULT 0, violation TEXT)",
-                "CREATE TABLE goal (id INTEGER PRIMARY KEY AUTOINCREMENT, day_date TEXT NOT NULL, position INTEGER NOT NULL, " +
+                "CREATE TABLE IF NOT EXISTS goal (id INTEGER PRIMARY KEY AUTOINCREMENT, day_date TEXT NOT NULL, position INTEGER NOT NULL, " +
                     "text TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'MANUAL', target_minutes INTEGER, " +
                     "state TEXT NOT NULL DEFAULT 'OPEN', resolved_by TEXT)",
-                "CREATE INDEX goal_day ON goal (day_date)"
+                "CREATE INDEX IF NOT EXISTS goal_day ON goal (day_date)"
             )
         ),
         // Phase 6: the weekly report (blueprint sections 6.5 and 7). `period_index` is the week's number
@@ -86,7 +86,7 @@ object Migrations {
         Migration(
             from = 4, to = 5,
             statements = listOf(
-                "CREATE TABLE weekly_report (id INTEGER PRIMARY KEY AUTOINCREMENT, period_index INTEGER NOT NULL UNIQUE, " +
+                "CREATE TABLE IF NOT EXISTS weekly_report (id INTEGER PRIMARY KEY AUTOINCREMENT, period_index INTEGER NOT NULL UNIQUE, " +
                     "period_start INTEGER NOT NULL, period_end INTEGER NOT NULL, created_at INTEGER NOT NULL, " +
                     "status TEXT NOT NULL, body_md TEXT NOT NULL DEFAULT '', summary_json TEXT NOT NULL DEFAULT '')"
             )
