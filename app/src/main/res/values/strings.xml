@@ -655,11 +655,23 @@
     <string name="rules_confirm">Start the rules</string>
     <!-- The lock at the front door -->
     <string name="entry_gate_title">Déchaîner is locked</string>
-    <string name="entry_gate_text">Use your phone\'s screen lock to open it.</string>
+    <string name="entry_gate_password">Password</string>
+    <string name="entry_gate_password_again">Password again</string>
     <string name="entry_gate_unlock">Unlock</string>
-    <string name="entry_gate_prompt_title">Open Déchaîner</string>
-    <string name="entry_gate_prompt_text">Confirm your screen lock to continue.</string>
+    <string name="entry_gate_save">Save password</string>
+    <string name="entry_gate_wrong">That is not the password.</string>
+    <string name="entry_gate_wait">Too many tries. Wait %1$s.</string>
+    <string name="entry_gate_forgot">Forgot the password</string>
+    <string name="entry_gate_create_title">Choose a password</string>
+    <string name="entry_gate_create_text">You will type it each time you open Déchaîner. Make it different from your phone\'s PIN and from your recovery code.</string>
+    <string name="entry_password_short">Use at least 4 characters.</string>
+    <string name="entry_password_mismatch">The two do not match.</string>
+    <string name="entry_password_refused">It cannot be changed on a punishment day.</string>
+    <string name="entry_forgot_title">Forgot the password</string>
+    <string name="entry_forgot_text">Enter your recovery code. The password is cleared and you choose a new one.</string>
+    <string name="entry_forgot_code">Recovery code</string>
     <string name="entry_lock_title">Lock when opening</string>
-    <string name="entry_lock_desc">Ask for your phone\'s screen lock each time you open the app. Turning it off needs the recovery code.</string>
-    <string name="entry_lock_no_screen_lock">Set a screen lock on your phone first. Without one there is nothing to ask for.</string>
+    <string name="entry_lock_desc">Ask for the opening password each time you open the app. Turning it off needs the recovery code.</string>
+    <string name="entry_change_title">Opening password</string>
+    <string name="entry_change_desc">Choose a new password. Needs the recovery code.</string>
 </resources>

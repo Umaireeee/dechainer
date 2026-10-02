@@ -95,7 +95,7 @@ class SecurityManager {
 
         private const val KEY_ENTRY_LOCK = "entry_lock"
 
-        /** Whether opening the app asks for the phone's screen lock first. On unless switched off. */
+        /** Whether opening the app asks for the opening password first. On unless switched off. */
         fun isEntryLockEnabled(context: Context): Boolean =
             context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).getBoolean(KEY_ENTRY_LOCK, true)
 
@@ -103,6 +103,54 @@ class SecurityManager {
         fun setEntryLockEnabled(context: Context, enabled: Boolean) {
             if (!SettingsFreeze.allowWrite(context, "entry lock")) return
             context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit { putBoolean(KEY_ENTRY_LOCK, enabled) }
+        }
+
+        private const val KEY_ENTRY_HASH = "entry_password_hash"
+        private const val KEY_ENTRY_FAILS = "entry_failures"
+        private const val KEY_ENTRY_FAIL_AT = "entry_last_fail_elapsed"
+
+        /** Whether the opening password has been chosen. The password itself is only stored as a salted hash. */
+        fun hasEntryPassword(context: Context): Boolean = recoveryPrefs(context).getString(KEY_ENTRY_HASH, null) != null
+
+        /** Sets (or replaces) the opening password. False if the settings are frozen or it is not valid. */
+        fun setEntryPassword(context: Context, password: String): Boolean {
+            if (!EntryLock.isValidPassword(password)) return false
+            if (!SettingsFreeze.allowWrite(context, "entry password")) return false
+            recoveryPrefs(context).edit(commit = true) {
+                putString(KEY_ENTRY_HASH, RecoveryCodeHash.create(password))
+                putInt(KEY_ENTRY_FAILS, 0)
+            }
+            return true
+        }
+
+        /** Forgotten password: the recovery code (checked by the caller) clears it, and the next opening asks for a new one. */
+        fun clearEntryPassword(context: Context) {
+            recoveryPrefs(context).edit(commit = true) {
+                remove(KEY_ENTRY_HASH)
+                putInt(KEY_ENTRY_FAILS, 0)
+            }
+        }
+
+        fun entryWaitMs(context: Context): Long {
+            val p = recoveryPrefs(context)
+            return EntryLock.remainingWaitMs(p.getInt(KEY_ENTRY_FAILS, 0), p.getLong(KEY_ENTRY_FAIL_AT, 0L), SystemClock.elapsedRealtime())
+        }
+
+        /** One try at the opening password. Too many wrong ones in a row make the next try wait, longer each time. */
+        fun tryEntryPassword(context: Context, input: String): EntryAttempt = synchronized(RECOVERY_LOCK) {
+            if (entryWaitMs(context) > 0L) return@synchronized EntryAttempt.WAIT
+            val p = recoveryPrefs(context)
+            val stored = p.getString(KEY_ENTRY_HASH, null) ?: return@synchronized EntryAttempt.OK
+            if (RecoveryCodeHash.verify(input, stored)) {
+                p.edit(commit = true) { putInt(KEY_ENTRY_FAILS, 0) }
+                EntryAttempt.OK
+            } else {
+                p.edit(commit = true) {
+                    putInt(KEY_ENTRY_FAILS, p.getInt(KEY_ENTRY_FAILS, 0) + 1)
+                    putLong(KEY_ENTRY_FAIL_AT, SystemClock.elapsedRealtime())
+                }
+                EntryAttempt.WRONG
+            }
         }
 
         fun generateRecoveryCode(length: Int = 16): String {

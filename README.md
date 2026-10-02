@@ -36,7 +36,7 @@ When a week with something recorded ends, the AI you chose writes a report from 
 - **Schedules:** block chosen apps, system features and websites at set times each week, or allow only the apps you list.
 - **Private DNS:** blocks adult sites across the whole phone.
 - **Protections:** system rules, such as blocking factory reset.
-- **Lock when opening:** opening Déchaîner asks for your phone's screen lock first (PIN, pattern, password or fingerprint). It is on by default, never stands in front of a running lock or the Urge button, and turning it off needs the recovery code.
+- **Lock when opening:** Déchaîner asks for its own password before it shows anything. You choose it the first time; it is separate from your phone's lock and from the recovery code. Five wrong tries in a row make the next try wait, longer each time. It is on by default and never stands in front of a running lock or the Urge button. Turning it off, or changing the password, needs the recovery code, and the recovery code also clears a forgotten password.
 - **Recovery code and unlock delay**, and **forced removal** (the escape hatch: it lifts everything after 4 days, without the code).
 - Date, time and time zone are locked, and Force stop and Clear data are blocked for the app.
 

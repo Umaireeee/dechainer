@@ -90,6 +90,7 @@ fun ConfigTab(
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
     var entryLock by remember { mutableStateOf(SecurityManager.isEntryLockEnabled(context)) }
+    var showNewPasswordDialog by remember { mutableStateOf(false) }
 
     var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
     RepeatWhileVisible(60_000) {
@@ -220,22 +221,24 @@ fun ConfigTab(
                 ) }
             }
             item {
-                val noScreenLock = !io.github.warleysr.dechainer.screens.common.deviceHasScreenLock(context)
                 GroupedRow(GroupPos.Middle) { ListItem(
                     colors = groupedRowColors(),
                     headlineContent = { Text(stringResource(R.string.entry_lock_title)) },
-                    supportingContent = {
-                        Text(stringResource(if (noScreenLock) R.string.entry_lock_no_screen_lock else R.string.entry_lock_desc))
-                    },
+                    supportingContent = { Text(stringResource(R.string.entry_lock_desc)) },
                     leadingContent = { IconTile(Icons.Outlined.Lock) },
                     trailingContent = {
                         Switch(
                             checked = entryLock,
                             onCheckedChange = { on ->
-                                // Turning it on tightens, so it is one tap. Turning it off needs the code.
+                                // Turning it on tightens, so it is one tap (a password is chosen first if
+                                // there is none). Turning it off needs the code.
                                 if (on) {
-                                    entryLock = true
-                                    SecurityManager.setEntryLockEnabled(context, true)
+                                    if (SecurityManager.hasEntryPassword(context)) {
+                                        entryLock = true
+                                        SecurityManager.setEntryLockEnabled(context, true)
+                                    } else {
+                                        showNewPasswordDialog = true
+                                    }
                                 } else {
                                     recoveryGate.run {
                                         entryLock = false
@@ -245,6 +248,17 @@ fun ConfigTab(
                             }
                         )
                     }
+                ) }
+            }
+            item {
+                GroupedRow(GroupPos.Middle) { ListItem(
+                    colors = groupedRowColors(),
+                    headlineContent = { Text(stringResource(R.string.entry_change_title)) },
+                    supportingContent = { Text(stringResource(R.string.entry_change_desc)) },
+                    leadingContent = { IconTile(Icons.Outlined.VpnKey) },
+                    trailingContent = { Chevron() },
+                    // A new opening password replaces the old one, so it needs the code like any loosening.
+                    modifier = Modifier.clickable { recoveryGate.run { showNewPasswordDialog = true } }
                 ) }
             }
             item {
@@ -411,6 +425,17 @@ fun ConfigTab(
                     }
                 }
             }
+        )
+    }
+
+    if (showNewPasswordDialog) {
+        io.github.warleysr.dechainer.screens.common.ChangePasswordDialog(
+            onDone = {
+                showNewPasswordDialog = false
+                entryLock = true
+                SecurityManager.setEntryLockEnabled(context, true)
+            },
+            onDismiss = { showNewPasswordDialog = false }
         )
     }
 

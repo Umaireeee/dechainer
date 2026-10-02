@@ -44,7 +44,6 @@ import io.github.warleysr.dechainer.lock.LockMode
 import io.github.warleysr.dechainer.screens.apps.AppsScreen
 import io.github.warleysr.dechainer.screens.common.EntryGate
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
-import io.github.warleysr.dechainer.screens.common.deviceHasScreenLock
 import io.github.warleysr.dechainer.security.EntryLock
 import io.github.warleysr.dechainer.screens.common.ScreenInfoButton
 import io.github.warleysr.dechainer.screens.focus.FocusLogScreen
@@ -279,12 +278,11 @@ class MainActivity : ComponentActivity() {
 
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
 
-                // Before anything else: opening the app asks for the phone's screen lock. A brick and the
+                // Before anything else: opening the app asks for the opening password. A brick and the
                 // urge flow are never behind it, so the Urge button always works.
                 val gateShown = EntryLock.required(
                     enabled = SecurityManager.isEntryLockEnabled(context),
                     recoverySet = recoverySet,
-                    deviceSecure = deviceHasScreenLock(context),
                     unlocked = entryUnlocked,
                     brick = brick,
                     urgeActive = urge.active
