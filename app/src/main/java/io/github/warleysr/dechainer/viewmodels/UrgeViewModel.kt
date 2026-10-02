@@ -1,6 +1,7 @@
 package io.github.warleysr.dechainer.viewmodels
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,7 +60,9 @@ data class UrgeUiState(
     val questions: QuestionsUi = QuestionsUi.None,
     val deepDive: DeepDiveUi = DeepDiveUi.Idle,
     /** The crisis card is showing (the keyword check or the AI flagged the note). */
-    val support: Boolean = false
+    val support: Boolean = false,
+    /** Started from the locked screen: only the lock and the breathing run; the private steps wait for the pattern. */
+    val holdPrivate: Boolean = false
 ) {
     /** The flow owns the screen while this is true. */
     val active: Boolean get() = choosing || entry != null
@@ -97,13 +100,13 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     fun closeChoice() = _state.update { it.copy(choosing = false) }
 
     /** "Ongoing". The entry and the lock come first; nothing here waits on the network. */
-    fun startOngoing(source: UrgeSource) {
+    fun startOngoing(source: UrgeSource, holdPrivate: Boolean = false) {
         if (!starting.compareAndSet(false, true)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val entry = flow.startOngoing(source)
                 resetDrafts()
-                _state.value = UrgeUiState(entry = entry)
+                _state.value = UrgeUiState(entry = entry, holdPrivate = holdPrivate)
             } catch (e: Exception) {
                 Timber.e(e, "Urge start failed")
             } finally {
@@ -131,10 +134,25 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * An urge lock is running but this flow has no entry for it (the app was reopened, say): every lock gets its counted entry, and the breathing runs for what is left of it.
      */
-    fun adoptRunningLock() {
+    fun adoptRunningLock(holdPrivate: Boolean = false) {
         val s = _state.value
         if (s.entry != null || s.choosing || starting.get()) return
-        startOngoing(UrgeSource.HOME)
+        // Just stepped aside for the lock screen: the lock that is ending is not a new one to adopt.
+        if (SystemClock.elapsedRealtime() < suppressAdoptUntil) return
+        startOngoing(UrgeSource.HOME, holdPrivate)
+    }
+
+    private var suppressAdoptUntil = 0L
+
+    /**
+     * The breathing of an urge started from the locked screen is over: the flow steps aside and the
+     * lock screen shows. The entry is left as it is, so the pattern brings it back at the writing
+     * step ([resumeIfAny]).
+     */
+    fun leaveForLock() {
+        resetDrafts()
+        suppressAdoptUntil = SystemClock.elapsedRealtime() + 10_000L
+        _state.value = UrgeUiState()
     }
 
     /** Opens back into an unfinished entry, if there is one; called when the app comes to the front. */

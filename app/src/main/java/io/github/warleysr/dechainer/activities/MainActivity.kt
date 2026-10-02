@@ -108,6 +108,10 @@ class MainActivity : ComponentActivity() {
     private var entryUnlocked by mutableStateOf(false)
     private var leftAt = 0L
 
+    /** Whether the locked screen covers the app right now (a brick does not lift this for the private steps). */
+    private fun lockScreenCovers(): Boolean =
+        SecurityManager.isEntryLockEnabled(this) && SecurityManager.hasRecoveryCode(this) && !entryUnlocked
+
     override fun onStop() {
         super.onStop()
         leftAt = android.os.SystemClock.elapsedRealtime()
@@ -133,7 +137,8 @@ class MainActivity : ComponentActivity() {
         if (status != null) syncBrickPin(true, status.ownerApps)
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
         // An urge that was left half-written opens straight back into its step.
-        urgeVm.resumeIfAny()
+        // Not while the locked screen covers the app: the writing is private and waits for the pattern.
+        if (!lockScreenCovers()) urgeVm.resumeIfAny()
         // A weekly report that came due while the phone was off is queued again (blueprint 6.5).
         thread { io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(applicationContext) }
     }
@@ -148,7 +153,8 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra(EXTRA_URGE_SOURCE)
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
-        urgeVm.startOngoing(source)
+        // From the tile or shortcut with the app locked: the lock and breathing only, the rest waits for the pattern.
+        urgeVm.startOngoing(source, holdPrivate = lockScreenCovers())
     }
 
     private val openTodayRequest = mutableStateOf(false)
@@ -218,7 +224,7 @@ class MainActivity : ComponentActivity() {
             }
             // Every urge lock gets its counted entry and its breathing, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
-                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
+                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock(holdPrivate = lockScreenCovers())
             }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
@@ -250,6 +256,9 @@ class MainActivity : ComponentActivity() {
                         if (!focusBrick && !urge.active) navViewModel.navigateTo(Route.TODAY)
                     }
                 }
+
+                // The pattern was drawn: an urge that stopped after its breathing carries on to the writing.
+                LaunchedEffect(entryUnlocked) { if (entryUnlocked) urgeVm.resumeIfAny() }
 
                 // An urge lock or a punishment day ends any open recovery session, so the code can't
                 // be used until the lock runs out.
@@ -338,7 +347,7 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when {
-                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.openChoice(UrgeSource.HOME) })
+                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.startOngoing(UrgeSource.HOME, holdPrivate = true) })
 
                         !recoverySet -> SetupRecovery(innerPadding)
 

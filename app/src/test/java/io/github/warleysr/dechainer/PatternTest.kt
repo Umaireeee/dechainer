@@ -45,3 +45,19 @@ class PatternTest {
         assertNull(Pattern.dotAt(50f, 50f, 0f))
     }
 }
+
+/** An urge started from the locked screen runs the lock and the breathing only. */
+class UrgeFromLockedScreenTest {
+    private val urgeScreens = io.github.warleysr.dechainer.urge.UrgeScreen.entries
+
+    @Test fun onlyTheBreathingRunsWhenStartedFromTheLockedScreen() {
+        for (screen in urgeScreens) {
+            val aside = io.github.warleysr.dechainer.urge.UrgeFlowRules.stepsAsideForPattern(true, screen)
+            assertEquals(screen != io.github.warleysr.dechainer.urge.UrgeScreen.BREATHING, aside)
+        }
+    }
+
+    @Test fun anUrgeStartedWhileUnlockedRunsEveryStep() {
+        for (screen in urgeScreens) assertFalse(io.github.warleysr.dechainer.urge.UrgeFlowRules.stepsAsideForPattern(false, screen))
+    }
+}
