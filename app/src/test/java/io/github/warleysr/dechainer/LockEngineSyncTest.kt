@@ -234,4 +234,38 @@ class LockEngineSyncTest {
         LockEngine.sync(ctx)
         assertFalse("and it does not come back on the next pass", LockEngine.brickRunning(ctx))
     }
+
+    private fun missedFocusEndIsSettledBeforeDayEvaluation(crossMidnight: Boolean) {
+        makeDeviceOwner()
+        val zone = TrustedClock.zone()
+        val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(ctx), zone)
+        val yesterday = today.minusDays(if (crossMidnight) 2L else 1L)
+        val start = yesterday.atTime(if (crossMidnight) 23 else 21, 30).atZone(zone).toInstant().toEpochMilli()
+        val end = start + 60 * minute
+        val days = Store.days(ctx)
+        assertTrue(days.savePlan(yesterday, listOf(
+            io.github.warleysr.dechainer.day.NewGoal("Focus", io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES, 40),
+            io.github.warleysr.dechainer.day.NewGoal("No slip", io.github.warleysr.dechainer.day.GoalType.NO_SLIP)
+        ), start - 24 * 3_600_000L))
+        Store.appState(ctx).set(io.github.warleysr.dechainer.store.AppStateKeys.ACTIVATED_ON, yesterday.toString())
+        val session = Store.focus(ctx).insert(io.github.warleysr.dechainer.store.StoredSession(start,
+            io.github.warleysr.dechainer.focus.FocusSource.MANUAL, io.github.warleysr.dechainer.focus.Flavor.SPECIAL,
+            "Study", start, end, null, 0, null))
+        val state = io.github.warleysr.dechainer.focus.FocusFlow.begin(
+            io.github.warleysr.dechainer.focus.FocusSource.MANUAL, io.github.warleysr.dechainer.focus.Flavor.SPECIAL,
+            "Study", start, end)!!.state.copy(sessionId = session)
+        Store.appState(ctx).set(io.github.warleysr.dechainer.store.AppStateKeys.FOCUS_FLOW, state.toJson())
+        io.github.warleysr.dechainer.focus.FocusRunner.resetForTests()
+        LockEngine.sync(ctx)
+        assertEquals(60, Store.focus(ctx).session(session)!!.focusedMinutes)
+        assertEquals(io.github.warleysr.dechainer.day.GoalState.DONE,
+            days.goals(yesterday).first { it.type == io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES }.state)
+        assertEquals(2, days.day(yesterday)!!.doneCount)
+        assertTrue(days.day(yesterday)!!.evaluated)
+        LockEngine.sync(ctx)
+        assertEquals(2, days.day(yesterday)!!.doneCount)
+    }
+
+    @Test fun missedEveningFocusEndSettlesBeforeImmutableDailyResult() = missedFocusEndIsSettledBeforeDayEvaluation(false)
+    @Test fun missedCrossMidnightFocusEndSettlesBeforeImmutableDailyResult() = missedFocusEndIsSettledBeforeDayEvaluation(true)
 }

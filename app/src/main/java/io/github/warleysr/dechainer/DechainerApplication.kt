@@ -93,12 +93,6 @@ class DechainerApplication : Application() {
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         })
-        ContextCompat.registerReceiver(this, object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                ScheduleEnforcer.invalidateProtectedPackages()
-                LockEngine.requestSync(this@DechainerApplication)
-            }
-        }, IntentFilter(Intent.ACTION_PREFERRED_ACTIVITY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
         // Android only delivers this to a receiver registered while the process is alive.
         ContextCompat.registerReceiver(
             this, userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED

@@ -415,6 +415,8 @@ class UrgeFlowTest {
         assertNull(stub.rawText)
         assertNull(stub.answersJson)
         assertEquals(UrgeStatus.SKIPPED, stub.status)
+        val date = io.github.warleysr.dechainer.day.DayWindow.dateOf(e.createdAt, TrustedClock.zone())
+        assertEquals(1, Store.days(ctx).stats(TrustedClock.zone()).slips(date))
         assertFalse(f.hasPending())
     }
 

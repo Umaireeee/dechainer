@@ -480,7 +480,7 @@
     <string name="urge_dd_done">Done</string>
     <string name="urge_dd_delete">Delete this entry</string>
     <string name="urge_dd_delete_title">Delete this entry?</string>
-    <string name="urge_dd_delete_body">The note and everything saved with it are removed from this phone.</string>
+    <string name="urge_dd_delete_body">Private text will be erased. A slip needed for daily results stays as a counted entry. The note and everything saved with it are removed from this phone.</string>
     <string name="urge_dd_delete_confirm">Delete</string>
     <string name="urge_dd_delete_keep">Keep</string>
 

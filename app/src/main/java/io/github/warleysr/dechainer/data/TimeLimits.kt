@@ -94,7 +94,9 @@ object TimeLimits {
     /** [reached]: apps out of time today. [nextCheckDelayMs]: when to look again, null if there's nothing to watch. */
     class Status(val reached: Set<String>, val nextCheckDelayMs: Long?)
 
-    fun evaluate(ctx: Context, now: Long): Status {
+    fun evaluate(ctx: Context, now: Long): Status = evaluate(ctx, now, ::readToday)
+
+    internal fun evaluate(ctx: Context, now: Long, readUsage: (Context, Set<String>, Long) -> Map<String, Long>?): Status {
         val limits = all(ctx)
         if (limits.isEmpty()) return Status(emptySet(), null)
         val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
@@ -111,7 +113,7 @@ object TimeLimits {
             return Status(carried, if (carried.isNotEmpty()) untilMidnight.coerceAtLeast(LimitMath.MIN_DELAY_MS) else null)
         }
         // Measured, the log is the truth: a limit raised with the recovery code gives its time back.
-        val used = readToday(ctx, limits.keys, now)
+        val used = runCatching { readUsage(ctx, limits.keys, now) }.getOrNull()
             ?: return Status(carried, LimitMath.MIN_DELAY_MS)
         val reached = LimitMath.reached(limits, used)
         if (reached != carried || record.getString(KEY_REACHED_DAY, null) != today) {

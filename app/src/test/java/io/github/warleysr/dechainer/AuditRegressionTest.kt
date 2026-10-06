@@ -88,4 +88,11 @@ class AuditRegressionTest {
         assertEquals(FlowStage.FINAL_ASK, result.state.stage)
         assertFalse(result.effects.any { it is FlowEffect.RecordCheckin && it.answer == CheckinAnswer.NO })
     }
+
+    @Test fun onlySelectedHomeIsExemptAndDefaultChangesAreHonored() {
+        val homes = setOf("home", "browser.home")
+        assertEquals(setOf("home"), io.github.warleysr.dechainer.data.LockSafety.protectedHomes(homes, "home"))
+        assertEquals(setOf("browser.home"), io.github.warleysr.dechainer.data.LockSafety.protectedHomes(homes, "browser.home"))
+        assertEquals(homes, io.github.warleysr.dechainer.data.LockSafety.protectedHomes(homes, null))
+    }
 }

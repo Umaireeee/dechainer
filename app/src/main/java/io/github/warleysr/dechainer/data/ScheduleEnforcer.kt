@@ -279,11 +279,13 @@ object ScheduleEnforcer : AppBlockEngine() {
      * loop), System UI, the phone app so emergency calls always work, and enabled keyboards.
      */
     fun protectedPackages(context: Context): Set<String> {
-        cachedProtected?.let { if (System.currentTimeMillis() < protectedValidUntil) return it }
-        val fresh = readProtectedPackages(context)
-        cachedProtected = fresh
-        protectedValidUntil = System.currentTimeMillis() + PROTECTED_CACHE_MS
-        return fresh
+        val stable = cachedProtected?.takeIf { System.currentTimeMillis() < protectedValidUntil }
+            ?: readProtectedPackages(context).also {
+                cachedProtected = it
+                protectedValidUntil = System.currentTimeMillis() + PROTECTED_CACHE_MS
+            }
+        // Home selection can change without a package broadcast; resolve it on every pass.
+        return stable + homePackages(context)
     }
 
     /** Called when a package is installed or removed: a new launcher or keyboard changes this list. */
@@ -292,16 +294,17 @@ object ScheduleEnforcer : AppBlockEngine() {
         protectedValidUntil = 0L
     }
 
+    private fun homePackages(context: Context): Set<String> = try {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val candidates = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }.toSet()
+        val selected = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+        LockSafety.protectedHomes(candidates, selected)
+    } catch (_: Exception) { emptySet() }
+
     private fun readProtectedPackages(context: Context): Set<String> {
         val pm = context.packageManager
         val result = LockSafety.neverBlocked(context.packageName).toMutableSet()
-        try {
-            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            val candidates = pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
-                .map { it.activityInfo.packageName }.toSet()
-            val selected = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
-            result += if (selected in candidates) setOf(selected!!) else candidates
-        } catch (_: Exception) { }
         // minSdk is 30, so getSystemDialerPackage() (API 29) is always present and the
         // NoSuchMethodError some reviewers warn about cannot occur here. Kept null-safe and
         // Throwable-safe anyway: this runs on the boot path, where dying is expensive.
