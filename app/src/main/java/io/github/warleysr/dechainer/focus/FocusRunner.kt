@@ -124,7 +124,9 @@ object FocusRunner {
         }
         val state = first.state.copy(sessionId = id)
         synchronized(lock) { store(ctx, state) }
-        publishAndApply(ctx, previous = null, step = FlowStep(state, first.effects))
+        // Pass the old flow in: if it was waiting on its last question, publishAndApply clears that
+        // stale notification, so its Yes/No buttons cannot act on the new block.
+        publishAndApply(ctx, previous = previous, step = FlowStep(state, first.effects))
         Pomodoro.reloadLog(ctx)
         if (state.stage == FlowStage.PROMPT) {
             Pomodoro.postFlowQuestion(
