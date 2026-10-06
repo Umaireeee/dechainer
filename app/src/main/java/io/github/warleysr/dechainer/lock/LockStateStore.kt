@@ -49,10 +49,16 @@ object LockStateStore {
     }
 
     fun clearUrge(context: Context) {
-        val state = Store.appState(context)
-        state.remove(AppStateKeys.URGE_LOCK_STARTED)
-        state.remove(AppStateKeys.URGE_LOCK_ENDS)
+        // Forget it in this process first: the escape (the crash-loop breaker) must not fail closed
+        // if the store cannot be written. The two removes mirror setUrge's one transaction.
         lastUrge = UrgeInput()
+        try {
+            val state = Store.appState(context)
+            state.remove(AppStateKeys.URGE_LOCK_STARTED)
+            state.remove(AppStateKeys.URGE_LOCK_ENDS)
+        } catch (e: Exception) {
+            Timber.w(e, "Urge lock not cleared on disk; it is cleared in memory")
+        }
     }
 
     /**

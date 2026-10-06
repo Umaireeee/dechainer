@@ -560,6 +560,10 @@ object Pomodoro {
             s.isPaused && s.inBlock && s.blockEndsAt <= now() -> onPhaseAlarm(context)
             s.isPaused && s.inBlock -> { armAlarm(context, s.blockEndsAt); showTimer(context, s) }
             s.isPaused -> showTimer(context, s)
+            // An idle block (a special session, or the plain timer): the lock's own alarm is the
+            // engine's, but the timer notification must come back after a reboot too.
+            s.inBlock && s.blockEndsAt <= now() -> closeExpiredBlock(context, now())
+            s.inBlock -> { armAlarm(context, s.blockEndsAt); showTimer(context, s) }
             else -> Unit
         }
     }
