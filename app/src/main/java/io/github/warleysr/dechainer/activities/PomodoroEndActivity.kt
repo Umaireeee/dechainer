@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,8 @@ class PomodoroEndActivity : ComponentActivity() {
             return
         }
         setContent {
+            val settings by Pomodoro.settings.collectAsStateWithLifecycle()
+            val focusState by Pomodoro.state.collectAsStateWithLifecycle()
             DechainerTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column(
@@ -126,7 +129,7 @@ class PomodoroEndActivity : ComponentActivity() {
                                 }
                             }
                         } else {
-                            val breakMinutes = Pomodoro.settings.value.minutesFor(Pomodoro.state.value.phase)
+                            val breakMinutes = settings.minutesFor(focusState.phase)
                             Button(
                                 onClick = { Pomodoro.start(this@PomodoroEndActivity); finish() },
                                 modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth().height(52.dp)

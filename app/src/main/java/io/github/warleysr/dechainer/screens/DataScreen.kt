@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ import java.time.format.FormatStyle
 @Composable
 fun DataScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
+    val resources = LocalResources.current
     val zone = TrustedClock.zone()
     val tools = remember { DataTools(ctx, zone) { TrustedClock.now(ctx) } }
     val gate = rememberRecoveryGate()
@@ -57,7 +59,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
                     Store.reports(ctx).all().filter { !it.deleted },
                     io.github.warleysr.dechainer.report.PeriodKind.entries.flatMap { Store.periodReports(ctx).all(it) }.filter { !it.deleted },
                     goalDays, goalDays.filter { tools.canDeleteGoals(it) }.toSet())
-            }.getOrElse { message = ctx.getString(R.string.data_operation_failed); null }
+            }.getOrElse { message = resources.getString(R.string.data_operation_failed); null }
         }
     }
     val urges = snapshot?.urges.orEmpty()
@@ -72,7 +74,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
             try {
                 message = withContext(Dispatchers.IO) { work() }
                 version++
-            } catch (_: Exception) { message = ctx.getString(R.string.data_operation_failed) }
+            } catch (_: Exception) { message = resources.getString(R.string.data_operation_failed) }
             finally { busy = false }
         }
     }
@@ -113,7 +115,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
             val result = text?.let { tools.import(it) }
             when {
                 result == null || !result.ok -> importFailedMsg
-                else -> ctx.getString(R.string.data_imported, result.added, result.skipped)
+                else -> resources.getString(R.string.data_imported, result.added, result.skipped)
             }
         }
     }
@@ -197,7 +199,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
                     confirmWipe = false
                     action {
                         val r = tools.wipeAll()
-                        ctx.getString(R.string.data_wipe_done, r.removed, r.kept)
+                        resources.getString(R.string.data_wipe_done, r.removed, r.kept)
                     }
                 }) { Text(stringResource(R.string.data_wipe)) }
             },

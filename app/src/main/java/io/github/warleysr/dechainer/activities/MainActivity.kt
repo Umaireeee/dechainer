@@ -221,7 +221,8 @@ class MainActivity : ComponentActivity() {
             val lockedHome = lockStatus?.takeIf { it.primary != LockMode.FOCUS_BLOCK }
             val brick = focusState.inBlock || lockStatus != null
             val focusBrick = brick && lockedHome == null
-            val pinApps = lockStatus?.ownerApps ?: Pomodoro.allowedApps.value
+            val allowedApps by Pomodoro.allowedApps.collectAsState()
+            val pinApps = lockStatus?.ownerApps ?: allowedApps
             LaunchedEffect(brick, pinApps) { syncBrickPin(brick, pinApps) }
             // The status ends with the clock: when the end time has passed, ask for the plan again.
             RepeatWhileVisible(1000) {

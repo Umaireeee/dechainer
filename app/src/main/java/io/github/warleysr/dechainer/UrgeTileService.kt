@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -31,8 +32,15 @@ class UrgeTileService : TileService() {
                 PendingIntent.getActivity(this, 31, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             )
         } else {
-            @Suppress("DEPRECATION")
-            startActivityAndCollapse(intent)
+            openLegacyTile(intent)
         }
+    }
+
+    // PendingIntent overload exists only on API 34+. This is the supported API 30–33 path,
+    // called only from the SDK-gated branch above. Lint's target-SDK-only warning is inapplicable here.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    @Suppress("DEPRECATION")
+    private fun openLegacyTile(intent: Intent) {
+        startActivityAndCollapse(intent)
     }
 }

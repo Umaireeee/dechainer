@@ -118,7 +118,9 @@ import java.time.LocalDate
 @Composable
 fun FocusScreen(onOpenLog: () -> Unit) {
     val context = LocalContext.current
-    remember { Pomodoro.ensureLoaded(context); FocusRunner.ensureLoaded(context) }
+    LaunchedEffect(context) {
+        withContext(Dispatchers.IO) { Pomodoro.ensureLoaded(context); FocusRunner.ensureLoaded(context) }
+    }
     val flow by FocusRunner.flow.collectAsState()
     val state by Pomodoro.state.collectAsState()
     val settings by Pomodoro.settings.collectAsState()
