@@ -485,6 +485,7 @@ private fun pendingReason(gate: AiGateResult, error: AiError?): Int = when {
 @Composable
 fun SupportCard(contact: CrisisContact) {
     val context = LocalContext.current
+    val smsBody = stringResource(R.string.urge_support_sms_body)
     fun open(intent: Intent) {
         runCatching { context.startActivity(intent) }
     }
@@ -504,7 +505,7 @@ fun SupportCard(contact: CrisisContact) {
                     onClick = {
                         open(
                             Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(contact.number)))
-                                .putExtra("sms_body", context.getString(R.string.urge_support_sms_body))
+                                .putExtra("sms_body", smsBody)
                         )
                     },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 8.dp)

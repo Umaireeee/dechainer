@@ -25,11 +25,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,7 +53,7 @@ import java.time.format.FormatStyle
 @Composable
 fun FocusLogScreen() {
     val context = LocalContext.current
-    remember { Pomodoro.ensureLoaded(context) }
+    LaunchedEffect(context) { withContext(Dispatchers.IO) { Pomodoro.ensureLoaded(context) } }
     val log by Pomodoro.log.collectAsState()
     val zone = remember { ZoneId.systemDefault() }
     val days = remember(log) { FocusLogMath.byDay(log, zone) }

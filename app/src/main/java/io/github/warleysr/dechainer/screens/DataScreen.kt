@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
@@ -32,6 +33,7 @@ import java.time.format.FormatStyle
 @Composable
 fun DataScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
+    val resources = LocalResources.current
     val zone = TrustedClock.zone()
     val tools = remember { DataTools(ctx, zone) { TrustedClock.now(ctx) } }
     val gate = rememberRecoveryGate()
@@ -76,7 +78,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
             val result = text?.let { tools.import(it) }
             message = when {
                 result == null || !result.ok -> importFailedMsg
-                else -> ctx.getString(R.string.data_imported, result.added, result.skipped)
+                else -> resources.getString(R.string.data_imported, result.added, result.skipped)
             }
             version++
         }
@@ -159,7 +161,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
                 TextButton({
                     confirmWipe = false
                     val r = tools.wipeAll()
-                    message = ctx.getString(R.string.data_wipe_done, r.removed, r.kept)
+                    message = resources.getString(R.string.data_wipe_done, r.removed, r.kept)
                     version++
                 }) { Text(stringResource(R.string.data_wipe)) }
             },

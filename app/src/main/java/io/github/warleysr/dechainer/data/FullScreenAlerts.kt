@@ -36,6 +36,10 @@ object FullScreenAlerts {
 
     /** The system screen where the permission is switched on. */
     fun settingsIntent(context: Context): Intent =
-        Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${context.packageName}"))
+        Intent(
+            if (Build.VERSION.SDK_INT >= 34) Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+            else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        )
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
