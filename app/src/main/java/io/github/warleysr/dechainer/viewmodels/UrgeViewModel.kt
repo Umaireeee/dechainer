@@ -209,14 +209,15 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(questions = QuestionsUi.Loading) }
         val stored = flow.storedQuestions(entry)
         val set: QuestionSet = if (stored != null) {
-            QuestionSet(stored, fromAi = true, support = Safety.needsSupport(note))
+            // The crisis flag was stored with the questions, so it survives a restart.
+            QuestionSet(stored, fromAi = true, support = entry.support)
         } else {
             // The call runs on its own, so the 20 second limit can give up on it without waiting for it to return.
             val call = viewModelScope.async(Dispatchers.IO) { flow.fetchQuestions(entry, note) }
             withTimeoutOrNull(Rules.AI_QUESTIONS_TIMEOUT_MS) { call.await() }
                 ?: QuestionSet(flow.fixedQuestions(), fromAi = false, support = Safety.needsSupport(note))
         }
-        val saved = if (stored == null) flow.saveQuestions(entry, set.questions) else entry
+        val saved = if (stored == null) flow.saveQuestions(entry, set.questions, set.support) else entry
         _state.update { it.copy(entry = saved, questions = QuestionsUi.Ready(set.questions), support = it.support || set.support) }
     }
 

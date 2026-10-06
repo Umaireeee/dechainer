@@ -36,13 +36,20 @@ class AiSettings(context: Context) {
     /** Has the owner agreed to send the note to this provider? Changing provider (or a custom address) asks again. */
     val consent: Boolean get() = prefs.getString(KEY_CONSENT_FOR, null) == consentKey
 
-    /** Ready to call: a key, an address and a model. */
-    val configured: Boolean get() = toConfig().configured
+    /**
+     * Whether the destination is known: the owner picked a provider, or the key's look identifies it.
+     * A plain `sk-` key is ambiguous (DeepSeek, OpenAI and others all use it), so it must not be sent
+     * to the fallback provider by default; until the owner picks one, nothing is configured.
+     */
+    val providerChosen: Boolean get() = prefs.contains(KEY_PROVIDER) || Provider.detect(key) != null
+
+    /** Ready to call: a known destination, a key, an address and a model. */
+    val configured: Boolean get() = providerChosen && toConfig().configured
 
     fun toConfig(): AiConfig = AiConfig(provider, baseUrl, key, model)
 
     /** What happened when a key was saved. */
-    enum class KeySave { SAVED, CANNOT_ENCRYPT }
+    enum class KeySave { SAVED, CANNOT_ENCRYPT, PROVIDER_NEEDED }
 
     /**
      * Saves the key, sealed. If this phone cannot encrypt it nothing is saved: the key is never
@@ -58,7 +65,8 @@ class AiSettings(context: Context) {
         val sealed = SecretBox.seal(clean) ?: return KeySave.CANNOT_ENCRYPT
         prefs.edit { putString(KEY_SEALED, sealed) }
         cachedKey = clean
-        return KeySave.SAVED
+        // A key whose look does not identify a provider needs the owner to choose one first.
+        return if (providerChosen) KeySave.SAVED else KeySave.PROVIDER_NEEDED
     }
 
     /** The model the owner typed, or "" to use the provider's default. */

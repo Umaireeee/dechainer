@@ -85,17 +85,25 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
     fun wipeAll(): WipeResult {
         var removed = 0
         var kept = 0
-        urges.all().forEach { e ->
-            if (e.status.isFinal || e.status == UrgeStatus.PENDING_DEEPDIVE) {
-                if (urgeDeletable(e) && urges.delete(e.id)) removed++ else kept++
-            } else kept++ // still in the flow
+        // One transaction, so a kill mid-wipe cannot leave a half-emptied store (blueprint 7).
+        val db = Store.raw(ctx).writableDatabase
+        db.beginTransaction()
+        try {
+            urges.all().forEach { e ->
+                if (e.status.isFinal || e.status == UrgeStatus.PENDING_DEEPDIVE) {
+                    if (urgeDeletable(e) && urges.delete(e.id)) removed++ else kept++
+                } else kept++ // still in the flow
+            }
+            focus.sessions().forEach { s ->
+                if (s.endedAt != null && measuredOk(s.startedAt)) { focus.delete(s.id); removed++ } else kept++
+            }
+            days.datesWithGoals().forEach { d -> if (canDeleteGoals(d)) { days.deleteGoals(d); removed++ } else kept++ }
+            reports.deleteAll()
+            periodReports.deleteAll()
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
-        focus.sessions().forEach { s ->
-            if (s.endedAt != null && measuredOk(s.startedAt)) { focus.delete(s.id); removed++ } else kept++
-        }
-        days.datesWithGoals().forEach { d -> if (canDeleteGoals(d)) { days.deleteGoals(d); removed++ } else kept++ }
-        reports.deleteAll()
-        periodReports.deleteAll()
         return WipeResult(removed = removed, kept = kept)
     }
 
@@ -148,6 +156,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                     putLong("lock_started_at", r); putLong("lock_ended_at", r); put("status", kept.name)
                     put("raw_text", note); put("questions_json", r.optNullString("questions_json"))
                     put("answers_json", r.optNullString("answers_json")); put("deep_dive", r.optNullString("deep_dive"))
+                    put("support", r.optInt("support"))
                 }); added++
             }
 

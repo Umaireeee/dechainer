@@ -162,6 +162,11 @@ fun UrgeSettingsScreen() {
                     message = R.string.urge_saved
                     retryWaiting()
                 }
+                AiSettings.KeySave.PROVIDER_NEEDED -> {
+                    keyInput = ""
+                    keySaved = ai.key.isNotBlank()
+                    message = R.string.ai_provider_required
+                }
                 AiSettings.KeySave.CANNOT_ENCRYPT -> message = R.string.ai_key_cannot_encrypt
             }
         }

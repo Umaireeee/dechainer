@@ -52,7 +52,9 @@ data class UrgeEntry(
     val rawText: String?,
     val questionsJson: String?,
     val answersJson: String?,
-    val deepDive: String?
+    val deepDive: String?,
+    /** The crisis card goes with this entry (the keyword check or the AI flagged the note). Stored so it survives a restart. */
+    val support: Boolean = false
 )
 
 enum class QuestionType { CHOICE, TEXT, SCALE }

@@ -511,6 +511,7 @@
     <string name="ai_key_none">No key is saved.</string>
     <string name="ai_key_saved">A key is saved. Type a new one to replace it, or save an empty box to remove it.</string>
     <string name="ai_key_cannot_encrypt">This phone could not encrypt the key, so it was not saved.</string>
+    <string name="ai_provider_required">Choose your provider above so your key is sent only there.</string>
     <string name="ai_key_get">Get a key at %1$s</string>
     <string name="ai_model_label">Model</string>
     <string name="ai_model_default">Leave empty to use %1$s.</string>

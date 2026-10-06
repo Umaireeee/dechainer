@@ -102,6 +102,13 @@ object Migrations {
                     "created_at INTEGER NOT NULL, status TEXT NOT NULL, body_md TEXT NOT NULL DEFAULT '', " +
                     "summary_json TEXT NOT NULL DEFAULT '', UNIQUE (kind, period_key))"
             )
+        ),
+        // Blueprint 6.2: the crisis flag is stored with the entry, so the support card survives a restart.
+        Migration(
+            from = 6, to = 7,
+            statements = listOf(
+                "ALTER TABLE urge_entry ADD COLUMN support INTEGER NOT NULL DEFAULT 0"
+            )
         )
     )
 

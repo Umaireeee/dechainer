@@ -95,11 +95,14 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
     fun saveNote(id: Long, text: String): Boolean = move(id, UrgeStatus.QUESTIONS) { put("raw_text", text) }
 
     /** The questions the owner is shown, stored so a deep dive can be retried without asking again. Only while answering. */
-    fun saveQuestions(id: Long, questions: List<Question>): Boolean {
+    fun saveQuestions(id: Long, questions: List<Question>, support: Boolean = false): Boolean {
         var done = false
         inTransaction {
             done = it.update(
-                TABLE, ContentValues().apply { put("questions_json", UrgeJson.questionsToJson(questions)) },
+                TABLE, ContentValues().apply {
+                    put("questions_json", UrgeJson.questionsToJson(questions))
+                    put("support", if (support) 1 else 0)
+                },
                 "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.QUESTIONS.name)
             ) == 1
         }
@@ -171,7 +174,8 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
             rawText = if (c.isNull(7)) null else c.getString(7),
             questionsJson = if (c.isNull(8)) null else c.getString(8),
             answersJson = if (c.isNull(9)) null else c.getString(9),
-            deepDive = if (c.isNull(10)) null else c.getString(10)
+            deepDive = if (c.isNull(10)) null else c.getString(10),
+            support = c.getInt(11) != 0
         )
     }
 
@@ -192,7 +196,7 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         const val TABLE = "urge_entry"
         val COLUMNS = arrayOf(
             "id", "created_at", "kind", "source", "lock_started_at", "lock_ended_at", "status",
-            "raw_text", "questions_json", "answers_json", "deep_dive"
+            "raw_text", "questions_json", "answers_json", "deep_dive", "support"
         )
     }
 }

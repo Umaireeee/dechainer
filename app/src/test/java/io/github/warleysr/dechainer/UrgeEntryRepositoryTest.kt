@@ -102,6 +102,18 @@ class UrgeEntryRepositoryTest {
     }
 
     @Test
+    fun theCrisisFlagIsStoredWithTheQuestions() {
+        val id = repo.insert(UrgeKind.URGE, UrgeSource.HOME, 1_000L)
+        repo.markWriting(id)
+        repo.saveNote(id, "n")
+        assertFalse("off by default", repo.get(id)!!.support)
+        assertTrue(repo.saveQuestions(id, q, support = true))
+        assertTrue("the flag is read back", repo.get(id)!!.support)
+        repo.saveAnswers(id, a)
+        assertTrue("and survives the answers", repo.get(id)!!.support)
+    }
+
+    @Test
     fun aDeepDiveCannotBeSavedBeforeTheAnswersAndTheNoteSurvivesTheAttempt() {
         val id = repo.insert(UrgeKind.SLIP, UrgeSource.HOME, 1_000L)
         repo.saveNote(id, "keep me")

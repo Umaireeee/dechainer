@@ -150,9 +150,11 @@ class UrgeFlow(
         return step(entry, entry.copy(status = UrgeStatus.QUESTIONS, rawText = note)) { repo.saveNote(entry.id, note) }
     }
 
-    /** Stores the questions the owner is about to see (the entry keeps them for a later retry). */
-    fun saveQuestions(entry: UrgeEntry, questions: List<Question>): UrgeEntry =
-        step(entry, entry.copy(questionsJson = UrgeJson.questionsToJson(questions))) { repo.saveQuestions(entry.id, questions) }
+    /** Stores the questions the owner is about to see (the entry keeps them for a later retry) and the crisis flag with them. */
+    fun saveQuestions(entry: UrgeEntry, questions: List<Question>, support: Boolean = entry.support): UrgeEntry =
+        step(entry, entry.copy(questionsJson = UrgeJson.questionsToJson(questions), support = support)) {
+            repo.saveQuestions(entry.id, questions, support)
+        }
 
     /** The answers are in: the deep dive is owed from here on. */
     fun saveAnswers(entry: UrgeEntry, answers: List<Answer>): UrgeEntry {
@@ -226,9 +228,16 @@ class UrgeFlow(
             }
             return when (val out = calls.deepDive(ai.config(), inputFor(entry), onText)) {
                 is MarkdownOutcome.Ok -> {
-                    if (stored) runCatching { repo.saveDeepDive(entry.id, out.markdown) }
+                    val saved = if (!stored) true else runCatching { repo.saveDeepDive(entry.id, out.markdown) }
                         .onFailure { Timber.e(it, "Deep dive not saved") }
-                    DeepDiveResult.Saved(out.markdown)
+                        .getOrDefault(false)
+                    if (saved) {
+                        DeepDiveResult.Saved(out.markdown)
+                    } else {
+                        // The note and its deep dive were not committed: keep both and let the retry finish.
+                        enqueueRetry(true)
+                        DeepDiveResult.Pending(AiGateResult.OPEN, null)
+                    }
                 }
                 is MarkdownOutcome.Failed -> {
                     if (!out.error.needsOwner) enqueueRetry(true)
@@ -267,7 +276,7 @@ class UrgeFlow(
             at = Instant.ofEpochMilli(e.createdAt).atZone(TrustedClock.zone()),
             note = note,
             answers = UrgeJson.answersFromJson(e.answersJson),
-            flagged = Safety.needsSupport(note),
+            flagged = e.support,
             // The last month as earlier deep dives summed it up, so a repeat is named and an old plan followed up.
             history = runCatching {
                 io.github.warleysr.dechainer.ai.DeepDiveHistory.from(repo.all(), e.id, e.createdAt, TrustedClock.zone())
