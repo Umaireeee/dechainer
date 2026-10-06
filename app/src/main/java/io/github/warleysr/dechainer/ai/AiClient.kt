@@ -245,12 +245,23 @@ object Sse {
         return err.optString("message").ifBlank { "The service reported an error." }
     }
 
+    private fun readLineBounded(reader: java.io.BufferedReader): String? {
+        val line = StringBuilder()
+        while (true) {
+            val c = reader.read()
+            if (c < 0) return line.takeIf { it.isNotEmpty() }?.toString()
+            if (c == '\n'.code) return line.toString().trimEnd('\r')
+            if (line.length >= AiClient.MAX_REPLY_CHARS) throw StreamFailure("Stream event exceeds limit")
+            line.append(c.toChar())
+        }
+    }
+
     /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. */
     fun read(reader: java.io.BufferedReader, onText: (String) -> Unit): String {
         val all = StringBuilder()
         var complete = false
         while (true) {
-            val line = reader.readLine() ?: break
+            val line = readLineBounded(reader) ?: break
             if (isDone(line)) { complete = true; break }
             error(line)?.let { throw StreamFailure(it) }
             val data = payload(line)

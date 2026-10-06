@@ -30,7 +30,7 @@ data class QuestionSet(val questions: List<Question>, val fromAi: Boolean, val s
 
 /** What came of asking for a deep dive. */
 sealed interface DeepDiveResult {
-    /** The deep dive exists (saved, and the note deleted, when the store was available). */
+    /** The complete deep dive is durably saved, and the note deletion has committed. */
     data class Saved(val markdown: String) : DeepDiveResult
 
     /**
@@ -163,13 +163,16 @@ class UrgeFlow(
     }
 
     /** Deletes the entry (and with it any note still stored). */
-    fun delete(entry: UrgeEntry) {
-        if (entry.id >= 0L) runCatching {
+    fun delete(entry: UrgeEntry): Boolean {
+        if (entry.id < 0L) return true // Explicitly discard the in-memory copy.
+        return runCatching {
             val tools = io.github.warleysr.dechainer.report.DataTools(ctx, TrustedClock.zone()) { TrustedClock.now(ctx) }
-            if (tools.deleteUrge(entry.id) == io.github.warleysr.dechainer.report.DeleteResult.NOT_ALLOWED) {
-                repo.erasePrivateText(entry.id)
+            when (tools.deleteUrge(entry.id)) {
+                io.github.warleysr.dechainer.report.DeleteResult.NOT_ALLOWED -> repo.erasePrivateText(entry.id)
+                io.github.warleysr.dechainer.report.DeleteResult.DELETED,
+                io.github.warleysr.dechainer.report.DeleteResult.MISSING -> true
             }
-        }.onFailure { Timber.w(it, "Urge entry not deleted") }
+        }.onFailure { Timber.w(it, "Urge entry not deleted") }.getOrDefault(false)
     }
 
     /** Applies a stored change, then reads the entry back; without a store, the in-memory copy stands. */

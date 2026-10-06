@@ -256,8 +256,8 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteEntry() {
         val e = _state.value.entry ?: return finishNow()
         viewModelScope.launch(Dispatchers.IO) {
-            flow.delete(e)
-            finishNow()
+            if (flow.delete(e)) finishNow()
+            else _state.update { it.copy(deepDive = DeepDiveUi.Pending(AiGateResult.OPEN, AiError.STORAGE)) }
         }
     }
 

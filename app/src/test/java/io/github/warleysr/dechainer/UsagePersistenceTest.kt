@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.Shadows.shadowOf
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -26,7 +27,7 @@ class UsagePersistenceTest {
         ctx.getSharedPreferences("app_time_limits", Context.MODE_PRIVATE).edit().clear().putInt("app", 30).commit()
         ctx.getSharedPreferences("app_time_limits_reached", Context.MODE_PRIVATE).edit().clear()
             .putString("day", "2026-10-06").putStringSet("apps", setOf("app")).commit()
-        ctx.getSystemService(AppOpsManager::class.java).setMode(
+        shadowOf(ctx.getSystemService(AppOpsManager::class.java)).setMode(
             AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName, AppOpsManager.MODE_ALLOWED)
     }
 
@@ -42,7 +43,7 @@ class UsagePersistenceTest {
     }
 
     @Test fun permissionLossRetainsTodayButNotYesterdaysRecord() {
-        ctx.getSystemService(AppOpsManager::class.java).setMode(
+        shadowOf(ctx.getSystemService(AppOpsManager::class.java)).setMode(
             AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName, AppOpsManager.MODE_IGNORED)
         assertEquals(setOf("app"), TimeLimits.evaluate(ctx, now).reached)
         assertTrue(TimeLimits.evaluate(ctx, now + 24 * 3_600_000L).reached.isEmpty())

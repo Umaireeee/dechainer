@@ -175,6 +175,9 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                 val flavor = io.github.warleysr.dechainer.focus.Flavor.entries.firstOrNull { it.name == r.optString("flavor") }
                 if (source == null || flavor == null || planned <= started || started > now()) { skipped++; continue }
                 val wasRunning = r.isNull("ended_at")
+                val outcome = r.optNullString("outcome")
+                if (!wasRunning && outcome != null && io.github.warleysr.dechainer.focus.SessionOutcome.entries.none { it.name == outcome }) { skipped++; continue }
+                if (!wasRunning && r.getLong("ended_at") < started) { skipped++; continue }
                 val ended = (if (wasRunning) minOf(now(), planned) else r.getLong("ended_at")).coerceIn(started, planned)
                 val minutes = r.optInt("focused_minutes").coerceIn(0, ((ended - started) / 60_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                 db.insertOrThrow("focus_session", null, ContentValues().apply {
@@ -182,11 +185,15 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                     put("purpose", r.optString("purpose", "")); put("started_at", r.getLong("started_at"))
                     put("planned_end_at", planned); put("ended_at", ended)
                     put("focused_minutes", minutes)
-                    put("outcome", if (wasRunning) "ENDED_EARLY_BY_SYSTEM" else r.optNullString("outcome"))
+                    put("outcome", if (wasRunning) "ENDED_EARLY_BY_SYSTEM" else outcome)
                 }); newSessions += id; added++
             }
             for (r in rows("focus_checkin")) {
                 if (r.optLong("session_id", -1) !in newSessions) { skipped++; continue }
+                val answer = io.github.warleysr.dechainer.focus.CheckinAnswer.entries.firstOrNull { it.name == r.optString("answer") }
+                val reset = io.github.warleysr.dechainer.focus.ResetResult.entries.firstOrNull { it.name == r.optString("reset_result", "NONE") }
+                val sessionStart = db.query("focus_session", arrayOf("started_at"), "id = ?", arrayOf(r.getLong("session_id").toString()), null, null, null).use { it.moveToFirst(); it.getLong(0) }
+                if (answer == null || reset == null || r.getLong("at") < sessionStart) { skipped++; continue }
                 db.insertOrThrow("focus_checkin", null, ContentValues().apply {
                     put("session_id", r.getLong("session_id")); put("at", r.getLong("at"))
                     put("answer", r.optString("answer")); put("reset_result", r.optString("reset_result", "NONE"))
