@@ -11,9 +11,15 @@ on:
 permissions:
   contents: read
 
+# A release run is manually triggered; never cancel an active release in favour of another one.
+concurrency:
+  group: release-${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,7 +34,7 @@ jobs:
       - name: Unit tests (must pass)
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest lintDebug
 
       # The run number only ever goes up, so every build installs as an upgrade over the last.
       - name: Build debug and release
