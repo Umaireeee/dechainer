@@ -38,14 +38,15 @@ MAIN=(
   Rules.kt models/BlockSchedule.kt data/LockSafety.kt
   lock/LockModel.kt lock/LockPlanner.kt lock/LockAllow.kt lock/UrgeLockRule.kt lock/FocusStartRule.kt lock/FocusTimetable.kt
   day/DayEvaluator.kt day/DayModel.kt day/PlanDraft.kt
-  urge/UrgeFlowRules.kt urge/UrgeModel.kt urge/Breathing.kt urge/UrgeJson.kt
+  urge/UrgeFlowRules.kt urge/UrgeModel.kt urge/Breathing.kt urge/UrgeJson.kt urge/CrisisContact.kt
   focus/FocusFlow.kt focus/PomodoroCore.kt
-  ai/AiPrompts.kt ai/DeepDiveHistory.kt ai/AiModels.kt
+  ai/AiPrompts.kt ai/DeepDiveHistory.kt ai/AiModels.kt ai/AiClient.kt ai/AiParsers.kt ai/AiCalls.kt ai/MarkdownBlocks.kt
   report/ReportRun.kt report/ReportPatterns.kt report/ReportData.kt report/ReportInputs.kt
   report/PeriodMath.kt report/PeriodInputs.kt report/ProgressSeries.kt
   store/Migrations.kt
 )
 DEFAULT_TESTS=(
+  AuditRegressionTest AiClientTest AiParsersTest AiCallsTest FocusFlowTest PomodoroCoreTest
   LockModesTest LockPlannerTest BrickTargetsTest UrgeLockRuleTest FocusStartRuleTest FocusTimetableTest UrgeFlowRulesTest
   DayEvaluatorTest PlanDraftTest AiPromptsTest DeepDiveHistoryTest ReportPatternsTest ReportInputsTest
   PeriodMathTest PeriodInputsTest ProgressSeriesTest MigrationsTest ResourceReferencesTest DebugControlsTest

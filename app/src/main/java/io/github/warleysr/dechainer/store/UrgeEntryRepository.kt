@@ -130,6 +130,18 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         return n > 0
     }
 
+    /** Owner-requested erasure keeps the measurement stub and cancels any pending AI save. */
+    fun erasePrivateText(id: Long): Boolean {
+        var n = 0
+        inTransaction { db ->
+            n = db.update(TABLE, ContentValues().apply {
+                putNull("raw_text"); putNull("questions_json"); putNull("answers_json"); putNull("deep_dive")
+                put("status", UrgeStatus.SKIPPED.name)
+            }, "id = ?", arrayOf(id.toString()))
+        }
+        return n == 1
+    }
+
     private fun move(id: Long, to: UrgeStatus, extra: ContentValues.() -> Unit = {}): Boolean {
         var moved = false
         inTransaction { db ->
@@ -186,6 +198,7 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         } finally {
             db.endTransaction()
         }
+        Store.changed()
     }
 
     private companion object {

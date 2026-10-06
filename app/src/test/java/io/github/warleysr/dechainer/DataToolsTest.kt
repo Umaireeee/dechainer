@@ -87,7 +87,7 @@ class DataToolsTest {
     }
 
     @Test fun anEntryStillInTheFlowCannotBeDeleted() {
-        val id = entry(ms(10, 20, 9), finish = false)
+        val id = entry(now - 30 * 60_000L, finish = false)
         assertEquals(DeleteResult.NOT_ALLOWED, tools().deleteUrge(id))
     }
 
@@ -248,5 +248,42 @@ class DataToolsTest {
         assertEquals(UrgeStatus.SKIPPED, all[0].status); assertNull(all[0].rawText)
         assertEquals(UrgeStatus.PENDING_DEEPDIVE, all[1].status); assertEquals("note", all[1].rawText)
         assertEquals(1, r.skipped)
+    }
+
+    @Test fun abandonedQuestionTextCanBeExplicitlyDeleted() {
+        val repo = Store.urgeEntries(ctx)
+        val id = repo.insert(UrgeKind.URGE, UrgeSource.HOME, now - 2 * hour)
+        repo.saveNote(id, "private old note")
+        assertEquals(DeleteResult.DELETED, tools().deleteUrge(id))
+        assertNull(repo.get(id))
+    }
+
+    @Test fun malformedImportRollsBackTheWeekAnchorToo() {
+        val root = org.json.JSONObject().put("format", DataTools.FORMAT).put("version", 1)
+            .put("weekAnchor", "2026-09-01")
+            .put("focus_session", org.json.JSONArray().put(org.json.JSONObject().put("id", 999)))
+        assertFalse(tools().import(root.toString()).ok)
+        assertNull(Store.appState(ctx).get(AppStateKeys.WEEK_ANCHOR))
+        assertTrue(Store.focus(ctx).sessions().isEmpty())
+    }
+
+    @Test fun runningImportedSessionBecomesClosedHistory() {
+        val repo = Store.focus(ctx)
+        val started = now - hour
+        repo.insert(StoredSession(started, FocusSource.MANUAL, Flavor.USUAL, "Study", started, now + hour, null, 0, null))
+        val json = tools().export()
+        Store.clearForTests(ctx)
+        assertTrue(tools().import(json).ok)
+        val restored = repo.sessions().single()
+        assertEquals(now, restored.endedAt)
+        assertEquals(SessionOutcome.ENDED_EARLY_BY_SYSTEM, restored.outcome)
+        now += 2 * 24 * hour
+        assertEquals(DeleteResult.DELETED, tools().deleteSession(restored.id))
+    }
+
+    @Test fun committedWritesPublishARevision() {
+        val before = Store.changes.value
+        entry(now)
+        assertTrue(Store.changes.value > before)
     }
 }

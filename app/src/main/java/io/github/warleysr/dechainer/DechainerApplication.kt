@@ -48,6 +48,7 @@ class DechainerApplication : Application() {
             AppRepository.invalidateCache()
             // A new launcher or keyboard changes which apps must never be blocked.
             ScheduleEnforcer.invalidateProtectedPackages()
+            LockEngine.requestSync(this@DechainerApplication)
             // A batch of installs or updates fires one broadcast per app. The app list itself is
             // rebuilt the next time the Apps tab asks for it (the cache was just dropped), not here:
             // updates arrive all day and nothing is looking at the list. Refresh the browser
@@ -92,6 +93,12 @@ class DechainerApplication : Application() {
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         })
+        ContextCompat.registerReceiver(this, object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                ScheduleEnforcer.invalidateProtectedPackages()
+                LockEngine.requestSync(this@DechainerApplication)
+            }
+        }, IntentFilter(Intent.ACTION_PREFERRED_ACTIVITY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
         // Android only delivers this to a receiver registered while the process is alive.
         ContextCompat.registerReceiver(
             this, userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED

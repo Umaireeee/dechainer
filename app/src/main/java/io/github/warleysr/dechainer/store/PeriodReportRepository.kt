@@ -95,5 +95,6 @@ class PeriodReportRepository(private val database: DechainerDatabase) {
         val db = database.writableDatabase
         db.beginTransaction()
         try { work(db); db.setTransactionSuccessful() } finally { db.endTransaction() }
+        io.github.warleysr.dechainer.store.Store.changed()
     }
 }

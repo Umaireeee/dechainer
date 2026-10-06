@@ -16,6 +16,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,11 @@ private data class ReportItem(val tab: ReportTab, val id: Long, val title: Strin
 fun ReportsScreen(openReportId: Long?, openPeriodReportId: Long?, onOpenData: () -> Unit, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val zone = TrustedClock.zone()
+    val revision by Store.changes.collectAsStateWithLifecycle()
+    var date by remember { mutableStateOf(DayWindow.dateOf(TrustedClock.now(ctx), zone)) }
+    io.github.warleysr.dechainer.screens.common.RepeatWhileVisible(60_000) {
+        date = DayWindow.dateOf(TrustedClock.now(ctx), zone)
+    }
     var granularity by rememberSaveable { mutableStateOf(Granularity.WEEK) }
     var tab by rememberSaveable { mutableStateOf(ReportTab.WEEK) }
     var openKey by remember(openReportId, openPeriodReportId) {
@@ -73,13 +79,13 @@ fun ReportsScreen(openReportId: Long?, openPeriodReportId: Long?, onOpenData: ()
         )
     }
 
-    val points by produceState<List<ProgressPoint>?>(null, granularity) {
+    val points by produceState<List<ProgressPoint>?>(null, granularity, revision, date) {
         value = withContext(Dispatchers.IO) { runCatching { loadProgress(ctx, granularity, zone) }.getOrDefault(emptyList()) }
     }
-    val backupDue by produceState(false) {
+    val backupDue by produceState(false, revision, date) {
         value = withContext(Dispatchers.IO) { io.github.warleysr.dechainer.report.BackupReminder.isDue(ctx) }
     }
-    val items by produceState<List<ReportItem>?>(null) {
+    val items by produceState<List<ReportItem>?>(null, revision, date) {
         value = withContext(Dispatchers.IO) { runCatching { loadReports(ctx, zone) }.getOrDefault(emptyList()) }
     }
 

@@ -646,7 +646,7 @@
     </plurals>
     <string name="reports_your_data">Your data</string>
     <string name="data_export_section">Backup</string>
-    <string name="data_export_hint">The file holds your entries, sessions, goals and reports. Entries still waiting for a deep dive keep their text in it. Keep it somewhere private.</string>
+    <string name="data_export_hint">History backup only: settings, recovery credentials, activation and active locks are not included. The file holds your entries, sessions, goals and reports. Entries still waiting for a deep dive keep their text in it. Keep it somewhere private.</string>
     <string name="data_export">Save a backup file</string>
     <string name="data_import">Read a backup file</string>
     <string name="data_exported">Backup saved.</string>
@@ -725,4 +725,8 @@
     <string name="entry_lock_desc">Ask for the opening pattern each time you open the app. Turning it off needs the recovery code.</string>
     <string name="entry_change_title">Opening pattern</string>
     <string name="entry_change_desc">Draw a new pattern. Needs the recovery code.</string>
+    <string name="urge_ai_err_storage">The deep dive was not saved. Your note has not been deleted. Free some storage and try again.</string>
+    <string name="data_busy">Working…</string>
+    <string name="data_operation_failed">Could not change your data. Please try again.</string>
+    <string name="urge_dd_not_stored">This entry is only in memory because storage failed. It will be lost when you leave this flow. No saved deep dive or background retry is available.</string>
 </resources>

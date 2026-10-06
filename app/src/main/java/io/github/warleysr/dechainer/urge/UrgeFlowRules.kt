@@ -78,6 +78,11 @@ object UrgeFlowRules {
      */
     fun stepsAsideForPattern(holdPrivate: Boolean, screen: UrgeScreen): Boolean = holdPrivate && screen != UrgeScreen.BREATHING
 
+    /** Expired private flows remain stored until the owner explicitly deletes them. */
+    fun abandoned(entry: UrgeEntry, now: Long): Boolean =
+        entry.status in setOf(UrgeStatus.LOCKED, UrgeStatus.WRITING, UrgeStatus.QUESTIONS) &&
+            now >= (entry.lockEndedAt ?: entry.createdAt) + Rules.URGE_RESUME_WINDOW_MS
+
     /** What the status of a brand-new entry is: the ongoing path starts locked, a slip goes straight to writing. */
     fun startingStatus(kind: UrgeKind): UrgeStatus = if (kind == UrgeKind.URGE) UrgeStatus.LOCKED else UrgeStatus.WRITING
 

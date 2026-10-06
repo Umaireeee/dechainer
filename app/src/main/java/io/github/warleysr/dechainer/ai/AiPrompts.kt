@@ -105,10 +105,11 @@ The daily checklist results. Say so plainly when the goals look trivial, when th
 This week against the last four, only where the data supports it. Never call a small difference a trend.
 ## Follow-up on last week's advice
 Say honestly whether this week's data shows last week's advice helped, did not help, or cannot tell yet. Leave this section out if there is no earlier report.
+<!-- advice:next-week -->
 ## Next week
 Exactly three specific actions, each aimed at a link you named, each written as one if-then plan: "If [cue], then I will [action]."
 
-Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about three minutes. Write the whole reply in the language the data is in, headings included."""
+Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about three minutes. Keep the advice comment marker unchanged immediately before its heading. Write the whole reply in the language the data is in, headings included."""
 
     val MONTHLY_SYSTEM = """You write the monthly report for a private journal that a person uses to understand and change compulsive phone use and sexual urges, and to build a steadier daily life. You are given only derived data for one calendar month between the tags: counts already worked out for you, week by week rows, patterns by time and day, the earliest links found by the month's deep dives, focus and daily checklist results, the advice the month's weekly reports gave, and the last months' numbers. You never see their private notes.
 
@@ -127,10 +128,11 @@ The two or three links, times or situations that came up again and again, with h
 What the data shows helped: urges ridden out, plans kept, advice that was followed and what came of it.
 ## Focus and the daily plan
 How much focus there was and for what, how the daily plans went, and whether the goals were real or easy ones.
+<!-- advice:next-month -->
 ## Next month
 Exactly three actions, each aimed at a pattern you named, each written as one if-then plan: "If [cue], then I will [action]." Then one thing to stop doing, in one sentence.
 
-Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about four minutes. Write the whole reply in the language the data is in, headings included."""
+Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Say plainly when self-reported data looks inconsistent. Keep it readable in about four minutes. Keep the advice comment marker unchanged immediately before its heading. Write the whole reply in the language the data is in, headings included."""
 
     val YEARLY_SYSTEM = """You write the yearly report for a private journal that a person uses to understand and change compulsive phone use and sexual urges, and to build a steadier daily life. You are given only derived data for one calendar year between the tags: counts already worked out for you, month by month rows, patterns by time and day, and what each monthly report concluded and advised. You never see their private notes.
 
@@ -147,10 +149,11 @@ The shape of the year month by month: where it got harder, where it got easier, 
 The links, times and situations that kept coming back, and the ones that faded.
 ## What worked best
 The changes and habits that the data shows made a real difference.
+<!-- advice:next-year -->
 ## Carry into next year
 Three commitments, each aimed at a pattern you named, each specific enough to act on in the first week of the new year.
 
-Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Be honest about what did not improve, and fair about what did. Keep it readable in about five minutes. Write the whole reply in the language the data is in, headings included."""
+Use only the data given. Every number you state must appear in it or be a plain count of what is listed. Be honest about what did not improve, and fair about what did. Keep it readable in about five minutes. Keep the advice comment marker unchanged immediately before its heading. Write the whole reply in the language the data is in, headings included."""
 
     /** Wraps [text] in `<tag>` ... `</tag>`, after removing any such tag the text itself carries, so it cannot close its own box. */
     fun delimit(tag: String, text: String): String {

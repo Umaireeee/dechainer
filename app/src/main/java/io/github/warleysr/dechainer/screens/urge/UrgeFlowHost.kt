@@ -124,7 +124,7 @@ fun UrgeFlowHost(vm: UrgeViewModel, modifier: Modifier = Modifier) {
                     WritingScreen(vm)
                 }
                 UrgeScreen.QUESTIONS -> QuestionsScreen(vm, state.questions, state.support, settings.contact)
-                UrgeScreen.DEEP_DIVE -> DeepDiveScreen(vm, state.deepDive, state.support, settings.contact)
+                UrgeScreen.DEEP_DIVE -> DeepDiveScreen(vm, state.deepDive, state.support, settings.contact, state.entry?.id?.let { it >= 0L } == true)
                 UrgeScreen.FINISHED -> LaunchedEffect(entry.id) { vm.finish() }
             }
         }
@@ -383,7 +383,7 @@ private fun QuestionField(q: Question, vm: UrgeViewModel) {
 // ---- the deep dive ----
 
 @Composable
-private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, contact: CrisisContact) {
+private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, contact: CrisisContact, stored: Boolean) {
     var confirmDelete by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
         if (support) {
@@ -427,7 +427,7 @@ private fun DeepDiveScreen(vm: UrgeViewModel, ui: DeepDiveUi, support: Boolean, 
                 Spacer(Modifier.height(12.dp))
                 // The text is still stored: say so, and let the owner delete it now.
                 Text(
-                    stringResource(R.string.urge_dd_pending_note),
+                    stringResource(if (!stored) R.string.urge_dd_not_stored else R.string.urge_dd_pending_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -469,6 +469,7 @@ private fun pendingReason(gate: AiGateResult, error: AiError?): Int = when {
         AiError.NETWORK -> R.string.urge_ai_err_network
         AiError.SERVER -> R.string.urge_ai_err_server
         AiError.EMPTY -> R.string.urge_ai_err_empty
+        AiError.STORAGE -> R.string.urge_ai_err_storage
     }
     gate == AiGateResult.NO_KEY -> R.string.urge_dd_why_no_key
     gate == AiGateResult.NO_CONSENT -> R.string.urge_dd_why_no_consent

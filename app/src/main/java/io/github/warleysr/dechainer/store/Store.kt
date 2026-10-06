@@ -4,6 +4,10 @@ import android.content.Context
 
 /** The one place the database is opened from. Repositories hang off it as they are added. */
 object Store {
+    private val revision = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val changes: kotlinx.coroutines.flow.StateFlow<Long> = revision
+    internal fun changed() { synchronized(revision) { revision.value = revision.value + 1L } }
+
     @Volatile private var database: DechainerDatabase? = null
     @Volatile private var appState: AppStateRepository? = null
     @Volatile private var urgeEntries: UrgeEntryRepository? = null

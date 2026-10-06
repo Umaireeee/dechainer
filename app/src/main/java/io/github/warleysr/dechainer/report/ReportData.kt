@@ -40,8 +40,13 @@ data class DayFact(
     val goals: List<GoalFact>,
     val violation: Violation?,
     /** Focus minutes measured that day, so ticks and minutes can be set side by side. */
-    val focusMinutes: Int
-)
+    val focusMinutes: Int,
+    val recordedDone: Int? = null,
+    val recordedTotal: Int? = null
+) {
+    val goalsDone: Int get() = recordedDone ?: goals.count { it.state == GoalState.DONE }
+    val goalsTotal: Int get() = recordedTotal ?: goals.size
+}
 
 /** What an earlier report said, in its own short form ([ReportSummary]). */
 data class PastSummary(val firstDate: LocalDate, val lastDate: LocalDate, val summary: ReportSummary)
@@ -59,7 +64,7 @@ data class ReportData(
      * Whether the period has a data point (blueprint 6.5): an urge or slip, a focus check-in or a goal.
      * A period with none gets no report.
      */
-    val hasDataPoint: Boolean get() = urges.isNotEmpty() || sessions.any { it.answers.isNotEmpty() } || days.any { it.goals.isNotEmpty() }
+    val hasDataPoint: Boolean get() = urges.isNotEmpty() || sessions.any { it.answers.isNotEmpty() } || days.any { it.goalsTotal > 0 }
 }
 
 /** The numbers of one report, stored in `summary_json` and shown to the next four reports. */

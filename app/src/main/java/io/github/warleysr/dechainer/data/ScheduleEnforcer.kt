@@ -297,8 +297,10 @@ object ScheduleEnforcer : AppBlockEngine() {
         val result = LockSafety.neverBlocked(context.packageName).toMutableSet()
         try {
             val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
-                .forEach { result += it.activityInfo.packageName }
+            val candidates = pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
+                .map { it.activityInfo.packageName }.toSet()
+            val selected = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            result += if (selected in candidates) setOf(selected!!) else candidates
         } catch (_: Exception) { }
         // minSdk is 30, so getSystemDialerPackage() (API 29) is always present and the
         // NoSuchMethodError some reviewers warn about cannot occur here. Kept null-safe and

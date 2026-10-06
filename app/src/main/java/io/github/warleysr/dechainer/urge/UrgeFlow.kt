@@ -164,14 +164,20 @@ class UrgeFlow(
 
     /** Deletes the entry (and with it any note still stored). */
     fun delete(entry: UrgeEntry) {
-        if (entry.id >= 0L) runCatching { repo.delete(entry.id) }.onFailure { Timber.w(it, "Urge entry not deleted") }
+        if (entry.id >= 0L) runCatching {
+            val tools = io.github.warleysr.dechainer.report.DataTools(ctx, TrustedClock.zone()) { TrustedClock.now(ctx) }
+            if (tools.deleteUrge(entry.id) == io.github.warleysr.dechainer.report.DeleteResult.NOT_ALLOWED) {
+                repo.erasePrivateText(entry.id)
+            }
+        }.onFailure { Timber.w(it, "Urge entry not deleted") }
     }
 
     /** Applies a stored change, then reads the entry back; without a store, the in-memory copy stands. */
     private fun step(entry: UrgeEntry, local: UrgeEntry, persist: () -> Boolean): UrgeEntry {
         if (entry.id < 0L) return local
-        runCatching { persist() }.onFailure { Timber.w(it, "Urge entry %d not written", entry.id) }
-        return runCatching { repo.get(entry.id) }.getOrNull() ?: local
+        val written = runCatching { persist() }.onFailure { Timber.w(it, "Urge entry %d not written", entry.id) }.getOrDefault(false)
+        if (!written) return local.copy(id = -1L)
+        return runCatching { repo.get(entry.id) }.getOrNull() ?: local.copy(id = -1L)
     }
 
     // ---- the questions ----
@@ -226,9 +232,13 @@ class UrgeFlow(
             }
             return when (val out = calls.deepDive(ai.config(), inputFor(entry), onText)) {
                 is MarkdownOutcome.Ok -> {
-                    if (stored) runCatching { repo.saveDeepDive(entry.id, out.markdown) }
-                        .onFailure { Timber.e(it, "Deep dive not saved") }
-                    DeepDiveResult.Saved(out.markdown)
+                    val saved = stored && runCatching { repo.saveDeepDive(entry.id, out.markdown) }
+                        .onFailure { Timber.e(it, "Deep dive not saved") }.getOrDefault(false)
+                    if (saved) DeepDiveResult.Saved(out.markdown)
+                    else {
+                        if (stored) enqueueRetry(true)
+                        DeepDiveResult.Pending(AiGateResult.OPEN, AiError.STORAGE)
+                    }
                 }
                 is MarkdownOutcome.Failed -> {
                     if (!out.error.needsOwner) enqueueRetry(true)

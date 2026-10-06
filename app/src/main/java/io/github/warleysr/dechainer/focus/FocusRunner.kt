@@ -152,7 +152,7 @@ object FocusRunner {
 
     /** A focus phase of [minutes] just ended in a block with a flow. Called by the Pomodoro alarm's own path. */
     internal fun onFocusPhaseEnded(context: Context, minutes: Int) {
-        transition(context) { s, now -> FocusFlow.onFocusPhaseEnded(s, minutes, now) }
+        transition(context, catchUpFirst = false) { s, now -> FocusFlow.onFocusPhaseEnded(s, minutes, now) }
     }
 
     // ---- Wake-ups ----
@@ -162,7 +162,7 @@ object FocusRunner {
      * every lock-engine pass, before the plan is read. True if anything changed, so the pass should
      * read its inputs again.
      */
-    fun advance(context: Context, now: Long): Boolean {
+    fun advance(context: Context, now: Long, startScheduled: Boolean = true): Boolean {
         val ctx = context.applicationContext
         ensureLoaded(ctx)
         Pomodoro.ensureLoaded(ctx)
@@ -178,7 +178,7 @@ object FocusRunner {
             }
         }
         if (transition(ctx, at = now) { s, t -> FocusFlow.tick(s, t) }) changed = true
-        if (startDueEntry(ctx, now)) changed = true
+        if (startScheduled && startDueEntry(ctx, now)) changed = true
         return changed
     }
 
@@ -258,7 +258,7 @@ object FocusRunner {
      * One change to the flow: [step] is computed from the stored state, time is let to catch up, and
      * the result is stored; then, outside the lock, its effects are applied. True if anything changed.
      */
-    private fun transition(context: Context, at: Long? = null, step: (FlowState, Long) -> FlowStep): Boolean {
+    private fun transition(context: Context, at: Long? = null, catchUpFirst: Boolean = true, step: (FlowState, Long) -> FlowStep): Boolean {
         val ctx = context.applicationContext
         ensureLoaded(ctx)
         val now = at ?: TrustedClock.now(ctx)
@@ -266,10 +266,12 @@ object FocusRunner {
         val result: FlowStep
         synchronized(lock) {
             before = _flow.value ?: return false
-            val first = step(before, now)
-            // Time moves on with every change, so an answer given late lands after the timeouts it missed.
-            val caught = FocusFlow.tick(first.state, now)
-            result = FlowStep(caught.state, first.effects + caught.effects)
+            result = if (catchUpFirst) FocusFlow.transition(before, now, step) else {
+                // System phase completion delivers earned minutes before the block-end timeout.
+                val delivered = step(before, now)
+                val caught = FocusFlow.tick(delivered.state, now)
+                FlowStep(caught.state, delivered.effects + caught.effects)
+            }
             if (result.state == before && result.effects.isEmpty()) return false
             store(ctx, result.state)
         }

@@ -407,11 +407,14 @@ class UrgeFlowTest {
     }
 
     @Test
-    fun deletingAPendingEntryRemovesTheNoteWithIt() {
+    fun deletingAPendingSlipRemovesTextButKeepsTheCount() {
         val f = flow(FakeAi(AiGateResult.NO_KEY))
         val e = toAnswered(f, f.startSlip(UrgeSource.HOME))
         f.delete(e)
-        assertNull(repo.get(e.id))
+        val stub = repo.get(e.id)!!
+        assertNull(stub.rawText)
+        assertNull(stub.answersJson)
+        assertEquals(UrgeStatus.SKIPPED, stub.status)
         assertFalse(f.hasPending())
     }
 
@@ -497,5 +500,33 @@ class UrgeFlowTest {
         assertEquals(UrgeStatus.PENDING_DEEPDIVE, w.status)
         assertEquals(DeepDiveResult.Pending(AiGateResult.OFFLINE, null), f.deepDive(w))
         assertNull(f.resumable())
+    }
+
+    @Test fun successfulAiReplyCannotClaimSavedAfterAnExplicitErasure() {
+        val offline = flow(FakeAi(AiGateResult.OFFLINE))
+        val e = toAnswered(offline, offline.startSlip(UrgeSource.HOME))
+        val calls = AiCalls(stream = { _, _, _, _, _ ->
+            repo.erasePrivateText(e.id)
+            AiResult.Ok("## What happened\nComplete reply.")
+        })
+        val result = flow(FakeAi(), calls).deepDive(e)
+        assertEquals(DeepDiveResult.Pending(AiGateResult.OPEN, AiError.STORAGE), result)
+        assertNull(repo.get(e.id)!!.deepDive)
+    }
+
+    @Test fun failingDatabaseCannotClaimDeepDiveWasSaved() {
+        val offline = flow(FakeAi(AiGateResult.OFFLINE))
+        val e = toAnswered(offline, offline.startSlip(UrgeSource.HOME))
+        val failing = flow(FakeAi(), calls(stream = "## What happened\nComplete reply."), repository = { error("disk full") })
+        assertEquals(DeepDiveResult.Pending(AiGateResult.OPEN, AiError.STORAGE), failing.deepDive(e))
+        assertNotNull(repo.get(e.id)!!.rawText)
+        assertNull(repo.get(e.id)!!.deepDive)
+    }
+
+    @Test fun inMemoryDeepDiveCannotClaimSaved() {
+        val failing = flow(FakeAi(), calls(stream = "## What happened\nComplete reply."), repository = { error("disk full") })
+        val e = toAnswered(failing, failing.startSlip(UrgeSource.HOME))
+        assertTrue(e.id < 0)
+        assertEquals(DeepDiveResult.Pending(AiGateResult.OPEN, AiError.STORAGE), failing.deepDive(e))
     }
 }

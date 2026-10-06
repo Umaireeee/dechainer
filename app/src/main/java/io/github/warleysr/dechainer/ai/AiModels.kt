@@ -40,7 +40,7 @@ data class AiConfig(val provider: Provider, val baseUrl: String, val key: String
 }
 
 /** What went wrong, in terms the owner can act on. */
-enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL, BAD_URL, INSECURE_URL }
+enum class AiError { BAD_KEY, NO_CREDITS, RATE_LIMIT, NETWORK, SERVER, EMPTY, BAD_MODEL, BAD_URL, INSECURE_URL, STORAGE }
 
 /** Errors that only the owner can fix (a refused key, no credit, a wrong model or address): trying again changes nothing. */
 val AiError.needsOwner: Boolean
