@@ -68,8 +68,9 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
     /** Removes the deep dive and keeps the entry as a counted stub (blueprint 6.6). The note is already gone once a deep dive exists. */
     fun deleteDeepDive(id: Long): Boolean {
         var n = 0
-        inTransaction {
-            n = it.update(TABLE, ContentValues().apply { putNull("deep_dive") }, "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.DONE.name))
+        inTransaction { db ->
+            if (!readable(db, id)) return@inTransaction
+            n = db.update(TABLE, ContentValues().apply { putNull("deep_dive") }, "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.DONE.name))
         }
         return n > 0
     }
@@ -80,8 +81,9 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
 
     /** Sets the lock window once the engine has decided (the entry is written first, the lock second). */
     fun setLockWindow(id: Long, startedAt: Long, endedAt: Long) {
-        inTransaction {
-            it.update(
+        inTransaction { db ->
+            if (!readable(db, id)) return@inTransaction
+            db.update(
                 TABLE, ContentValues().apply { put("lock_started_at", startedAt); put("lock_ended_at", endedAt) },
                 "id = ?", arrayOf(id.toString())
             )
@@ -97,8 +99,9 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
     /** The questions the owner is shown, stored so a deep dive can be retried without asking again. Only while answering. */
     fun saveQuestions(id: Long, questions: List<Question>, support: Boolean = false): Boolean {
         var done = false
-        inTransaction {
-            done = it.update(
+        inTransaction { db ->
+            if (!readable(db, id)) return@inTransaction
+            done = db.update(
                 TABLE, ContentValues().apply {
                     put("questions_json", UrgeJson.questionsToJson(questions))
                     put("support", if (support) 1 else 0)
@@ -126,12 +129,21 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         }
     }
 
-    /** Deletes one entry (blueprint 6.6). Returns whether a row went. */
+    /** Deletes one entry (blueprint 6.6). Returns whether a row went. A row that cannot be read is left as it is. */
     fun delete(id: Long): Boolean {
         var n = 0
-        inTransaction { n = it.delete(TABLE, "id = ?", arrayOf(id.toString())) }
+        inTransaction { db -> if (readable(db, id)) n = db.delete(TABLE, "id = ?", arrayOf(id.toString())) }
         return n > 0
     }
+
+    /** Whether the row can be read in full: a row that cannot is never written or deleted (blueprint 7). */
+    private fun readable(db: SQLiteDatabase, id: Long): Boolean =
+        db.query(TABLE, arrayOf("kind", "source", "status"), "id = ?", arrayOf(id.toString()), null, null, null).use { c ->
+            c.moveToFirst() &&
+                UrgeKind.entries.any { it.name == c.getString(0) } &&
+                UrgeSource.entries.any { it.name == c.getString(1) } &&
+                statusOf(c.getString(2)) != null
+        }
 
     private fun move(id: Long, to: UrgeStatus, extra: ContentValues.() -> Unit = {}): Boolean {
         var moved = false

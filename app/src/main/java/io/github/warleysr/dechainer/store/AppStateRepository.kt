@@ -48,9 +48,9 @@ class AppStateRepository(private val database: DechainerDatabase) {
      * Runs [work] once ever, keyed by [name]. [work] returns whether it succeeded; only a success is
      * remembered, so a failed one-off migration tries again on the next start.
      */
-    fun runOnce(name: String, work: () -> Boolean) {
+    fun runOnce(name: String, work: () -> Boolean) = synchronized(this) {
         val flag = AppStateKeys.MIGRATED_PREFIX + name
-        if (get(flag) == DONE) return
+        if (get(flag) == DONE) return@synchronized
         if (work()) set(flag, DONE)
     }
 

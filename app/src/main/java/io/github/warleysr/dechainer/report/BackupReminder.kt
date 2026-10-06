@@ -25,7 +25,11 @@ object BackupReminder {
 
     fun isDue(ctx: Context): Boolean = try {
         val state = Store.appState(ctx)
-        val first = listOfNotNull(Store.urgeEntries(ctx).firstCreatedAt(), Store.days(ctx).firstPlanAt()).minOrNull()
+        val first = listOfNotNull(
+            Store.urgeEntries(ctx).firstCreatedAt(),
+            Store.days(ctx).firstPlanAt(),
+            Store.focus(ctx).sessions().minOfOrNull { it.startedAt }
+        ).minOrNull()
         due(state.getLong(AppStateKeys.LAST_BACKUP_AT), first, TrustedClock.now(ctx))
     } catch (e: Exception) {
         Timber.w(e, "Backup reminder not read")

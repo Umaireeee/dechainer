@@ -163,12 +163,18 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
             val newSessions = mutableSetOf<Long>()
             for (r in rows("focus_session")) {
                 val id = r.optLong("id", -1)
-                if (id < 0 || exists(db, "focus_session", "id = ?", id.toString())) { skipped++; continue }
+                // Only rows this build can read back: an unknown enum would be silently dropped on every later read.
+                val source = runCatching { io.github.warleysr.dechainer.focus.FocusSource.valueOf(r.optString("source")) }.getOrNull()
+                val flavor = runCatching { io.github.warleysr.dechainer.focus.Flavor.valueOf(r.optString("flavor")) }.getOrNull()
+                val outcomeRaw = r.optNullString("outcome")
+                val outcome = outcomeRaw?.let { runCatching { io.github.warleysr.dechainer.focus.SessionOutcome.valueOf(it) }.getOrNull() }
+                if (id < 0 || source == null || flavor == null || (outcomeRaw != null && outcome == null) ||
+                    exists(db, "focus_session", "id = ?", id.toString())) { skipped++; continue }
                 db.insertOrThrow("focus_session", null, ContentValues().apply {
-                    put("id", id); put("source", r.optString("source")); put("flavor", r.optString("flavor"))
+                    put("id", id); put("source", source.name); put("flavor", flavor.name)
                     put("purpose", r.optString("purpose", "")); put("started_at", r.getLong("started_at"))
                     put("planned_end_at", r.getLong("planned_end_at")); putLong("ended_at", r)
-                    put("focused_minutes", r.optInt("focused_minutes")); put("outcome", r.optNullString("outcome"))
+                    put("focused_minutes", r.optInt("focused_minutes")); put("outcome", outcome?.name)
                 }); newSessions += id; added++
             }
             for (r in rows("focus_checkin")) {
