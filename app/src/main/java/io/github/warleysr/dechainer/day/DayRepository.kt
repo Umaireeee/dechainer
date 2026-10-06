@@ -65,8 +65,13 @@ class DayRepository(private val database: DechainerDatabase) {
     fun savePlan(date: LocalDate, goals: List<NewGoal>, now: Long): Boolean {
         val clean = goals.map { it.copy(text = it.text.trim()) }.filter { it.text.isNotEmpty() }
         if (clean.size !in DayRules.MIN_GOALS..DayRules.MAX_GOALS) return false
+        var wrote = false
         inTransaction { db ->
             ensureDay(db, date)
+            // A closed day's record is never rewritten (blueprint 6.4): editing goals afterwards changes nothing.
+            val evaluated = db.query("day", arrayOf("evaluated"), "date = ?", arrayOf(date.toString()), null, null, null)
+                .use { it.moveToFirst() && it.getInt(0) == 1 }
+            if (evaluated) return@inTransaction
             db.delete("goal", "day_date = ?", arrayOf(date.toString()))
             clean.forEachIndexed { i, g ->
                 db.insertOrThrow("goal", null, ContentValues().apply {
@@ -75,9 +80,10 @@ class DayRepository(private val database: DechainerDatabase) {
                 })
             }
             db.update("day", ContentValues().apply { put("plan_written_at", now); put("total_count", clean.size); put("done_count", 0) },
-                "date = ?", arrayOf(date.toString()))
+                "date = ? AND evaluated = 0", arrayOf(date.toString()))
+            wrote = true
         }
-        return true
+        return wrote
     }
 
     fun setGoal(id: Long, state: GoalState, by: ResolvedBy) {

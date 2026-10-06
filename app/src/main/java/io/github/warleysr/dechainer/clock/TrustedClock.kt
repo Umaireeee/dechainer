@@ -28,6 +28,12 @@ object TrustedClock {
     private var loaded = false
     private var lastWriteElapsed = Long.MIN_VALUE
     private var lastWrittenBoot = ForcedRemovalClock.UNKNOWN_BOOT
+
+    /**
+     * The newest checkpoint handed to [save], so a late off-thread write can never overwrite a
+     * newer one already on disk (the stored clock only moves forward).
+     */
+    private var lastSavedTrustedMs = Long.MIN_VALUE
     private val writer by lazy { Executors.newSingleThreadExecutor { Thread(it, "trusted-clock").apply { isDaemon = true } } }
 
     /** The trusted time now. From the UI and from code without a context; writes its checkpoint off-thread, now and then. */
@@ -53,11 +59,13 @@ object TrustedClock {
         synchronized(lock) {
             if (!loaded) {
                 checkpoint = load(context)
+                lastSavedTrustedMs = checkpoint?.trustedMs ?: Long.MIN_VALUE
                 loaded = true
             }
             reading = TrustedClockMath.read(wall, elapsed, boot, checkpoint)
             checkpoint = reading.checkpoint
             val due = writeNow || reading.wallDistrusted || boot != lastWrittenBoot ||
+                lastWriteElapsed == Long.MIN_VALUE ||
                 elapsed - lastWriteElapsed >= Rules.CLOCK_CHECKPOINT_INTERVAL_MS
             if (due) {
                 toWrite = reading.checkpoint
@@ -83,16 +91,21 @@ object TrustedClock {
     }
 
     private fun save(context: Context, cp: ClockCheckpoint) {
-        try {
-            Store.appState(context).setAll(
-                mapOf(
-                    AppStateKeys.LAST_SEEN_WALL to cp.trustedMs.toString(),
-                    AppStateKeys.LAST_SEEN_ELAPSED to cp.elapsedMs.toString(),
-                    AppStateKeys.LAST_SEEN_BOOT to cp.bootCount.toString()
+        synchronized(lock) {
+            // Never let a queued older reading overwrite a newer one already written.
+            if (cp.trustedMs < lastSavedTrustedMs) return
+            lastSavedTrustedMs = cp.trustedMs
+            try {
+                Store.appState(context).setAll(
+                    mapOf(
+                        AppStateKeys.LAST_SEEN_WALL to cp.trustedMs.toString(),
+                        AppStateKeys.LAST_SEEN_ELAPSED to cp.elapsedMs.toString(),
+                        AppStateKeys.LAST_SEEN_BOOT to cp.bootCount.toString()
+                    )
                 )
-            )
-        } catch (e: Exception) {
-            Timber.w(e, "Clock checkpoint not saved")
+            } catch (e: Exception) {
+                Timber.w(e, "Clock checkpoint not saved")
+            }
         }
     }
 
@@ -109,5 +122,6 @@ object TrustedClock {
         loaded = false
         lastWriteElapsed = Long.MIN_VALUE
         lastWrittenBoot = ForcedRemovalClock.UNKNOWN_BOOT
+        lastSavedTrustedMs = Long.MIN_VALUE
     }
 }

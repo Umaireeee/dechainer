@@ -26,17 +26,21 @@ class SecurityManager {
 
         private val isRecoveryKeySet = mutableStateOf(false)
         
-        var sessionEndTime by mutableLongStateOf(0L)
+        /**
+         * When the open recovery session ends, on the running-time clock: moving the wall clock
+         * cannot extend or shorten the window in which settings stay unlocked (blueprint 9.1/9.2).
+         */
+        var sessionEndElapsed by mutableLongStateOf(0L)
             private set
 
-        fun isSessionActive(): Boolean = System.currentTimeMillis() < sessionEndTime
+        fun isSessionActive(): Boolean = SystemClock.elapsedRealtime() < sessionEndElapsed
 
         private fun startSession() {
-            sessionEndTime = System.currentTimeMillis() + (10 * 60 * 1000) // 10 minutes
+            sessionEndElapsed = SystemClock.elapsedRealtime() + (10 * 60 * 1000) // 10 minutes
         }
 
         fun endSession() {
-            sessionEndTime = 0L
+            sessionEndElapsed = 0L
         }
 
         fun consumeDebugAutoStartSession(context: Context) {
@@ -271,7 +275,7 @@ class SecurityManager {
             val now = android.os.SystemClock.elapsedRealtime()
             return when {
                 UnlockDelay.isOpen(pending, now) -> {
-                    sessionEndTime = System.currentTimeMillis() + UnlockDelay.remainingOpenMs(pending, now)
+                    sessionEndElapsed = now + UnlockDelay.remainingOpenMs(pending, now)
                     // Handed to the in-memory session, so ending the session really ends it.
                     cancelUnlock(context)
                     true

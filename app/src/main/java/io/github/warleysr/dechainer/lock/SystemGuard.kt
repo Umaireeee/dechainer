@@ -3,6 +3,7 @@ package io.github.warleysr.dechainer.lock
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.os.UserManager
 import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
 import timber.log.Timber
 
@@ -30,6 +31,13 @@ object SystemGuard {
             // The list is replaced as a whole: keep whatever else was on it.
             if (ctx.packageName !in disabled) dpm.setUserControlDisabledPackages(admin, disabled + ctx.packageName)
         }
+        // The system rules of blueprint 9.3 that hold all the time, not only during a brick: the
+        // ways around a lock (a VPN or a browser's own DNS, uninstalling apps, adding a user).
+        step("app control") { dpm.addUserRestriction(admin, UserManager.DISALLOW_APPS_CONTROL) }
+        step("VPN settings") { dpm.addUserRestriction(admin, UserManager.DISALLOW_CONFIG_VPN) }
+        step("private DNS settings") { dpm.addUserRestriction(admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS) }
+        step("adding users") { dpm.addUserRestriction(admin, UserManager.DISALLOW_ADD_USER) }
+        step("uninstall of this app") { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
     }
 
     private fun step(name: String, work: () -> Unit) {

@@ -297,8 +297,18 @@ object ScheduleEnforcer : AppBlockEngine() {
         val result = LockSafety.neverBlocked(context.packageName).toMutableSet()
         try {
             val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
-                .forEach { result += it.activityInfo.packageName }
+            // Only the phone's current default launcher is protected. Any other app that declares a
+            // home activity is just an app, so it can still be blocked (blueprint 5.2/9.1): otherwise
+            // installing a second "launcher" that also browses would be a way around every schedule.
+            val default = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            if (default != null && default != context.packageName) {
+                result += default
+            } else {
+                // A brick is running (our own alias holds the home slot) or no default resolved:
+                // protect every home activity, so the real launcher is never suspended underneath it.
+                pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
+                    .forEach { result += it.activityInfo.packageName }
+            }
         } catch (_: Exception) { }
         // minSdk is 30, so getSystemDialerPackage() (API 29) is always present and the
         // NoSuchMethodError some reviewers warn about cannot occur here. Kept null-safe and

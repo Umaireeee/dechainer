@@ -72,6 +72,18 @@ class DayServiceTest {
         // editing results after the day is closed cannot rewrite its record
         resolve(a.plusDays(1), 3); run(a.plusDays(3)); assertEquals(row?.violation, repo.day(a.plusDays(1))?.violation)
     }
+    @Test fun aClosedDaysPlanCannotBeRewritten() {
+        plan(a.plusDays(1)); plan(a.plusDays(2))
+        run(a.plusDays(1)); resolve(a.plusDays(1), 1)
+        run(a.plusDays(2))
+        val closed = repo.day(a.plusDays(1))!!
+        assertTrue(closed.evaluated)
+        val goalsBefore = repo.goals(a.plusDays(1))
+        assertFalse("a recorded day cannot be re-planned", repo.savePlan(a.plusDays(1), List(3) { NewGoal("new$it") }, 0L))
+        assertEquals(goalsBefore, repo.goals(a.plusDays(1)))
+        assertEquals(closed.doneCount, repo.day(a.plusDays(1))!!.doneCount)
+    }
+
     @Test fun aRestDayWaivesItsOwnGoals() {
         plan(a.plusDays(1)); plan(a.plusDays(2)); repo.setRest(a.plusDays(1), true)
         run(a.plusDays(2))

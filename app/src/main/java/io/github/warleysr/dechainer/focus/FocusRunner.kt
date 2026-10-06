@@ -266,10 +266,12 @@ object FocusRunner {
         val result: FlowStep
         synchronized(lock) {
             before = _flow.value ?: return false
-            val first = step(before, now)
-            // Time moves on with every change, so an answer given late lands after the timeouts it missed.
-            val caught = FocusFlow.tick(first.state, now)
-            result = FlowStep(caught.state, first.effects + caught.effects)
+            // Time catches up first, so an answer given after a timeout lands after that timeout: a
+            // late check-in is recorded UNANSWERED, a late prompt choice runs as special (D13/D14).
+            val caught = FocusFlow.tick(before, now)
+            val stepped = step(caught.state, now)
+            val settled = FocusFlow.tick(stepped.state, now)
+            result = FlowStep(settled.state, caught.effects + stepped.effects + settled.effects)
             if (result.state == before && result.effects.isEmpty()) return false
             store(ctx, result.state)
         }
