@@ -245,8 +245,11 @@ class LockEngineSyncTest {
         val days = Store.days(ctx)
         assertTrue(days.savePlan(yesterday, listOf(
             io.github.warleysr.dechainer.day.NewGoal("Focus", io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES, 40),
-            io.github.warleysr.dechainer.day.NewGoal("No slip", io.github.warleysr.dechainer.day.GoalType.NO_SLIP)
+            io.github.warleysr.dechainer.day.NewGoal("No slip", io.github.warleysr.dechainer.day.GoalType.NO_SLIP),
+            io.github.warleysr.dechainer.day.NewGoal("Read chapter")
         ), start - 24 * 3_600_000L))
+        days.setGoal(days.goals(yesterday).last().id, io.github.warleysr.dechainer.day.GoalState.DONE,
+            io.github.warleysr.dechainer.day.ResolvedBy.USER)
         Store.appState(ctx).set(io.github.warleysr.dechainer.store.AppStateKeys.ACTIVATED_ON, yesterday.toString())
         val session = Store.focus(ctx).insert(io.github.warleysr.dechainer.store.StoredSession(start,
             io.github.warleysr.dechainer.focus.FocusSource.MANUAL, io.github.warleysr.dechainer.focus.Flavor.SPECIAL,
@@ -260,10 +263,10 @@ class LockEngineSyncTest {
         assertEquals(60, Store.focus(ctx).session(session)!!.focusedMinutes)
         assertEquals(io.github.warleysr.dechainer.day.GoalState.DONE,
             days.goals(yesterday).first { it.type == io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES }.state)
-        assertEquals(2, days.day(yesterday)!!.doneCount)
+        assertEquals(3, days.day(yesterday)!!.doneCount)
         assertTrue(days.day(yesterday)!!.evaluated)
         LockEngine.sync(ctx)
-        assertEquals(2, days.day(yesterday)!!.doneCount)
+        assertEquals(3, days.day(yesterday)!!.doneCount)
     }
 
     @Test fun missedEveningFocusEndSettlesBeforeImmutableDailyResult() = missedFocusEndIsSettledBeforeDayEvaluation(false)

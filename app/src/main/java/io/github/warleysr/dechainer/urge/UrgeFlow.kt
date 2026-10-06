@@ -179,8 +179,10 @@ class UrgeFlow(
     private fun step(entry: UrgeEntry, local: UrgeEntry, persist: () -> Boolean): UrgeEntry {
         if (entry.id < 0L) return local
         val written = runCatching { persist() }.onFailure { Timber.w(it, "Urge entry %d not written", entry.id) }.getOrDefault(false)
-        if (!written) return local.copy(id = -1L)
-        return runCatching { repo.get(entry.id) }.getOrNull() ?: local.copy(id = -1L)
+        val current = runCatching { repo.get(entry.id) }.getOrNull()
+        // Re-entering an already persisted step is idempotent, not a storage failure.
+        if (current != null && (written || current == local)) return current
+        return local.copy(id = -1L)
     }
 
     // ---- the questions ----
