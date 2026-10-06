@@ -238,7 +238,10 @@ class MainActivity : ComponentActivity() {
             }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
-                viewModel.addShizukuListener()
+                DisposableEffect(viewModel) {
+                    viewModel.addShizukuListener()
+                    onDispose { viewModel.removeShizukuListener() }
+                }
                 val navViewModel: NavigationViewModel = viewModel()
 
                 // A brick shows its own screen, whatever was open before it started.
@@ -279,11 +282,11 @@ class MainActivity : ComponentActivity() {
                     if (lockedHome != null) SecurityManager.endSession()
                 }
 
-                var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                var currentTime by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
                 // Only while a timed session shows its countdown, and only while on screen.
                 val sessionActive = SecurityManager.isSessionActive()
                 if (sessionActive) {
-                    RepeatWhileVisible(1000, key = sessionActive) { currentTime = System.currentTimeMillis() }
+                    RepeatWhileVisible(1000, key = sessionActive) { currentTime = android.os.SystemClock.elapsedRealtime() }
                 }
 
                 val context = LocalContext.current
@@ -311,7 +314,8 @@ class MainActivity : ComponentActivity() {
                     recoverySet = recoverySet,
                     unlocked = entryUnlocked,
                     brick = brick,
-                    urgeActive = urge.active
+                    urgeActive = urge.active,
+                    hasPattern = SecurityManager.hasEntryPattern(context)
                 )
 
                 // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
@@ -339,7 +343,7 @@ class MainActivity : ComponentActivity() {
                                 if (!brick) {
                                     ScreenInfoButton(route)
                                     if (SecurityManager.isSessionActive()) {
-                                        val remaining = SecurityManager.sessionEndTime - currentTime
+                                        val remaining = SecurityManager.sessionEndElapsed - currentTime
                                         val minutes = (remaining / 1000) / 60
                                         val seconds = (remaining / 1000) % 60
 

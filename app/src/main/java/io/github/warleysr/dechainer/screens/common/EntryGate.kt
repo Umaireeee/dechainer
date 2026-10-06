@@ -59,8 +59,12 @@ fun EntryGate(onUnlocked: () -> Unit, onUrge: () -> Unit) {
  */
 @Composable
 fun PrivateArea(content: @Composable () -> Unit) {
+    val context = LocalContext.current
     var open by remember { mutableStateOf(SecurityManager.isPrivateOpen()) }
-    if (open) content() else PatternScreen(title = R.string.private_title, onUnlocked = { open = true })
+    // Ask only when the opening lock is on and a pattern exists. With the lock off, or before a
+    // pattern was ever drawn, these pages are reachable directly.
+    val gated = SecurityManager.isEntryLockEnabled(context) && SecurityManager.hasEntryPattern(context)
+    if (open || !gated) content() else PatternScreen(title = R.string.private_title, onUnlocked = { open = true })
 }
 
 @Composable

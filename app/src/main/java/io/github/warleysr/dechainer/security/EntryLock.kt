@@ -49,13 +49,15 @@ object EntryLock {
     /**
      * Whether the gate covers the app right now. It stays out of the way of everything that must
      * be reachable at once: first-run setup (no recovery code yet), a brick (the home screen and the
-     * Urge button stay open) and the urge flow itself.
+     * Urge button stay open) and the urge flow itself. It also stays out of the way when no opening
+     * pattern has been drawn yet: there is nothing to ask for, and setup never forces one.
      */
     fun required(
         enabled: Boolean,
         recoverySet: Boolean,
         unlocked: Boolean,
         brick: Boolean,
-        urgeActive: Boolean
-    ): Boolean = enabled && recoverySet && !unlocked && !brick && !urgeActive
+        urgeActive: Boolean,
+        hasPattern: Boolean = true
+    ): Boolean = enabled && recoverySet && hasPattern && !unlocked && !brick && !urgeActive
 }

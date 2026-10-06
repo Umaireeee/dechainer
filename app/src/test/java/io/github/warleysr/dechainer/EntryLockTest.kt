@@ -10,14 +10,17 @@ import org.junit.Test
 class EntryLockTest {
     private fun required(
         enabled: Boolean = true, recoverySet: Boolean = true,
-        unlocked: Boolean = false, brick: Boolean = false, urgeActive: Boolean = false
-    ) = EntryLock.required(enabled, recoverySet, unlocked, brick, urgeActive)
+        unlocked: Boolean = false, brick: Boolean = false, urgeActive: Boolean = false,
+        hasPattern: Boolean = true
+    ) = EntryLock.required(enabled, recoverySet, unlocked, brick, urgeActive, hasPattern)
 
     @Test fun coldStartAsks() = assertTrue(required())
 
     @Test fun unlockedOpensTheApp() = assertFalse(required(unlocked = true))
 
     @Test fun switchedOffNeverAsks() = assertFalse(required(enabled = false))
+
+    @Test fun noPatternDrawsNoGate() = assertFalse(required(hasPattern = false))
 
     @Test fun firstRunSetupIsNotBehindIt() = assertFalse(required(recoverySet = false))
 
