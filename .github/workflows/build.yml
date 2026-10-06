@@ -26,7 +26,21 @@ jobs:
           ./gradlew testDebugUnitTest
 
       - name: Android lint
-        run: ./gradlew lintDebug
+        run: |
+          if ! ./gradlew lintDebug; then
+            cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            exit 1
+          fi
+
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-test-and-lint-results
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/lint-results-debug.*
+            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
 
       - name: Build debug APK
         run: ./gradlew assembleDebug -PversionCode=${{ github.run_number }}

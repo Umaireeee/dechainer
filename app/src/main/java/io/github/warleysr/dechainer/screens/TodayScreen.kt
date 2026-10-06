@@ -84,17 +84,18 @@ fun TodayScreen(modifier: Modifier = Modifier) {
     val snapshot by produceState<TodaySnapshot?>(null, today, version, revision, now / 60_000L) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                TodaySnapshot(repo.day(today), repo.day(today.minusDays(1)), repo.goals(today),
+                TodaySnapshot(today, repo.day(today), repo.day(today.minusDays(1)), repo.goals(today),
                     repo.goals(tomorrow), repo.day(tomorrow), repo.stats(zone).focusMinutes(today), repo.restDates())
             }.getOrElse { message = R.string.data_operation_failed; null }
         }
     }
-    val row = snapshot?.row
-    val yesterday = snapshot?.yesterday
-    val goals = snapshot?.goals.orEmpty()
-    val plan = snapshot?.plan.orEmpty()
-    val tomorrowRow = snapshot?.tomorrow
-    val focusToday = snapshot?.focusMinutes ?: 0
+    val current = snapshot?.takeIf { it.date == today }
+    val row = current?.row
+    val yesterday = current?.yesterday
+    val goals = current?.goals.orEmpty()
+    val plan = current?.plan.orEmpty()
+    val tomorrowRow = current?.tomorrow
+    val focusToday = current?.focusMinutes ?: 0
     fun write(work: () -> Int?) {
         if (busy) return
         busy = true
@@ -107,7 +108,7 @@ fun TodayScreen(modifier: Modifier = Modifier) {
             finally { busy = false }
         }
     }
-    val canEdit = snapshot != null && !busy && DayWindow.canEditPlan(now, tomorrow, zone)
+    val canEdit = current != null && !busy && DayWindow.canEditPlan(now, tomorrow, zone)
     val evening = DayWindow.inEvening(now, today, zone)
     val drafts = remember(tomorrow, plan) {
         mutableStateListOf<PlanDraft>().apply { addAll(PlanDraft.fromGoals(plan)) }
@@ -156,8 +157,14 @@ fun TodayScreen(modifier: Modifier = Modifier) {
                             focusMinutes = focusToday,
                             canDone = g.type == GoalType.MANUAL && g.state == GoalState.OPEN && !busy && DayWindow.canMarkDone(now, today, zone),
                             canNotDone = g.type == GoalType.MANUAL && g.state == GoalState.OPEN && !busy && DayWindow.canMarkNotDone(now, today, zone),
-                            onDone = { write { repo.setGoal(g.id, GoalState.DONE, ResolvedBy.USER); null } },
-                            onNotDone = { write { repo.setGoal(g.id, GoalState.NOT_DONE, ResolvedBy.USER); null } }
+                            onDone = { write {
+                                if (!DayWindow.canMarkDone(TrustedClock.now(ctx), today, zone)) R.string.today_day_closed
+                                else { repo.setGoal(g.id, GoalState.DONE, ResolvedBy.USER); null }
+                            } },
+                            onNotDone = { write {
+                                if (!DayWindow.canMarkNotDone(TrustedClock.now(ctx), today, zone)) R.string.today_day_closed
+                                else { repo.setGoal(g.id, GoalState.NOT_DONE, ResolvedBy.USER); null }
+                            } }
                         )
                     }
                     if (goals.any { it.type == GoalType.MANUAL && it.state == GoalState.OPEN } && !evening) {
@@ -223,9 +230,10 @@ fun TodayScreen(modifier: Modifier = Modifier) {
                             }
                             Spacer(Modifier.weight(1f))
                             Button({
-                                val at = TrustedClock.now(ctx)
                                 val goalsToSave: List<NewGoal> = drafts.mapNotNull { it.toNewGoal(focusText, noSlipText) }
-                                write { when {
+                                write {
+                                    val at = TrustedClock.now(ctx)
+                                    when {
                                     !DayWindow.canEditPlan(at, tomorrow, zone) -> R.string.today_plan_window_closed
                                     goalsToSave.size < DayRules.MIN_GOALS -> R.string.today_plan_too_few
                                     repo.savePlan(tomorrow, goalsToSave, at) -> {
@@ -247,9 +255,14 @@ fun TodayScreen(modifier: Modifier = Modifier) {
         if (canEdit) {
             item {
                 val isRest = tomorrowRow?.kind == DayKind.REST
-                val allowed = isRest || DayWindow.canDeclareRest(now, tomorrow, snapshot?.restDates.orEmpty(), zone)
+                val allowed = isRest || DayWindow.canDeclareRest(now, tomorrow, current?.restDates.orEmpty(), zone)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedButton({ write { repo.setRest(tomorrow, !isRest); null } }, enabled = allowed, modifier = Modifier.heightIn(min = 48.dp)) {
+                    OutlinedButton({ write {
+                        val at = TrustedClock.now(ctx)
+                        if (!DayWindow.canEditPlan(at, tomorrow, zone) ||
+                            (!isRest && !DayWindow.canDeclareRest(at, tomorrow, repo.restDates(), zone))) R.string.today_plan_window_closed
+                        else { repo.setRest(tomorrow, !isRest); null }
+                    } }, enabled = allowed, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(stringResource(if (isRest) R.string.today_rest_cancel else R.string.today_rest_tomorrow))
                     }
                     Text(
@@ -324,6 +337,7 @@ private fun TypeLabel(draft: PlanDraft, onNext: () -> Unit) {
 }
 
 private data class TodaySnapshot(
+    val date: java.time.LocalDate,
     val row: io.github.warleysr.dechainer.day.DayRow?,
     val yesterday: io.github.warleysr.dechainer.day.DayRow?,
     val goals: List<Goal>,

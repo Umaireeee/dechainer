@@ -294,13 +294,15 @@ object ScheduleEnforcer : AppBlockEngine() {
         protectedValidUntil = 0L
     }
 
+    @Volatile private var lastKnownHomes: Set<String> = emptySet()
+
     private fun homePackages(context: Context): Set<String> = try {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val candidates = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }.toSet()
         val selected = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
-        LockSafety.protectedHomes(candidates, selected)
-    } catch (_: Exception) { emptySet() }
+        LockSafety.protectedHomes(candidates, selected).also { lastKnownHomes = it }
+    } catch (_: Exception) { lastKnownHomes }
 
     private fun readProtectedPackages(context: Context): Set<String> {
         val pm = context.packageManager
