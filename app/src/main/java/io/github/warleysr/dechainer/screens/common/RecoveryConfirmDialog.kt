@@ -23,10 +23,11 @@ fun RecoveryConfirmDialog(
 ) {
     var code by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
-    if (SecurityManager.isSessionActive()) {
-        onConfirm(code)
-        return
+    // Run the caller's action as a side effect, never while composing.
+    LaunchedEffect(Unit) {
+        if (SecurityManager.isSessionActive()) onConfirm(code)
     }
+    if (SecurityManager.isSessionActive()) return
 
     val context = LocalContext.current
     val shuffleKeyboard = remember { SecurityManager.isShuffleKeyboardEnabled(context) }
@@ -58,7 +59,7 @@ fun RecoveryConfirmDialog(
                                     color = MaterialTheme.colorScheme.error
                                 )
                             } else {
-                                Text("${code.length}/16")
+                                Text(stringResource(R.string.recovery_code_progress, code.length))
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -123,7 +124,7 @@ private fun ShuffleKeyboardRecoveryDialog(
             ) {
                 // Progress indicator
                 Text(
-                    text = "${code.length}/16",
+                    text = stringResource(R.string.recovery_code_progress, code.length),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isError)
                         MaterialTheme.colorScheme.error

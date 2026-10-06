@@ -61,6 +61,13 @@ private val WEEKDAYS = setOf(
 )
 private val WEEKENDS = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
 
+/** The trusted clock as the screen's zone, for a schedule's live status (blueprint 9.2). */
+private fun trustedNow(context: android.content.Context): ZonedDateTime =
+    ZonedDateTime.ofInstant(
+        java.time.Instant.ofEpochMilli(io.github.warleysr.dechainer.clock.TrustedClock.now(context)),
+        io.github.warleysr.dechainer.clock.TrustedClock.zone()
+    )
+
 // ---------------------------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------------------------
@@ -78,9 +85,10 @@ fun SchedulesScreen(
     val defaultName = stringResource(R.string.schedule_default_name)
     val copySuffix = stringResource(R.string.schedule_copy_suffix)
 
-    var now by remember { mutableStateOf(ZonedDateTime.now()) }
+    val clockContext = LocalContext.current
+    var now by remember { mutableStateOf(trustedNow(clockContext)) }
     RepeatWhileVisible(15_000) {
-        now = ZonedDateTime.now()
+        now = trustedNow(clockContext)
         viewModel.refresh()
     }
 

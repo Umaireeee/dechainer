@@ -55,11 +55,8 @@ import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import io.github.warleysr.dechainer.viewmodels.Route
-import kotlinx.coroutines.CoroutineScope
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
@@ -395,7 +392,6 @@ fun ConfigTab(
 
     if (showDnsDialog) {
         val currentDns = viewModel.getPrivateDNS()
-        val externalScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         DnsSelectionDialog(
             currentDns = currentDns,
@@ -408,10 +404,9 @@ fun ConfigTab(
                     isApplyingDns = true
                     scope.launch {
                         val result = withTimeoutOrNull(15000.milliseconds) {
-                            val deferred = externalScope.async {
+                            withContext(Dispatchers.IO) {
                                 if (host == DNS_OFF) viewModel.turnOffDnsFilter() else viewModel.setPrivateDNS(host)
                             }
-                            deferred.await()
                         }
                         isApplyingDns = false
                         if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
@@ -496,10 +491,10 @@ fun DnsSelectionDialog(
         // All four block adult sites. Which ones work depends on the network, so the dialog checks
         // each from here (✓ / ✕) rather than claiming one is best. The free CleanBrowsing tier is
         // throttled. For full control, use Custom with a NextDNS ID.
-        "Cloudflare Family · adult sites and malware" to "family.cloudflare-dns.com",
-        "AdGuard Family · adult sites and ads; SafeSearch" to "family.adguard-dns.com",
-        "CleanBrowsing Adult · adult sites; Reddit allowed" to "adult-filter-dns.cleanbrowsing.org",
-        "CleanBrowsing Family · strictest, but throttled; blocks VPNs, Reddit" to "family-filter-dns.cleanbrowsing.org"
+        stringResource(R.string.dns_cloudflare_family) to "family.cloudflare-dns.com",
+        stringResource(R.string.dns_adguard_family) to "family.adguard-dns.com",
+        stringResource(R.string.dns_cleanbrowsing_adult) to "adult-filter-dns.cleanbrowsing.org",
+        stringResource(R.string.dns_cleanbrowsing_family) to "family-filter-dns.cleanbrowsing.org"
     )
     
     var selectedOption by remember { 

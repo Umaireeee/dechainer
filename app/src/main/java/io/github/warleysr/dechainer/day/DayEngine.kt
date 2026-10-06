@@ -111,7 +111,7 @@ object DayEngine {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         nm.notify(NOTIF_ID, NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher).setContentIntent(open).setAutoCancel(true)
+            .setSmallIcon(R.drawable.ic_notification_time_warning).setContentIntent(open).setAutoCancel(true)
             .setContentText(ctx.getString(if (late) R.string.evening_late else R.string.evening_first))
             .setContentTitle(ctx.getString(R.string.today_title)).build())
     }

@@ -150,7 +150,7 @@ private fun SessionRow(session: FocusSession, time: String, onDelete: () -> Unit
             color = color
         )
         Box {
-            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.focus_session_menu),
                     modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }

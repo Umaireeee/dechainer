@@ -103,7 +103,8 @@ fun DataScreen(modifier: Modifier = Modifier) {
         items(urges, key = { "u${it.id}" }) { e ->
             Column(Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.data_urge_row, at(e.createdAt),
-                    stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge), e.status.name.lowercase().replace('_', ' ')))
+                    stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge),
+                    stringResource(statusLabel(e.status))))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton({ report(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
@@ -169,4 +170,14 @@ fun DataScreen(modifier: Modifier = Modifier) {
         )
     }
     RecoveryGateDialog(gate)
+}
+
+/** The stored status, said in plain words (blueprint 12: nothing internal is shown to the owner). */
+private fun statusLabel(status: UrgeStatus): Int = when (status) {
+    UrgeStatus.LOCKED -> R.string.data_status_locked
+    UrgeStatus.WRITING -> R.string.data_status_writing
+    UrgeStatus.QUESTIONS -> R.string.data_status_questions
+    UrgeStatus.PENDING_DEEPDIVE -> R.string.data_status_pending
+    UrgeStatus.DONE -> R.string.data_status_done
+    UrgeStatus.SKIPPED -> R.string.data_status_skipped
 }

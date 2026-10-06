@@ -498,13 +498,13 @@ fun SupportCard(contact: CrisisContact) {
             if (contact.usable) {
                 val who = contact.name.ifBlank { contact.number }
                 Button(
-                    onClick = { open(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(contact.number)))) },
+                    onClick = { open(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(contact.number, "+")))) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                 ) { Text(stringResource(R.string.urge_support_call, who)) }
                 OutlinedButton(
                     onClick = {
                         open(
-                            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(contact.number)))
+                            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(contact.number, "+")))
                                 .putExtra("sms_body", smsBody)
                         )
                     },

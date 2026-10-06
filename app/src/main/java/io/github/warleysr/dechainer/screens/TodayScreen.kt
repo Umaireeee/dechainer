@@ -293,7 +293,7 @@ private fun TypeLabel(draft: PlanDraft, onNext: () -> Unit) {
         GoalType.FOCUS_MINUTES -> stringResource(R.string.today_type_focus, draft.targetMinutes ?: 0)
         GoalType.NO_SLIP -> stringResource(R.string.today_type_noslip)
     }
-    TextButton(onNext, Modifier.heightIn(min = 32.dp)) {
+    TextButton(onNext, Modifier.heightIn(min = 48.dp)) {
         Text(stringResource(R.string.today_type_change, text), style = MaterialTheme.typography.labelMedium)
     }
 }

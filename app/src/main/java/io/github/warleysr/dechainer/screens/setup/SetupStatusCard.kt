@@ -30,6 +30,8 @@ import io.github.warleysr.dechainer.setup.SetupItem
 import io.github.warleysr.dechainer.setup.SetupProbe
 import io.github.warleysr.dechainer.ui.theme.CalmCard
 import io.github.warleysr.dechainer.viewmodels.Route
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Setup status (blueprint 11): one card in Settings that lists every setup check with a tick or a
@@ -39,8 +41,9 @@ import io.github.warleysr.dechainer.viewmodels.Route
 @Composable
 fun SetupStatusCard(onNavigate: (Route) -> Unit, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    var checks by remember { mutableStateOf(SetupProbe.read(ctx)) }
-    RepeatWhileVisible(2_000) { checks = SetupProbe.read(ctx) }
+    var checks by remember { mutableStateOf<List<SetupCheck>>(emptyList()) }
+    // Probing the PackageManager and DevicePolicyManager is not free: keep it off the main thread.
+    RepeatWhileVisible(2_000) { checks = withContext(Dispatchers.IO) { SetupProbe.read(ctx) } }
 
     CalmCard(modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

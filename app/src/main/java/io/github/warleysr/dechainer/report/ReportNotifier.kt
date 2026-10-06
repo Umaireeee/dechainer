@@ -28,7 +28,7 @@ object ReportNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         nm.notify(NOTIF_ID, NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher).setContentIntent(open).setAutoCancel(true)
+            .setSmallIcon(R.drawable.ic_notification_time_warning).setContentIntent(open).setAutoCancel(true)
             .setContentTitle(ctx.getString(R.string.report_ready)).build())
     }
 
@@ -43,7 +43,7 @@ object ReportNotifier {
         )
         val text = if (report.kind == PeriodKind.MONTH) R.string.report_ready_month else R.string.report_ready_year
         nm.notify(NOTIF_ID + 1, NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher).setContentIntent(open).setAutoCancel(true)
+            .setSmallIcon(R.drawable.ic_notification_time_warning).setContentIntent(open).setAutoCancel(true)
             .setContentTitle(ctx.getString(text)).build())
     }
 }

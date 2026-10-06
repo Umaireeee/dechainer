@@ -229,16 +229,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
             )
         }
         Spacer(Modifier.height(12.dp))
-        if (state.inBlock && state.phase != Phase.FOCUS) {
-            Text(
-                stringResource(R.string.focus_next_subject),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-        }
         // What a session is for is asked when it starts (the start dialog, or the prompt of a scheduled one).
-        Spacer(Modifier.height(8.dp))
 
         // --- The ring ---
         val track = MaterialTheme.colorScheme.surfaceContainerHigh
