@@ -40,7 +40,7 @@ MAIN=(
   day/DayEvaluator.kt day/DayModel.kt day/PlanDraft.kt
   urge/UrgeFlowRules.kt urge/UrgeModel.kt urge/Breathing.kt urge/UrgeJson.kt
   focus/FocusFlow.kt focus/PomodoroCore.kt
-  ai/AiPrompts.kt ai/DeepDiveHistory.kt ai/AiModels.kt
+  ai/AiPrompts.kt ai/DeepDiveHistory.kt ai/AiModels.kt ai/AiParsers.kt ai/MarkdownBlocks.kt
   report/ReportRun.kt report/ReportPatterns.kt report/ReportData.kt report/ReportInputs.kt
   report/PeriodMath.kt report/PeriodInputs.kt report/ProgressSeries.kt
   store/Migrations.kt
@@ -48,7 +48,7 @@ MAIN=(
 DEFAULT_TESTS=(
   LockModesTest LockPlannerTest BrickTargetsTest UrgeLockRuleTest FocusStartRuleTest FocusTimetableTest UrgeFlowRulesTest
   DayEvaluatorTest PlanDraftTest AiPromptsTest DeepDiveHistoryTest ReportPatternsTest ReportInputsTest
-  PeriodMathTest PeriodInputsTest ProgressSeriesTest MigrationsTest ResourceReferencesTest DebugControlsTest
+  PeriodMathTest PeriodInputsTest ProgressSeriesTest MigrationsTest ResourceReferencesTest DebugControlsTest AiParsersTest
 )
 TESTS=("$@"); [ ${#TESTS[@]} -eq 0 ] && TESTS=("${DEFAULT_TESTS[@]}")
 

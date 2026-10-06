@@ -54,6 +54,9 @@ object Rules {
     const val MAX_ANSWER_CHARS = 600
     const val MAX_REASON_CHARS = 300
 
+    /** Section 8. The deep dive is capped here (1.2: was 250); an over-long reply is trimmed to whole sentences. */
+    const val MAX_DEEP_DIVE_WORDS = 300
+
     /** D10. A slip goes straight to writing. Flip to true and a slip also starts an urge lock. */
     const val LOCK_AFTER_SLIP = false
 

@@ -94,6 +94,17 @@ class DeepDiveRetryTest {
     }
 
     @Test
+    fun aFailureOnlyTheOwnerCanFixStopsTheRestInsteadOfReCallingThem() {
+        // Entry 1 saves, entry 2 hits a bad key: the job stops there, so entry 3 is never sent again on retry.
+        val (out, r) = run(listOf(pending(1), pending(2), pending(3))) {
+            if (it.id == 2L) AiResult.Failed(AiError.BAD_KEY) else AiResult.Ok("## ok ${it.id}")
+        }
+        assertEquals(DeepDiveRetry.Outcome.NEEDS_OWNER, out)
+        assertEquals(listOf(1L, 2L), r.called)
+        assertEquals(setOf(1L), r.saved.keys)
+    }
+
+    @Test
     fun aSaveThatFailsIsRetried() {
         val (out, _) = run(listOf(pending(1)), saveOk = false) { AiResult.Ok("## ok") }
         assertEquals(DeepDiveRetry.Outcome.RETRY, out)

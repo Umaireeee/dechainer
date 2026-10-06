@@ -43,8 +43,12 @@ class AiSettings(context: Context) {
      */
     val providerChosen: Boolean get() = prefs.contains(KEY_PROVIDER) || Provider.detect(key) != null
 
-    /** Ready to call: a known destination, a key, an address and a model. */
-    val configured: Boolean get() = providerChosen && toConfig().configured
+    /**
+     * Ready to call: a known destination, a key, a model, and an address that is safe to send a key
+     * to. A plain `http://` address is refused up front here, not only when a call is attempted
+     * (blueprint 8), so the gate reports NO_KEY and the owner sees the problem in Settings.
+     */
+    val configured: Boolean get() = providerChosen && toConfig().let { c -> c.configured && AiClient.addressProblem(c.baseUrl) == null }
 
     fun toConfig(): AiConfig = AiConfig(provider, baseUrl, key, model)
 

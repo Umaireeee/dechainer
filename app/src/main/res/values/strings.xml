@@ -245,28 +245,10 @@
     <string name="schedule_summary_study">Study mode · %1$d allowed apps</string>
     <!-- Block screens -->
     <!-- Today -->
-    <plurals name="today_minutes_left">
-        <item quantity="one">%d minute left</item>
-        <item quantity="other">%d minutes left</item>
-    </plurals>
-    <plurals name="today_issues">
-        <item quantity="one">%d thing needs attention</item>
-        <item quantity="other">%d things need attention</item>
-    </plurals>
     <string name="settings">Settings</string>
     <string name="config_section_protection">Protection</string>
     <string name="config_section_security">Security</string>
     <string name="config_section_app">App</string>
-    <plurals name="today_sky_stars">
-        <item quantity="one">%1$d star in your sky, %2$d from studying</item>
-        <item quantity="other">%1$d stars in your sky, %2$d from studying</item>
-    </plurals>
-    <!-- Proof of study and the star journal -->
-    <plurals name="proof_card_text">
-        <item quantity="one">%d minute of focus. Write what you studied and what you remember.</item>
-        <item quantity="other">%d minutes of focus. Write what you studied and what you remember.</item>
-    </plurals>
-    <!-- Study pings -->
     <!-- Screen explainers (the ⓘ in the top bar) -->
     <string name="info_button">About this screen</string>
     <string name="info_heading_what">What it is</string>
@@ -334,8 +316,8 @@
     <string name="schedule_copy_from">Copy apps from…</string>
     <string name="schedule_copy_from_desc">Adds that schedule\'s apps, services and websites to this one. Nothing here is removed.</string>
     <string name="info_focus_what">Focus blocks: commit to a stretch of time, and your phone becomes a brick until it ends.</string>
-    <string name="info_focus_does">Sessions and breaks run by themselves until the end time. The phone stays pinned to this screen the whole time: only incoming calls, your alarm clock, Quick Settings (airplane mode, mobile data, hotspot) and any apps you allowed in timer settings work; allowed apps open from this page. Pick each session\'s subject during the break before it. Once a lecture has had about two-thirds of its time, a session ends by asking how the lecture is going.</string>
-    <string name="info_focus_how">Exact alarms run the timer with no battery cost. The pin and app suspension are Android device-owner features; if the app ever crashes, the pin releases itself and suspension keeps blocking. Once committed, a block can\'t be ended early, not even with your recovery code. Emergency calls always work. The log counts hours and lectures per subject.</string>
+    <string name="info_focus_does">Sessions and breaks run by themselves until the end time. The phone stays pinned to this screen the whole time: only incoming calls, your alarm clock, Quick Settings (airplane mode, mobile data, hotspot) and any apps you allowed work; allowed apps open from this page. At the end of each focus stretch it asks whether you did the work.</string>
+    <string name="info_focus_how">Exact alarms run the timer with no battery cost. The pin and app suspension are Android device-owner features; if the app ever crashes, the pin releases itself and suspension keeps blocking. Once committed, a block can\'t be ended early, not even with your recovery code. Emergency calls always work.</string>
     <string name="focus_stop_alarm">Stop</string>
     <string name="focus_start_focus">Start focus</string>
     <string name="focus_start_break">Start %1$d-min break</string>
@@ -345,7 +327,7 @@
     <string name="focus_sessions_one">1 session</string>
     <string name="focus_sessions_many">%1$d sessions</string>
     <string name="focus_delete_title">Delete this session?</string>
-    <string name="focus_delete_text">%1$s · %2$s. It\'s removed from the log, the chart and your totals. This can\'t be undone.</string>
+    <string name="focus_delete_text">%1$s · %2$s. It\'s removed from the log and your totals. This can\'t be undone.</string>
     <string name="focus_delete_confirm">Delete</string>
     <string name="focus_lock_source">Focus session</string>
     <string name="focus_allowed_apps">Allowed apps (%1$d)</string>
@@ -383,8 +365,7 @@
     <string name="focus_brick_source">Focus block</string>
     <string name="urge_lock_source">Urge lock</string>
     <string name="locked_until">Locked until %1$s</string>
-    <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge Journal (from its Quick Settings tile) and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves; pick each next subject during the break. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
-    <string name="focus_next_subject">Next session is for:</string>
+    <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge button and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_block_start">Start focus block</string>
     <string name="focus_block_no_way_out">Bricked until the end. No way out.</string>
     <string name="focus_block_irreversible">Once you commit, nothing ends this block early. Not Stop, not your recovery code. Only the end time.</string>
@@ -516,12 +497,15 @@
     <string name="ai_model_label">Model</string>
     <string name="ai_model_default">Leave empty to use %1$s.</string>
     <string name="ai_base_label">Address (https only)</string>
+    <string name="ai_base_insecure">Use an https:// address. A plain http:// address would send your key in the clear.</string>
+    <string name="ai_base_bad">That does not look like a web address. It should start with https://.</string>
     <string name="ai_consent_label">Send my notes to %1$s</string>
     <string name="ai_consent_hint">Without this, nothing leaves the phone.</string>
 
     <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
     <string name="focus_flow_prompt_title">Focus session started</string>
     <string name="focus_flow_prompt_text">Usual day or something special today?</string>
+    <string name="focus_flow_goals_hint">Or pick one of today\'s goals:</string>
     <string name="focus_flow_checkin_title">Focus done. Did you do the work?</string>
     <string name="focus_flow_final_title">Focus time is over. Did you do the work?</string>
     <string name="focus_flow_usual">Usual</string>
@@ -726,4 +710,15 @@
     <string name="entry_lock_desc">Ask for the opening pattern each time you open the app. Turning it off needs the recovery code.</string>
     <string name="entry_change_title">Opening pattern</string>
     <string name="entry_change_desc">Draw a new pattern. Needs the recovery code.</string>
+    <string name="dns_cloudflare_family">Cloudflare Family · adult sites and malware</string>
+    <string name="dns_adguard_family">AdGuard Family · adult sites and ads; SafeSearch</string>
+    <string name="dns_cleanbrowsing_adult">CleanBrowsing Adult · adult sites; Reddit allowed</string>
+    <string name="dns_cleanbrowsing_family">CleanBrowsing Family · strictest, but throttled; blocks VPNs, Reddit</string>
+    <string name="recovery_code_progress">%1$d/16</string>
+    <string name="data_status_locked">Waiting to start</string>
+    <string name="data_status_writing">Writing</string>
+    <string name="data_status_questions">Answering questions</string>
+    <string name="data_status_pending">Waiting for its deep dive</string>
+    <string name="data_status_done">Done</string>
+    <string name="data_status_skipped">Skipped</string>
 </resources>

@@ -159,6 +159,9 @@ fun UrgeSettingsScreen() {
                 AiSettings.KeySave.SAVED -> {
                     keyInput = ""
                     keySaved = ai.key.isNotBlank()
+                    // A detected key can change the provider under us: keep the chip in step.
+                    provider = ai.provider
+                    consent = ai.consent
                     message = R.string.urge_saved
                     retryWaiting()
                 }
@@ -189,6 +192,14 @@ fun UrgeSettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         )
         SaveButton {
+            // Reject a plain http address here, up front (blueprint 8), not only when a call is tried.
+            if (provider == Provider.CUSTOM) {
+                when (io.github.warleysr.dechainer.ai.AiClient.addressProblem(customBase)) {
+                    io.github.warleysr.dechainer.ai.AiError.INSECURE_URL -> { message = R.string.ai_base_insecure; return@SaveButton }
+                    null -> Unit
+                    else -> { message = R.string.ai_base_bad; return@SaveButton }
+                }
+            }
             ai.setModel(model)
             if (provider == Provider.CUSTOM) ai.setCustomBase(customBase)
             message = R.string.urge_saved

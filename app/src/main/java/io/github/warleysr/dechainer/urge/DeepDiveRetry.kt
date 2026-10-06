@@ -66,15 +66,17 @@ object DeepDiveRetry {
                         // A reply that is not Markdown is a failed call: the note stays.
                         if (md == null) retry = true else if (!save(entry.id, md)) retry = true
                     }
-                    is AiResult.Failed -> if (r.error.needsOwner) needsOwner = true else retry = true
+                    // A key/credit/model/address error is the same for every entry: stop calling and
+                    // wait for the owner, instead of re-sending each pending entry on every back-off.
+                    is AiResult.Failed -> if (r.error.needsOwner) { needsOwner = true; break } else retry = true
                 }
             } finally {
                 inFlight.end(entry.id)
             }
         }
         return when {
-            retry -> Outcome.RETRY
             needsOwner -> Outcome.NEEDS_OWNER
+            retry -> Outcome.RETRY
             else -> Outcome.DONE
         }
     }

@@ -35,10 +35,13 @@ class AiCalls(
         }
     }
 
-    /** The deep dive as Markdown. [onText] is told everything written so far while it arrives. */
+    /** The deep dive as Markdown, capped at [Rules.MAX_DEEP_DIVE_WORDS] (blueprint 8). [onText] is told everything written so far while it arrives. */
     fun deepDive(config: AiConfig, input: DeepDiveInput, onText: (String) -> Unit = {}): MarkdownOutcome {
         val req = AiPrompts.deepDive(input)
-        return markdown(stream(config, req.system, req.user, AiLimits.DEEP_DIVE, onText))
+        return when (val out = markdown(stream(config, req.system, req.user, AiLimits.DEEP_DIVE, onText))) {
+            is MarkdownOutcome.Ok -> MarkdownOutcome.Ok(MarkdownReply.limitWords(out.markdown, io.github.warleysr.dechainer.Rules.MAX_DEEP_DIVE_WORDS))
+            is MarkdownOutcome.Failed -> out
+        }
     }
 
     /** The weekly report as Markdown, from derived data only. */
