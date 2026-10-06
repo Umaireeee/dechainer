@@ -58,7 +58,12 @@ object TimeLimits {
 
     /** Milliseconds of foreground time today per package, from one read of the usage log. */
     fun usedToday(ctx: Context, pkgs: Set<String>, now: Long = System.currentTimeMillis()): Map<String, Long> {
-        if (pkgs.isEmpty() || !hasUsageAccess(ctx)) return emptyMap()
+        return readToday(ctx, pkgs, now).orEmpty()
+    }
+
+    private fun readToday(ctx: Context, pkgs: Set<String>, now: Long): Map<String, Long>? {
+        if (pkgs.isEmpty()) return emptyMap()
+        if (!hasUsageAccess(ctx)) return null
         // The day starts at local midnight on the time the caller measures with (the trusted clock), not the system clock.
         val zone = ZoneId.systemDefault()
         val startOfDay = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
@@ -76,7 +81,7 @@ object TimeLimits {
             }
         } catch (ex: Exception) {
             Timber.w(ex, "Usage log not readable")
-            return emptyMap()
+            return null
         }
         return UsageMath.foregroundMillisAll(events, pkgs, now)
     }
@@ -89,7 +94,9 @@ object TimeLimits {
     /** [reached]: apps out of time today. [nextCheckDelayMs]: when to look again, null if there's nothing to watch. */
     class Status(val reached: Set<String>, val nextCheckDelayMs: Long?)
 
-    fun evaluate(ctx: Context, now: Long): Status {
+    fun evaluate(ctx: Context, now: Long): Status = evaluate(ctx, now, ::readToday)
+
+    internal fun evaluate(ctx: Context, now: Long, readUsage: (Context, Set<String>, Long) -> Map<String, Long>?): Status {
         val limits = all(ctx)
         if (limits.isEmpty()) return Status(emptySet(), null)
         val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
@@ -106,7 +113,8 @@ object TimeLimits {
             return Status(carried, if (carried.isNotEmpty()) untilMidnight.coerceAtLeast(LimitMath.MIN_DELAY_MS) else null)
         }
         // Measured, the log is the truth: a limit raised with the recovery code gives its time back.
-        val used = usedToday(ctx, limits.keys, now)
+        val used = runCatching { readUsage(ctx, limits.keys, now) }.getOrNull()
+            ?: return Status(carried, LimitMath.MIN_DELAY_MS)
         val reached = LimitMath.reached(limits, used)
         if (reached != carried || record.getString(KEY_REACHED_DAY, null) != today) {
             record.edit(commit = true) {

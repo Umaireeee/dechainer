@@ -27,6 +27,10 @@ object LockSafety {
     fun removalBlocked(scheduleLocked: Boolean, brick: Boolean, forced: Boolean): Boolean =
         !forced && (scheduleLocked || brick)
 
+    /** Protect the chosen home; retain candidates only while Android has no chosen launcher. */
+    fun protectedHomes(candidates: Set<String>, selected: String?): Set<String> =
+        if (selected != null && selected in candidates) setOf(selected) else candidates
+
     /** Locked windows must leave at least this much free time somewhere in the week. */
     const val MIN_FREE_MINUTES = 60
 

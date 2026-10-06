@@ -31,7 +31,6 @@ object ReportInputs {
 
     fun summary(data: ReportData, advice: String = ""): ReportSummary {
         val checks = data.sessions.flatMap { it.answers }
-        val goals = data.days.flatMap { it.goals }
         return ReportSummary(
             urges = data.urges.count { it.kind == UrgeKind.URGE },
             slips = data.urges.count { it.kind == UrgeKind.SLIP },
@@ -39,8 +38,8 @@ object ReportInputs {
             focusMinutes = data.sessions.sumOf { it.minutes },
             checkinYes = checks.count { it == CheckinAnswer.YES },
             checkinNo = checks.count { it == CheckinAnswer.NO },
-            goalsDone = goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE },
-            goalsTotal = goals.size,
+            goalsDone = data.days.sumOf { it.goalsDone },
+            goalsTotal = data.days.sumOf { it.goalsTotal },
             daysMissed = data.days.count { it.violation != null },
             advice = advice.take(MAX_ADVICE)
         )
@@ -71,9 +70,20 @@ object ReportInputs {
      */
     fun adviceOf(markdown: String, heading: String = "next week"): String {
         val lines = markdown.lines()
-        val start = lines.indexOfFirst { it.trim().startsWith("#") && it.contains(heading, ignoreCase = true) }
+        val marker = "<!-- advice:${heading.lowercase().replace(' ', '-')} -->"
+        val aliases = when (heading.lowercase()) {
+            "next week" -> listOf(heading, "اگلا ہفتہ", "اگلے ہفتے")
+            "next month" -> listOf(heading, "اگلا مہینہ", "اگلے مہینے")
+            "next year" -> listOf(heading, "اگلا سال", "اگلے سال")
+            else -> listOf(heading)
+        }
+        val tagged = lines.indexOfFirst { it.trim() == marker }
+        val start = if (tagged >= 0) tagged else lines.indexOfFirst { line ->
+            line.trim().startsWith("#") && aliases.any { line.contains(it, ignoreCase = true) }
+        }
         if (start < 0) return ""
-        val body = lines.drop(start + 1).takeWhile { !it.trim().startsWith("#") }
+        val following = lines.drop(start + 1).dropWhile { tagged >= 0 && (it.isBlank() || it.trim().startsWith("#")) }
+        val body = following.takeWhile { !it.trim().startsWith("#") && !it.trim().startsWith("<!-- advice:") }
         return body.joinToString("\n").trim().take(MAX_ADVICE)
     }
 
@@ -117,9 +127,9 @@ object ReportInputs {
         appendLine("DAILY CHECKLIST")
         if (data.days.isEmpty()) appendLine("no days recorded")
         data.days.sortedBy { it.date }.forEach { d ->
-            val done = d.goals.count { it.state == io.github.warleysr.dechainer.day.GoalState.DONE }
+            val done = d.goalsDone
             val why = d.violation?.let { "; fell short: ${it.name.lowercase()}" }.orEmpty()
-            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day; $done of ${d.goals.size} goals done$why; focus minutes that day: ${d.focusMinutes}")
+            appendLine("- ${d.date}: ${d.kind.name.lowercase()} day; $done of ${d.goalsTotal} goals done$why; focus minutes that day: ${d.focusMinutes}")
             d.goals.forEach { g ->
                 val target = if (g.type == io.github.warleysr.dechainer.day.GoalType.FOCUS_MINUTES && g.targetMinutes != null) " ${g.targetMinutes} min" else ""
                 appendLine("    [${g.state.name.lowercase()}] (${g.type.name.lowercase()}$target) ${clip(g.text, MAX_GOAL)}")

@@ -131,6 +131,14 @@ data class FlowStep(val state: FlowState, val effects: List<FlowEffect> = emptyL
  * that was off), always landing where on-time wake-ups would have, in order.
  */
 object FocusFlow {
+    /** Settle missed deadlines before accepting an action from a stale screen. */
+    fun transition(state: FlowState, now: Long, action: (FlowState, Long) -> FlowStep): FlowStep {
+        val expired = tick(state, now)
+        val acted = if (expired.state.stage == state.stage) action(expired.state, now) else FlowStep(expired.state)
+        val caught = tick(acted.state, now)
+        return FlowStep(caught.state, expired.effects + acted.effects + caught.effects)
+    }
+
 
     /** A purpose as stored: one line, trimmed, at most 80 characters, at least [Rules.FOCUS_PURPOSE_MIN_CHARS]; else null. */
     fun cleanPurpose(raw: String?): String? {

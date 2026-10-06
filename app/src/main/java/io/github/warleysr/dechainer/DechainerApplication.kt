@@ -48,6 +48,7 @@ class DechainerApplication : Application() {
             AppRepository.invalidateCache()
             // A new launcher or keyboard changes which apps must never be blocked.
             ScheduleEnforcer.invalidateProtectedPackages()
+            LockEngine.requestSync(this@DechainerApplication)
             // A batch of installs or updates fires one broadcast per app. The app list itself is
             // rebuilt the next time the Apps tab asks for it (the cache was just dropped), not here:
             // updates arrive all day and nothing is looking at the list. Refresh the browser

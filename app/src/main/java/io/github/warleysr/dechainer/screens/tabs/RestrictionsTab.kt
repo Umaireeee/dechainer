@@ -16,6 +16,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -109,21 +111,23 @@ private fun RestrictionAccordion(
     var expanded by remember { mutableStateOf(defaultExpanded) }
     var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val configuration = LocalConfiguration.current
 
-    val labelMap = remember(keys) {
+    val labelMap = remember(keys, resources) {
         keys.associateWith { key ->
             viewModel.resourceNameFor(key)
-                ?.let { context.resources.getIdentifier(it, "string", context.packageName) }
+                ?.let { resources.getIdentifier(it, "string", context.packageName) }
                 ?.takeIf { it != 0 }
         }
     }
 
-    val filteredKeys = remember(keys, searchQuery, labelMap) {
+    val filteredKeys = remember(keys, searchQuery, labelMap, resources, configuration) {
         if (searchQuery.isEmpty()) {
             keys
         } else {
             keys.filter { key ->
-                val label = labelMap[key]?.let { context.getString(it) } ?: key
+                val label = labelMap[key]?.let { resources.getString(it) } ?: key
                 label.contains(searchQuery, ignoreCase = true) || key.contains(searchQuery, ignoreCase = true)
             }
         }

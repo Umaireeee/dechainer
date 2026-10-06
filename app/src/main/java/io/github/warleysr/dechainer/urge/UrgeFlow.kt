@@ -30,7 +30,7 @@ data class QuestionSet(val questions: List<Question>, val fromAi: Boolean, val s
 
 /** What came of asking for a deep dive. */
 sealed interface DeepDiveResult {
-    /** The deep dive exists (saved, and the note deleted, when the store was available). */
+    /** The complete deep dive is durably saved, and the note deletion has committed. */
     data class Saved(val markdown: String) : DeepDiveResult
 
     /**
@@ -163,15 +163,26 @@ class UrgeFlow(
     }
 
     /** Deletes the entry (and with it any note still stored). */
-    fun delete(entry: UrgeEntry) {
-        if (entry.id >= 0L) runCatching { repo.delete(entry.id) }.onFailure { Timber.w(it, "Urge entry not deleted") }
+    fun delete(entry: UrgeEntry): Boolean {
+        if (entry.id < 0L) return true // Explicitly discard the in-memory copy.
+        return runCatching {
+            val tools = io.github.warleysr.dechainer.report.DataTools(ctx, TrustedClock.zone()) { TrustedClock.now(ctx) }
+            when (tools.deleteUrge(entry.id)) {
+                io.github.warleysr.dechainer.report.DeleteResult.NOT_ALLOWED -> repo.erasePrivateText(entry.id)
+                io.github.warleysr.dechainer.report.DeleteResult.DELETED,
+                io.github.warleysr.dechainer.report.DeleteResult.MISSING -> true
+            }
+        }.onFailure { Timber.w(it, "Urge entry not deleted") }.getOrDefault(false)
     }
 
     /** Applies a stored change, then reads the entry back; without a store, the in-memory copy stands. */
     private fun step(entry: UrgeEntry, local: UrgeEntry, persist: () -> Boolean): UrgeEntry {
         if (entry.id < 0L) return local
-        runCatching { persist() }.onFailure { Timber.w(it, "Urge entry %d not written", entry.id) }
-        return runCatching { repo.get(entry.id) }.getOrNull() ?: local
+        val written = runCatching { persist() }.onFailure { Timber.w(it, "Urge entry %d not written", entry.id) }.getOrDefault(false)
+        val current = runCatching { repo.get(entry.id) }.getOrNull()
+        // Re-entering an already persisted step is idempotent, not a storage failure.
+        if (current != null && (written || current == local)) return current
+        return local.copy(id = -1L)
     }
 
     // ---- the questions ----
@@ -226,9 +237,13 @@ class UrgeFlow(
             }
             return when (val out = calls.deepDive(ai.config(), inputFor(entry), onText)) {
                 is MarkdownOutcome.Ok -> {
-                    if (stored) runCatching { repo.saveDeepDive(entry.id, out.markdown) }
-                        .onFailure { Timber.e(it, "Deep dive not saved") }
-                    DeepDiveResult.Saved(out.markdown)
+                    val saved = stored && runCatching { repo.saveDeepDive(entry.id, out.markdown) }
+                        .onFailure { Timber.e(it, "Deep dive not saved") }.getOrDefault(false)
+                    if (saved) DeepDiveResult.Saved(out.markdown)
+                    else {
+                        if (stored) enqueueRetry(true)
+                        DeepDiveResult.Pending(AiGateResult.OPEN, AiError.STORAGE)
+                    }
                 }
                 is MarkdownOutcome.Failed -> {
                     if (!out.error.needsOwner) enqueueRetry(true)

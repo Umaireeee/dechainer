@@ -28,6 +28,7 @@ object MarkdownBlocks {
         for (raw in markdown.lines()) {
             val line = raw.trimEnd()
             when {
+                line.trim().matches(Regex("<!-- advice:next-(week|month|year) -->")) -> flush()
                 line.isBlank() -> flush()
                 heading.matches(line) -> {
                     flush()

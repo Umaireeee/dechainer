@@ -83,23 +83,31 @@ object AiClient {
             if (stream) setRequestProperty("Accept", "text/event-stream")
             if (config.provider == Provider.OPENROUTER) setRequestProperty("X-Title", "Dechainer")
         }
-        conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-        return conn
+        try {
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            return conn
+        } catch (e: Exception) {
+            conn.disconnect()
+            throw e
+        }
     }
 
     private fun chatOnce(config: AiConfig, system: String, user: String, limits: AiLimits): AiResult {
         addressProblem(config.baseUrl)?.let { return AiResult.Failed(it) }
+        var conn: HttpURLConnection? = null
         return try {
-            val conn = open(config, buildBody(config.provider, config.model, system, user, limits.maxTokens, stream = false), limits, stream = false)
+            conn = open(config, buildBody(config.provider, config.model, system, user, limits.maxTokens, stream = false), limits, stream = false)
             val code = conn.responseCode
             val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                ?.bufferedReader()?.use { readBounded(it) }.orEmpty()
             conn.disconnect()
             interpret(code, text)
         } catch (_: IOException) {
             AiResult.Failed(AiError.NETWORK)
         } catch (_: RuntimeException) {
             AiResult.Failed(AiError.SERVER)
+        } finally {
+            conn?.disconnect()
         }
     }
 
@@ -120,17 +128,18 @@ object AiClient {
 
     private fun streamOnce(config: AiConfig, system: String, user: String, limits: AiLimits, onText: (String) -> Unit): AiResult {
         addressProblem(config.baseUrl)?.let { return AiResult.Failed(it) }
+        var conn: HttpURLConnection? = null
         return try {
-            val conn = open(config, buildBody(config.provider, config.model, system, user, limits.maxTokens, stream = true), limits, stream = true)
+            conn = open(config, buildBody(config.provider, config.model, system, user, limits.maxTokens, stream = true), limits, stream = true)
             val code = conn.responseCode
             if (code !in 200..299) {
-                val text = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val text = conn.errorStream?.bufferedReader()?.use { readBounded(it) }.orEmpty()
                 conn.disconnect()
                 return interpret(code, text)
             }
             if (!(conn.contentType ?: "").contains("event-stream", ignoreCase = true)) {
                 // Not a stream after all: the whole reply is in the body.
-                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val text = conn.inputStream.bufferedReader().use { readBounded(it) }
                 conn.disconnect()
                 return interpret(code, text)
             }
@@ -143,6 +152,8 @@ object AiClient {
             AiResult.Failed(AiError.NETWORK)
         } catch (_: RuntimeException) {
             AiResult.Failed(AiError.SERVER)
+        } finally {
+            conn?.disconnect()
         }
     }
 
@@ -164,8 +175,25 @@ object AiClient {
     }
 
     fun content(json: String): String? = runCatching {
-        JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
-    }.getOrNull()?.takeIf { it.isNotBlank() }
+        val choice = JSONObject(json).getJSONArray("choices").getJSONObject(0)
+        val reason = choice.optString("finish_reason", "")
+        if (reason.isNotBlank() && reason != "null" && reason != "stop") null
+        else choice.getJSONObject("message").getString("content")
+    }.getOrNull()?.takeIf { it.isNotBlank() && it.length <= MAX_REPLY_CHARS }
+
+    const val MAX_REPLY_CHARS = 1_000_000
+
+    private fun readBounded(reader: java.io.Reader): String {
+        val out = StringBuilder()
+        val buffer = CharArray(8192)
+        while (true) {
+            val n = reader.read(buffer)
+            if (n < 0) break
+            if (out.length + n > MAX_REPLY_CHARS) throw IOException("Reply exceeds limit")
+            out.append(buffer, 0, n)
+        }
+        return out.toString()
+    }
 
     /** The service's own error text, whatever shape it came in, trimmed short. */
     fun errorMessage(body: String): String {
@@ -217,17 +245,40 @@ object Sse {
         return err.optString("message").ifBlank { "The service reported an error." }
     }
 
+    private fun readLineBounded(reader: java.io.BufferedReader): String? {
+        val line = StringBuilder()
+        while (true) {
+            val c = reader.read()
+            if (c < 0) return line.takeIf { it.isNotEmpty() }?.toString()
+            if (c == '\n'.code) return line.toString().trimEnd('\r')
+            if (line.length >= AiClient.MAX_REPLY_CHARS) throw StreamFailure("Stream event exceeds limit")
+            line.append(c.toChar())
+        }
+    }
+
     /** Reads the whole stream. [onText] gets everything written so far after each piece; the full text is returned. */
     fun read(reader: java.io.BufferedReader, onText: (String) -> Unit): String {
         val all = StringBuilder()
+        var complete = false
         while (true) {
-            val line = reader.readLine() ?: break
-            if (isDone(line)) break
+            val line = readLineBounded(reader) ?: break
+            if (isDone(line)) { complete = true; break }
             error(line)?.let { throw StreamFailure(it) }
+            val data = payload(line)
+            if (!data.isNullOrBlank()) {
+                val event = try { JSONObject(data) } catch (_: Exception) { throw StreamFailure("Malformed stream event") }
+                val reason = event.optJSONArray("choices")?.optJSONObject(0)?.optString("finish_reason", "").orEmpty()
+                if (reason.isNotBlank() && reason != "null") {
+                    if (reason != "stop") throw StreamFailure("Incomplete reply: $reason")
+                    complete = true
+                }
+            }
             val piece = delta(line) ?: continue
+            if (all.length + piece.length > AiClient.MAX_REPLY_CHARS) throw StreamFailure("Reply exceeds limit")
             all.append(piece)
             onText(all.toString())
         }
+        if (!complete) throw StreamFailure("Stream ended before completion")
         return all.toString()
     }
 }

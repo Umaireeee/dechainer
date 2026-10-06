@@ -203,6 +203,7 @@ class FocusSessionRepository(private val database: DechainerDatabase) {
         } finally {
             db.endTransaction()
         }
+        Store.changed()
     }
 
     private companion object {

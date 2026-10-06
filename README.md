@@ -97,3 +97,7 @@ Everything stays on your phone: no accounts, no analytics, no servers of ours. O
 
 ## License
 Apache License 2.0, the same as the original project. See [LICENSE](LICENSE).
+
+### History backups
+
+Your data exports journal entries, focus history, checklist history and reports. It does not export settings, schedules, app limits, credentials, recovery configuration, activation or running locks. Configure those explicitly on a replacement phone. Import adds historical rows without replacing existing results or weakening active restrictions. A session exported while running restores as interrupted history, never as a new lock. Keep the JSON private; retained journal text is included.

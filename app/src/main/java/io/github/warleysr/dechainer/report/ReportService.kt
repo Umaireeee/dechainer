@@ -78,7 +78,9 @@ class ReportService(
                 kind = row?.kind ?: io.github.warleysr.dechainer.day.DayKind.NORMAL,
                 goals = goals.map { GoalFact(it.text, it.type, it.targetMinutes, it.state) },
                 violation = row?.violation,
-                focusMinutes = sessions.filter { it.date == date }.sumOf { it.minutes }
+                focusMinutes = sessions.filter { it.date == date }.sumOf { it.minutes },
+                recordedDone = row?.takeIf { it.evaluated || it.resolvedAt != null }?.doneCount,
+                recordedTotal = row?.takeIf { it.evaluated || it.resolvedAt != null }?.totalCount
             )
         }.toList()
         return ReportData(first, last, urges, sessions, dayFacts, emptyList())
