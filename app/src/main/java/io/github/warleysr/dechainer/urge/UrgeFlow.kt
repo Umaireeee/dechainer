@@ -23,8 +23,8 @@ class UrgeFlow(
     private val repo get() = repository()
 
     /**
-     * Starts (or adopts) the urge lock. A running urge is left exactly as it is: a second tap never
-     * extends it and never makes a second entry. Returns the entry the breathing screen runs from.
+     * Starts (or adopts) the blackout. A running one is left exactly as it is: a second tap never
+     * extends it and never makes a second entry. Returns the entry the blackout screen runs from.
      */
     fun startUrge(source: UrgeSource): UrgeEntry {
         val first = TrustedClock.now(ctx)

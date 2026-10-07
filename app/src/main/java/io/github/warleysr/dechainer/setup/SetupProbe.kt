@@ -37,7 +37,7 @@ object SetupProbe {
 
     /**
      * The Android settings page that fixes [item], or null where the fix is inside this app (the Device
-     * Owner steps, the AI key) and the screen navigates there itself.
+     * Owner steps) and the screen navigates there itself.
      */
     fun fixIntent(ctx: Context, item: SetupItem): Intent? {
         val pkg = Uri.parse("package:${ctx.packageName}")

@@ -54,8 +54,8 @@ fun EntryGate(onUnlocked: () -> Unit, onUrge: () -> Unit) {
 }
 
 /**
- * Urge entries, deep dives and reports are private: they ask for the pattern again unless one was
- * drawn in the last few minutes (opening the app counts).
+ * The private pages (your data) ask for the opening pattern again unless one was drawn in the last
+ * few minutes (opening the app counts).
  */
 @Composable
 fun PrivateArea(content: @Composable () -> Unit) {

@@ -59,7 +59,6 @@ object Pomodoro {
     private const val K_AUTO_BREAK = "auto_start_breaks"
     private const val K_LOG = "log"
     private const val K_PENDING = "pending_question"
-    private const val K_INTENTION = "intention"
     private const val K_LOCK = "lock_apps"
     private const val K_BRICK = "brick_blocks"
     private const val K_ALLOWED = "allowed_apps"
@@ -94,7 +93,6 @@ object Pomodoro {
     private val _settings = MutableStateFlow(PomodoroSettings())
     private val _log = MutableStateFlow<List<FocusSession>>(emptyList())
     private val _pending = MutableStateFlow<Long?>(null)
-    private val _intention = MutableStateFlow("")
     private val _allowed = MutableStateFlow<Set<String>>(emptySet())
 
     val state: StateFlow<PomodoroState> = _state.asStateFlow()
@@ -102,8 +100,6 @@ object Pomodoro {
     val log: StateFlow<List<FocusSession>> = _log.asStateFlow()
     /** The finished focus session still waiting for "Did you do the work?", if any. */
     val pendingQuestion: StateFlow<Long?> = _pending.asStateFlow()
-    /** What the next (or current) focus session is for, in your words. Cleared once it's logged. */
-    val intention: StateFlow<String> = _intention.asStateFlow()
     /** Apps that keep working during a locked focus session. */
     val allowedApps: StateFlow<Set<String>> = _allowed.asStateFlow()
 
@@ -155,7 +151,6 @@ object Pomodoro {
             )
             _log.value = loadLog(context, p)
             _pending.value = p.getLong(K_PENDING, 0L).takeIf { it > 0L }
-            _intention.value = p.getString(K_INTENTION, "") ?: ""
             loaded = true
         }
     }
@@ -432,18 +427,14 @@ object Pomodoro {
                 } else {
                     val entry = FocusSession(
                         id = current.phaseStartedAt.takeIf { it > 0 } ?: now(),
-                        minutes = minutes,
-                        intention = FocusLogMath.cleanIntention(_intention.value)
+                        minutes = minutes
                     )
-                    // A fresh intention for the next session.
-                    _intention.value = ""
                     _log.value = (_log.value + entry).takeLast(LOG_LIMIT)
                     _pending.value = entry.id
                     loggedId = entry.id
                     stored = entry
                     prefs(ctx).edit(commit = true) {
                         putLong(K_PENDING, entry.id)
-                        remove(K_INTENTION)
                     }
                 }
             }

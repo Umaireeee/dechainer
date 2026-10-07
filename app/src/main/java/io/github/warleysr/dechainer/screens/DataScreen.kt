@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /**
- * Your data (blueprint 6.6): delete single entries, sessions and deep dives, wipe everything the rules
+ * Your data (blueprint 6.6): delete single blackouts and focus sessions, wipe everything the rules
  * allow (behind the recovery code), and the backup file.
  */
 @Composable

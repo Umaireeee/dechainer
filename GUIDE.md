@@ -18,22 +18,19 @@ Check: **Settings** starts with a **Setup status** card. Every line should show 
 ## Step 2: Set your recovery code (once)
 The code is what lets you *loosen* a rule later. Give it to someone you trust and **never keep it on the phone or in a notebook next to it**. Anything that weakens protection asks for it, and you can add a waiting delay on top.
 
-## Step 3: Add an AI key (optional)
-**Settings → Urge and AI**. Pick a provider (Google AI Studio has a free tier; DeepSeek, OpenRouter, OpenAI and any OpenAI-compatible service also work), paste your key and agree to the privacy note. Without a key, urges get three fixed questions and no deep dive. The key is sealed with the Android Keystore.
-
-## Step 4: Turn on adult-site blocking (2 minutes)
+## Step 3: Turn on adult-site blocking (2 minutes)
 **Settings → Private DNS**, then pick **CleanBrowsing Family** (strictest). This covers the whole phone, every browser and app. Also open **Settings → Protections** and switch on the ones you want, for example blocking factory reset, installing from unknown sources, and adding a VPN.
 
+## Step 4: Choose how long a blackout lasts
+**Settings → Blackout**. Pick the length, from 1 minute up to 12 hours (10 minutes by default). This is how long the phone stays a black slab when you start one.
+
 ## Step 5: When an urge hits
-Tap **Urge** on Home (or the Quick Settings tile, or the icon shortcut), then **Ongoing**. The phone locks at once for ten minutes: calls, the dialer and the alarm clock work, everything else is paused (text messages and Emergency Info too). Nothing ends it early and a second tap never extends it. A breathing circle runs for the ten minutes. When it ends, write what happened if you want to ("Not now" leaves a counted entry), answer the questions, and read the deep dive.
+Tap **Blackout** on Home. The phone locks at once for the length you chose: the screen turns full-screen pure black with one dim countdown, and only incoming calls get through. The notification shade, Home, Recents, the power menu, the alarm clock and every other app are blocked. Nothing ends it early, not even your recovery code, and a second tap never extends it. Rebooting does not reset the timer.
 
-If you already slipped, tap **I slipped** instead: no lock, straight to writing. A slip is one event; the deep dive names the gap that let it through.
-
-Add the tile: pull the notification shade down fully, tap the pencil or "Edit", find the Urge tile, and drag it to the top row.
-
-Set the **reason** you wrote on a calm day and one **person to call** in **Settings → Urge and AI**. The reason replaces the fifth breathing prompt; the person appears on a support card if a note shows risk. Neither is sent to the AI.
-
-If the AI cannot be reached, the note stays on the phone, the entry waits for its deep dive, and the app retries in the background until it works or you delete the entry.
+You can also start a blackout from anywhere:
+- the **Quick Settings tile**: pull the shade down fully, tap the pencil or "Edit", find the **Blackout** tile, and drag it to the top row;
+- the app icon's long-press **shortcut**;
+- the **assistant gesture** (long-press power, or the corner swipe), after you set Déchaîner as your default assistant app in *Settings → Apps → Default apps → Digital assistant*. This is optional and replaces your usual assistant.
 
 ## Step 6: Focus sessions
 1. **Manual:** open **Focus**, pick an end time (10 minutes to 8 hours), write what the session is for, choose usual or special, and commit.
@@ -42,7 +39,7 @@ If the AI cannot be reached, the note stays on the phone, the entry waits for it
 4. The phone is locked until the end time, breaks included, and **nothing ends it early, not even your recovery code**. Start with a short one. Choose the apps allowed during a block in the timer settings; keep browsers off that list.
 
 ## Step 7: Your data
-The deep dive (Step 5) is the one thing the AI writes. You can keep, back up or delete your data under **Settings → Your data**: delete a single urge, a focus session or a deep dive, save everything to a file and read it back, or wipe all data (it asks for the recovery code). A finished entry or session can be deleted at any time.
+Everything stays on the phone, and there is no AI: nothing is ever sent anywhere. You can keep, back up or delete your data under **Settings → Your data**: delete a single blackout or focus session, save everything to a file and read it back, or wipe all data (it asks for the recovery code). A finished entry or session can be deleted at any time.
 
 ## Step 8: Make your first schedule (5 minutes)
 1. Open **Schedules**.
@@ -62,7 +59,7 @@ On **Apps and limits**, flip the switch next to any app to pause it. Open an app
 
 ## A simple daily routine
 1. Morning: start a focus session.
-2. When an urge hits: tap Urge instead of arguing with yourself.
+2. When an urge hits: tap Blackout instead of arguing with yourself.
 3. Now and then: save a backup file under **Settings → Your data**.
 
 ## Be realistic

@@ -113,7 +113,7 @@ class SecurityManager {
         private const val PRIVATE_OPEN_MS = 5 * 60_000L
         private var privateOpenUntil = 0L
 
-        /** Urge entries, deep dives and reports are private: a pattern drawn in the last few minutes keeps them open. */
+        /** Your blackouts and focus sessions are private: a pattern drawn in the last few minutes keeps them open. */
         @Synchronized fun isPrivateOpen(): Boolean = SystemClock.elapsedRealtime() < privateOpenUntil
         @Synchronized fun openPrivate() { privateOpenUntil = SystemClock.elapsedRealtime() + PRIVATE_OPEN_MS }
         @Synchronized fun closePrivate() { privateOpenUntil = 0L }

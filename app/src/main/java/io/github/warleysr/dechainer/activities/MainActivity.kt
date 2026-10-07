@@ -140,8 +140,7 @@ class MainActivity : ComponentActivity() {
         val status = LockEngine.refreshStatus(this)
         if (status != null) syncBrickPin(true, status.ownerApps, status.primary == LockMode.URGE_LOCK)
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
-        // An urge that was left half-written opens straight back into its step.
-        // Not while the locked screen covers the app: the writing is private and waits for the pattern.
+        // A blackout that is still running opens straight back into its countdown.
         if (!lockScreenCovers()) urgeVm.resumeIfAny()
     }
 
@@ -208,7 +207,7 @@ class MainActivity : ComponentActivity() {
                     LockEngine.requestSync(this@MainActivity)
                 }
             }
-            // Every urge lock gets its counted entry and its breathing, also one found with none.
+            // Every blackout gets its counted entry, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
                 if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
             }
@@ -234,7 +233,7 @@ class MainActivity : ComponentActivity() {
                     if (brick) navViewModel.navigateTo(Route.HOME)
                 }
 
-                // The pattern was drawn: an urge that stopped after its breathing carries on to the writing.
+                // The pattern was drawn: a running blackout carries on.
                 LaunchedEffect(entryUnlocked) { if (entryUnlocked) urgeVm.resumeIfAny() }
 
                 // An urge lock ends any open recovery session, so the code can't
@@ -279,7 +278,7 @@ class MainActivity : ComponentActivity() {
                     hasPattern = SecurityManager.hasEntryPattern(context)
                 )
 
-                // Home and the urge flow have no top bar: the clock, or the breathing, is all there is.
+                // Home and the blackout have no top bar: the clock, or the countdown, is all there is.
                 val showTopBar = recoverySet && !gateShown && !urge.active && (focusBrick || route != Route.HOME)
 
                 Scaffold(
@@ -329,7 +328,7 @@ class MainActivity : ComponentActivity() {
 
                         !recoverySet -> SetupRecovery(innerPadding)
 
-                        // The urge flow owns the screen: the choice, the breathing, the writing, the questions, the deep dive.
+                        // The blackout owns the screen: the pure-black countdown, no exit and no prompts.
                         urge.active -> UrgeFlowHost(urgeVm)
 
                         // The focus block: only this page. It has nothing to protect (no settings, no way

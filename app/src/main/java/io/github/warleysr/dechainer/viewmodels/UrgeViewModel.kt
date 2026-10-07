@@ -52,8 +52,8 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * An urge lock is running but this flow has no entry for it (the app was reopened, say): every
-     * lock gets its counted entry, and the breathing runs for what is left of it.
+     * A blackout is running but this flow has no entry for it (the app was reopened, say): every
+     * one gets its counted entry, and the countdown runs for what is left of it.
      */
     fun adoptRunningLock() {
         val s = _state.value

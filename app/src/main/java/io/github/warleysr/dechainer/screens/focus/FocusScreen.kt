@@ -654,9 +654,9 @@ private fun DialogSection(text: String) {
 }
 
 /**
- * An urge during a block (blueprint 6.2, 5.3): the Urge button opens the same flow as everywhere
- * else. The phone is already bricked, so no second lock starts, and the breathing still runs for
- * the chosen length.
+ * A blackout during a block (blueprint 6.2, 5.3): the Blackout button opens the same flow as
+ * everywhere else. The phone is already bricked, so no second lock starts, and the blackout still
+ * runs for the chosen length.
  */
 @Composable
 private fun UrgeButton() {
