@@ -50,6 +50,10 @@ class FocusRunnerTest {
     @Before
     fun setUp() {
         ctx = ApplicationProvider.getApplicationContext()
+        // The lock engine runs each pass on its own thread (a Pomodoro change asks for one). A pass a
+        // previous test left in flight would read that test's context and clobber the shared Pomodoro
+        // and focus-flow state mid-test; drain it here, then reset, so each test starts from scratch.
+        LockEngine.sync(ctx)
         listOf(
             "pomodoro", "schedule_state", "schedule_prefs", "security_prefs", "lock_settings", "crash_guard",
             "app_time_limits", "app_time_limits_reached"
@@ -173,7 +177,7 @@ class FocusRunnerTest {
 
     @Test
     fun notReadyEndsInAPlainTimerWithNoMorePhasesAndTheBlockStillHoldsToItsEnd() {
-        start(minutes = 120)
+        assertTrue("the block starts", start(minutes = 120))
         FocusRunner.onFocusPhaseEnded(ctx, 25)
         FocusRunner.answer(ctx, false)
         val blockEnd = Pomodoro.state.value.blockEndsAt
