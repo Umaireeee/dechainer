@@ -27,6 +27,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.Rules
+import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.urge.UrgeSettings
 
 /**
@@ -37,6 +39,7 @@ import io.github.warleysr.dechainer.urge.UrgeSettings
 fun UrgeSettingsScreen() {
     val context = LocalContext.current
     val urge = remember { UrgeSettings(context) }
+    val gate = rememberRecoveryGate()
 
     var message by remember { mutableStateOf<Int?>(null) }
     var minutes by remember { mutableFloatStateOf(urge.durationMinutes.toFloat()) }
@@ -63,15 +66,22 @@ fun UrgeSettingsScreen() {
         )
         Button(
             onClick = {
-                urge.setDurationMinutes(minutes.toInt())
-                minutes = urge.durationMinutes.toFloat()
-                message = R.string.urge_saved
+                val target = minutes.toInt()
+                val save = {
+                    urge.setDurationMinutes(target)
+                    minutes = urge.durationMinutes.toFloat()
+                    message = R.string.urge_saved
+                }
+                // A shorter blackout loosens your own rule, so it takes the recovery code. A longer
+                // one only tightens, so it is one tap.
+                if (target < urge.durationMinutes) gate.run(action = save) else save()
             },
             modifier = Modifier.heightIn(min = 48.dp)
         ) { Text(stringResource(R.string.urge_save)) }
 
         Spacer(Modifier.height(24.dp))
     }
+    RecoveryGateDialog(gate)
 }
 
 @Composable

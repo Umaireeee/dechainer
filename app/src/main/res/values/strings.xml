@@ -411,7 +411,7 @@
     <string name="urge_saved">Saved.</string>
     <string name="urge_save">Save</string>
     <string name="urge_length_section">Blackout length</string>
-    <string name="urge_length_hint">How long the blackout lasts when you start it. You can change it any time.</string>
+    <string name="urge_length_hint">How long the blackout lasts when you start it. You can make it longer any time; making it shorter needs the recovery code.</string>
     <string name="urge_length_value">%1$d min</string>
 
     <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
