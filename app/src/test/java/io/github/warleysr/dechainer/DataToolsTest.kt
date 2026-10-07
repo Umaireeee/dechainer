@@ -15,10 +15,7 @@ import io.github.warleysr.dechainer.store.DechainerDatabase
 import io.github.warleysr.dechainer.store.DeleteResult
 import io.github.warleysr.dechainer.store.StoredSession
 import io.github.warleysr.dechainer.store.Store
-import io.github.warleysr.dechainer.urge.Answer
-import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeSource
-import io.github.warleysr.dechainer.urge.UrgeStatus
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -50,12 +47,8 @@ class DataToolsTest {
         ctx.deleteDatabase(DechainerDatabase.FILE_NAME)
     }
 
-    private fun entry(at: Long, kind: UrgeKind = UrgeKind.URGE, finish: Boolean = true): Long {
-        val repo = Store.urgeEntries(ctx)
-        val id = repo.insert(kind, UrgeSource.HOME, at)
-        if (finish) { repo.markWriting(id); repo.skip(id) }
-        return id
-    }
+    private fun entry(at: Long, source: UrgeSource = UrgeSource.HOME): Long =
+        Store.urgeEntries(ctx).insert(source, at)
 
     private fun session(at: Long): Long {
         val repo = Store.focus(ctx)
@@ -67,29 +60,11 @@ class DataToolsTest {
 
     // ---- delete ----
 
-    @Test fun anOrdinaryUrgeAndItsDeepDiveCanBeDeleted() {
+    @Test fun anUrgeCanBeDeleted() {
         val id = entry(ms(10, 20, 9))
         assertEquals(DeleteResult.DELETED, tools().deleteUrge(id))
         assertNull(Store.urgeEntries(ctx).get(id))
         assertEquals(DeleteResult.MISSING, tools().deleteUrge(id))
-
-        val repo = Store.urgeEntries(ctx)
-        val d = repo.insert(UrgeKind.URGE, UrgeSource.HOME, ms(10, 19))
-        repo.markWriting(d); repo.saveNote(d, "n"); repo.saveAnswers(d, listOf(Answer("q", "p", "a"))); repo.saveDeepDive(d, "## Deep")
-        assertEquals(DeleteResult.DELETED, tools().deleteDeepDive(d))
-        assertNull(repo.get(d)!!.deepDive)
-        assertEquals(UrgeStatus.DONE, repo.get(d)!!.status)
-    }
-
-    @Test fun anEntryStillInTheFlowCannotBeDeleted() {
-        val id = entry(ms(10, 20, 9), finish = false)
-        assertEquals(DeleteResult.NOT_ALLOWED, tools().deleteUrge(id))
-    }
-
-    @Test fun aFinishedSlipCanBeDeleted() {
-        val slip = entry(ms(10, 20, 9), UrgeKind.SLIP)
-        assertEquals(DeleteResult.DELETED, tools().deleteUrge(slip))
-        assertNull(Store.urgeEntries(ctx).get(slip))
     }
 
     @Test fun aCompletedSessionCanBeDeleted() {
@@ -101,14 +76,14 @@ class DataToolsTest {
 
     // ---- wipe ----
 
-    @Test fun wipeRemovesFinishedEntriesAndSessions() {
-        val old = entry(ms(10, 8, 9)); val slipToday = entry(ms(10, 20, 9), UrgeKind.SLIP); val urgeToday = entry(ms(10, 20, 9))
+    @Test fun wipeRemovesEveryUrgeAndFinishedSession() {
+        val old = entry(ms(10, 8, 9)); val today = entry(ms(10, 20, 9), UrgeSource.TILE)
         val oldSession = session(ms(10, 9, 9)); val sessionToday = session(ms(10, 20, 9))
 
         val r = tools().wipeAll()
-        assertNull(Store.urgeEntries(ctx).get(old)); assertNull(Store.urgeEntries(ctx).get(slipToday)); assertNull(Store.urgeEntries(ctx).get(urgeToday))
+        assertNull(Store.urgeEntries(ctx).get(old)); assertNull(Store.urgeEntries(ctx).get(today))
         assertNull(Store.focus(ctx).session(oldSession)); assertNull(Store.focus(ctx).session(sessionToday))
-        assertEquals(5, r.removed)
+        assertEquals(4, r.removed)
         assertEquals(0, r.kept)
     }
 
@@ -116,9 +91,8 @@ class DataToolsTest {
 
     private fun fill() {
         val repo = Store.urgeEntries(ctx)
-        val id = repo.insert(UrgeKind.SLIP, UrgeSource.TILE, ms(10, 6)); repo.markWriting(id); repo.saveNote(id, "n")
-        repo.saveAnswers(id, listOf(Answer("q", "p", "a"))); repo.saveDeepDive(id, "## Deep dive")
-        entry(ms(10, 7)) // a counted stub
+        repo.insert(UrgeSource.TILE, ms(10, 6), ms(10, 6), ms(10, 6) + 10 * 60_000L)
+        entry(ms(10, 7))
         session(ms(10, 8, 9))
     }
 
@@ -136,7 +110,7 @@ class DataToolsTest {
         val r = tools().import(file)
         assertTrue(r.ok)
         assertEquals(before, counts())
-        assertEquals("## Deep dive", Store.urgeEntries(ctx).all().first().deepDive)
+        assertEquals(UrgeSource.TILE, Store.urgeEntries(ctx).all().first().source)
     }
 
     @Test fun readingTheSameFileTwiceAddsNothing() {
@@ -158,16 +132,16 @@ class DataToolsTest {
         assertEquals(before, counts())
     }
 
-    @Test fun anEntryThatWasMidFlowComesBackAsACountedStubOrAWaitingNote() {
+    @Test fun anEntryWithAnUnknownSourceIsCountedAndSkipped() {
         val file = """{"format":"dechainer-export","version":1,"urge_entry":[
-            {"created_at":1000,"kind":"URGE","source":"HOME","status":"WRITING","raw_text":"half"},
-            {"created_at":2000,"kind":"URGE","source":"HOME","status":"QUESTIONS","raw_text":"note"},
-            {"created_at":3000,"kind":"NOPE","source":"HOME","status":"DONE"}]}"""
+            {"created_at":1000,"source":"HOME","lock_started_at":1000,"lock_ended_at":601000},
+            {"created_at":2000,"source":"NOPE"}]}"""
         val r = tools().import(file)
         assertTrue(r.ok)
         val all = Store.urgeEntries(ctx).all()
-        assertEquals(UrgeStatus.SKIPPED, all[0].status); assertNull(all[0].rawText)
-        assertEquals(UrgeStatus.PENDING_DEEPDIVE, all[1].status); assertEquals("note", all[1].rawText)
+        assertEquals(1, all.size)
+        assertEquals(UrgeSource.HOME, all[0].source)
+        assertEquals(601_000L, all[0].lockEndedAt)
         assertEquals(1, r.skipped)
     }
 }

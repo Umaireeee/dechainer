@@ -37,14 +37,13 @@ fetch https://repo1.maven.org/maven2/org/json/json/20240303/json-20240303.jar js
 MAIN=(
   Rules.kt models/BlockSchedule.kt data/LockSafety.kt
   lock/LockModel.kt lock/LockPlanner.kt lock/LockAllow.kt lock/UrgeLockRule.kt lock/FocusStartRule.kt lock/FocusTimetable.kt
-  urge/UrgeFlowRules.kt urge/UrgeModel.kt urge/Breathing.kt urge/UrgeJson.kt
+  urge/UrgeFlowRules.kt urge/UrgeModel.kt urge/Breathing.kt
   focus/FocusFlow.kt focus/PomodoroCore.kt
-  ai/AiPrompts.kt ai/DeepDiveHistory.kt ai/AiModels.kt ai/AiParsers.kt ai/MarkdownBlocks.kt
   store/Migrations.kt
 )
 DEFAULT_TESTS=(
   LockModesTest LockPlannerTest BrickTargetsTest UrgeLockRuleTest FocusStartRuleTest FocusTimetableTest UrgeFlowRulesTest
-  AiPromptsTest DeepDiveHistoryTest MigrationsTest ResourceReferencesTest DebugControlsTest AiParsersTest
+  MigrationsTest ResourceReferencesTest DebugControlsTest
 )
 TESTS=("$@"); [ ${#TESTS[@]} -eq 0 ] && TESTS=("${DEFAULT_TESTS[@]}")
 

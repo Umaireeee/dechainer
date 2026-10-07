@@ -5,8 +5,8 @@ import androidx.core.content.edit
 import io.github.warleysr.dechainer.Rules
 
 /**
- * The owner's urge settings: the personal reason (D5, shown as a breathing prompt) and the crisis
- * contact (D4). Both stay on the phone.
+ * The owner's urge settings: the personal reason (D5, shown as a breathing prompt) and how long an
+ * urge lock lasts. Both stay on the phone.
  */
 class UrgeSettings(context: Context) {
     private val ctx = context.applicationContext
@@ -14,8 +14,12 @@ class UrgeSettings(context: Context) {
 
     val reason: String get() = prefs.getString(KEY_REASON, "") ?: ""
 
-    val contact: CrisisContact
-        get() = CrisisContact(prefs.getString(KEY_CONTACT_NAME, "") ?: "", prefs.getString(KEY_CONTACT_NUMBER, "") ?: "")
+    /** How long an urge lock lasts, in minutes, between the blueprint's bounds. */
+    val durationMinutes: Int
+        get() = prefs.getInt(KEY_DURATION_MIN, Rules.URGE_LOCK_DEFAULT_MINUTES)
+            .coerceIn(Rules.URGE_LOCK_MIN_MINUTES, Rules.URGE_LOCK_MAX_MINUTES)
+
+    val durationMs: Long get() = durationMinutes * 60_000L
 
     /** One line the owner writes on a calm day. */
     fun setReason(text: String): Boolean {
@@ -23,15 +27,14 @@ class UrgeSettings(context: Context) {
         return true
     }
 
-    fun setContact(name: String, number: String): Boolean {
-        val c = CrisisContact.of(name, number)
-        prefs.edit { putString(KEY_CONTACT_NAME, c.name); putString(KEY_CONTACT_NUMBER, c.number) }
+    /** The chosen length, kept inside the blueprint's bounds. */
+    fun setDurationMinutes(minutes: Int): Boolean {
+        prefs.edit { putInt(KEY_DURATION_MIN, minutes.coerceIn(Rules.URGE_LOCK_MIN_MINUTES, Rules.URGE_LOCK_MAX_MINUTES)) }
         return true
     }
 
     private companion object {
         const val KEY_REASON = "reason"
-        const val KEY_CONTACT_NAME = "contact_name"
-        const val KEY_CONTACT_NUMBER = "contact_number"
+        const val KEY_DURATION_MIN = "duration_min"
     }
 }

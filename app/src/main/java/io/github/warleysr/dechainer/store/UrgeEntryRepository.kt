@@ -3,39 +3,24 @@ package io.github.warleysr.dechainer.store
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import io.github.warleysr.dechainer.urge.Answer
-import io.github.warleysr.dechainer.urge.Question
 import io.github.warleysr.dechainer.urge.UrgeEntry
-import io.github.warleysr.dechainer.urge.UrgeFlowRules
-import io.github.warleysr.dechainer.urge.UrgeJson
-import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeSource
-import io.github.warleysr.dechainer.urge.UrgeStatus
 import timber.log.Timber
 
 /**
- * `urge_entry` (blueprint section 7). Every write is a transaction. A status moves only along
- * [UrgeFlowRules.canMove], checked inside the same transaction as the write, so two screens (or the
- * screen and the retry job) can never both finish the same step. The deep dive is saved and the note
- * deleted in one transaction: the note is never gone without its deep dive being there.
- *
- * A row that cannot be read (an unknown kind or status, say) is skipped by every read and never
- * touched by a write: reads cannot overwrite stored data.
+ * `urge_entry` (blueprint section 7): the plain log of urge locks. Every write is a transaction.
+ * A row that cannot be read (an unknown source, say) is skipped by every read and never touched by
+ * a write: reads cannot overwrite stored data.
  */
 class UrgeEntryRepository(private val database: DechainerDatabase) {
 
-    /** Creates an entry in its starting status and returns its id. */
-    fun insert(
-        kind: UrgeKind, source: UrgeSource, createdAt: Long,
-        lockStartedAt: Long? = null, lockEndedAt: Long? = null
-    ): Long {
+    /** Creates an entry and returns its id. */
+    fun insert(source: UrgeSource, createdAt: Long, lockStartedAt: Long? = null, lockEndedAt: Long? = null): Long {
         val row = ContentValues().apply {
             put("created_at", createdAt)
-            put("kind", kind.name)
             put("source", source.name)
             put("lock_started_at", lockStartedAt)
             put("lock_ended_at", lockEndedAt)
-            put("status", UrgeFlowRules.startingStatus(kind).name)
         }
         var id = -1L
         inTransaction { id = it.insertOrThrow(TABLE, null, row) }
@@ -46,36 +31,22 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         database.readableDatabase.query(TABLE, COLUMNS, "id = ?", arrayOf(id.toString()), null, null, null)
             .use { if (it.moveToFirst()) read(it) else null }
 
-    /** Entries still in the flow (breathing, writing, answering), newest first, for resuming. */
-    fun unfinished(): List<UrgeEntry> =
-        list("status IN (?, ?, ?)", arrayOf(UrgeStatus.LOCKED.name, UrgeStatus.WRITING.name, UrgeStatus.QUESTIONS.name))
-
-    /** Entries waiting for a deep dive, oldest first: the retry job's list. */
-    fun pendingDeepDives(): List<UrgeEntry> =
-        list("status = ?", arrayOf(UrgeStatus.PENDING_DEEPDIVE.name)).sortedBy { it.createdAt }
-
-    /** Entries created in [from, to), oldest first (the weekly report's read). */
-    fun between(from: Long, to: Long): List<UrgeEntry> =
-        list("created_at >= ? AND created_at < ?", arrayOf(from.toString(), to.toString())).sortedBy { it.createdAt }
-
     /** Every entry that can be read, oldest first. */
-    fun all(): List<UrgeEntry> = list("1 = 1", emptyArray()).sortedBy { it.createdAt }
+    fun all(): List<UrgeEntry> =
+        database.readableDatabase.query(TABLE, COLUMNS, null, null, null, null, "created_at ASC").use { c ->
+            buildList { while (c.moveToNext()) read(c)?.let { add(it) } }
+        }
+
+    /** The newest entry that can be read, or null. */
+    fun latest(): UrgeEntry? =
+        database.readableDatabase.query(TABLE, COLUMNS, null, null, null, null, "created_at DESC", "1")
+            .use { if (it.moveToFirst()) read(it) else null }
 
     /** The time of the first entry, or null. */
     fun firstCreatedAt(): Long? =
         database.readableDatabase.rawQuery("SELECT MIN(created_at) FROM $TABLE", null).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 
-    /** Removes the deep dive and keeps the entry as a counted stub (blueprint 6.6). The note is already gone once a deep dive exists. */
-    fun deleteDeepDive(id: Long): Boolean {
-        var n = 0
-        inTransaction { db ->
-            if (!readable(db, id)) return@inTransaction
-            n = db.update(TABLE, ContentValues().apply { putNull("deep_dive") }, "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.DONE.name))
-        }
-        return n > 0
-    }
-
-    /** Every entry that can be read, counted stubs included. */
+    /** Every entry that can be read. */
     fun count(): Int =
         database.readableDatabase.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
@@ -90,45 +61,6 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
         }
     }
 
-    /** The writing screen is up. */
-    fun markWriting(id: Long): Boolean = move(id, UrgeStatus.WRITING)
-
-    /** The note is submitted. It is stored at once, before any question is asked, so a killed app loses nothing. */
-    fun saveNote(id: Long, text: String): Boolean = move(id, UrgeStatus.QUESTIONS) { put("raw_text", text) }
-
-    /** The questions the owner is shown, stored so a deep dive can be retried without asking again. Only while answering. */
-    fun saveQuestions(id: Long, questions: List<Question>, support: Boolean = false): Boolean {
-        var done = false
-        inTransaction { db ->
-            if (!readable(db, id)) return@inTransaction
-            done = db.update(
-                TABLE, ContentValues().apply {
-                    put("questions_json", UrgeJson.questionsToJson(questions))
-                    put("support", if (support) 1 else 0)
-                },
-                "id = ? AND status = ?", arrayOf(id.toString(), UrgeStatus.QUESTIONS.name)
-            ) == 1
-        }
-        return done
-    }
-
-    /** "Not now": a counted stub with no text. */
-    fun skip(id: Long): Boolean = move(id, UrgeStatus.SKIPPED) { putNull("raw_text") }
-
-    /** The answers are in. From here the deep dive is owed, and the retry job owns it if the screen cannot finish. */
-    fun saveAnswers(id: Long, answers: List<Answer>): Boolean = move(id, UrgeStatus.PENDING_DEEPDIVE) {
-        put("answers_json", UrgeJson.answersToJson(answers))
-    }
-
-    /** Saves the deep dive and deletes the note, in one transaction. Refused if there is no deep dive to keep. */
-    fun saveDeepDive(id: Long, markdown: String): Boolean {
-        if (markdown.isBlank()) return false
-        return move(id, UrgeStatus.DONE) {
-            put("deep_dive", markdown)
-            putNull("raw_text")
-        }
-    }
-
     /** Deletes one entry (blueprint 6.6). Returns whether a row went. A row that cannot be read is left as it is. */
     fun delete(id: Long): Boolean {
         var n = 0
@@ -138,60 +70,24 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
 
     /** Whether the row can be read in full: a row that cannot is never written or deleted (blueprint 7). */
     private fun readable(db: SQLiteDatabase, id: Long): Boolean =
-        db.query(TABLE, arrayOf("kind", "source", "status"), "id = ?", arrayOf(id.toString()), null, null, null).use { c ->
-            c.moveToFirst() &&
-                UrgeKind.entries.any { it.name == c.getString(0) } &&
-                UrgeSource.entries.any { it.name == c.getString(1) } &&
-                statusOf(c.getString(2)) != null
-        }
-
-    private fun move(id: Long, to: UrgeStatus, extra: ContentValues.() -> Unit = {}): Boolean {
-        var moved = false
-        inTransaction { db ->
-            // Only a row that can be read in full is ever written: an unreadable one is left exactly as it is.
-            val from = db.query(TABLE, arrayOf("status", "kind", "source"), "id = ?", arrayOf(id.toString()), null, null, null)
-                .use { c ->
-                    if (!c.moveToFirst()) null
-                    else if (UrgeKind.entries.none { it.name == c.getString(1) } || UrgeSource.entries.none { it.name == c.getString(2) }) null
-                    else statusOf(c.getString(0))
-                }
-            if (from == null || !UrgeFlowRules.canMove(from, to)) return@inTransaction
-            val values = ContentValues().apply { put("status", to.name); extra() }
-            moved = db.update(TABLE, values, "id = ? AND status = ?", arrayOf(id.toString(), from.name)) == 1
-        }
-        return moved
-    }
-
-    private fun list(where: String, args: Array<String>): List<UrgeEntry> =
-        database.readableDatabase.query(TABLE, COLUMNS, where, args, null, null, "created_at DESC").use { c ->
-            buildList { while (c.moveToNext()) read(c)?.let { add(it) } }
+        db.query(TABLE, arrayOf("source"), "id = ?", arrayOf(id.toString()), null, null, null).use { c ->
+            c.moveToFirst() && UrgeSource.entries.any { it.name == c.getString(0) }
         }
 
     private fun read(c: Cursor): UrgeEntry? {
-        val status = statusOf(c.getString(6))
-        val kind = UrgeKind.entries.firstOrNull { it.name == c.getString(2) }
-        val source = UrgeSource.entries.firstOrNull { it.name == c.getString(3) }
-        if (status == null || kind == null || source == null) {
+        val source = UrgeSource.entries.firstOrNull { it.name == c.getString(2) }
+        if (source == null) {
             Timber.w("Urge entry %d not readable; left as it is", c.getLong(0))
             return null
         }
         return UrgeEntry(
             id = c.getLong(0),
             createdAt = c.getLong(1),
-            kind = kind,
             source = source,
-            lockStartedAt = if (c.isNull(4)) null else c.getLong(4),
-            lockEndedAt = if (c.isNull(5)) null else c.getLong(5),
-            status = status,
-            rawText = if (c.isNull(7)) null else c.getString(7),
-            questionsJson = if (c.isNull(8)) null else c.getString(8),
-            answersJson = if (c.isNull(9)) null else c.getString(9),
-            deepDive = if (c.isNull(10)) null else c.getString(10),
-            support = c.getInt(11) != 0
+            lockStartedAt = if (c.isNull(3)) null else c.getLong(3),
+            lockEndedAt = if (c.isNull(4)) null else c.getLong(4)
         )
     }
-
-    private fun statusOf(name: String?): UrgeStatus? = UrgeStatus.entries.firstOrNull { it.name == name }
 
     private fun inTransaction(work: (SQLiteDatabase) -> Unit) {
         val db = database.writableDatabase
@@ -206,9 +102,6 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
 
     private companion object {
         const val TABLE = "urge_entry"
-        val COLUMNS = arrayOf(
-            "id", "created_at", "kind", "source", "lock_started_at", "lock_ended_at", "status",
-            "raw_text", "questions_json", "answers_json", "deep_dive", "support"
-        )
+        val COLUMNS = arrayOf("id", "created_at", "source", "lock_started_at", "lock_ended_at")
     }
 }

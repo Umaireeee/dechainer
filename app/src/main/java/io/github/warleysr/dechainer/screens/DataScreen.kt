@@ -20,8 +20,6 @@ import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.store.DataTools
 import io.github.warleysr.dechainer.store.DeleteResult
 import io.github.warleysr.dechainer.store.Store
-import io.github.warleysr.dechainer.urge.UrgeKind
-import io.github.warleysr.dechainer.urge.UrgeStatus
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -95,15 +93,9 @@ fun DataScreen(modifier: Modifier = Modifier) {
         item { Text(stringResource(R.string.data_entries), style = MaterialTheme.typography.titleLarge) }
         if (urges.isEmpty()) item { Text(stringResource(R.string.data_none)) }
         items(urges, key = { "u${it.id}" }) { e ->
-            Column(Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.data_urge_row, at(e.createdAt),
-                    stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge),
-                    stringResource(statusLabel(e.status))))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ showResult(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
-                    if (e.status == UrgeStatus.DONE && e.deepDive != null)
-                        TextButton({ showResult(tools.deleteDeepDive(e.id)) }) { Text(stringResource(R.string.data_delete_deep_dive)) }
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.data_urge_row, at(e.createdAt)), Modifier.weight(1f))
+                TextButton({ showResult(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
 
@@ -140,14 +132,4 @@ fun DataScreen(modifier: Modifier = Modifier) {
         )
     }
     RecoveryGateDialog(gate)
-}
-
-/** The stored status, said in plain words (blueprint 12: nothing internal is shown to the owner). */
-private fun statusLabel(status: UrgeStatus): Int = when (status) {
-    UrgeStatus.LOCKED -> R.string.data_status_locked
-    UrgeStatus.WRITING -> R.string.data_status_writing
-    UrgeStatus.QUESTIONS -> R.string.data_status_questions
-    UrgeStatus.PENDING_DEEPDIVE -> R.string.data_status_pending
-    UrgeStatus.DONE -> R.string.data_status_done
-    UrgeStatus.SKIPPED -> R.string.data_status_skipped
 }

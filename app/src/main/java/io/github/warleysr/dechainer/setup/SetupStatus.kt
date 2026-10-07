@@ -7,8 +7,7 @@ enum class SetupItem {
     FULL_SCREEN,
     USAGE_ACCESS,
     BATTERY,
-    RECOVERY_CODE,
-    AI_KEY
+    RECOVERY_CODE
 }
 
 data class SetupCheck(val item: SetupItem, val done: Boolean)
@@ -28,6 +27,6 @@ object SetupStatus {
     /** The checks that still need something from the owner, in guide order. */
     fun open(checks: List<SetupCheck>): List<SetupCheck> = checks.filter { !it.done }.sortedBy { it.item.ordinal }
 
-    /** The optional AI key never keeps setup open. */
-    fun complete(checks: List<SetupCheck>): Boolean = open(checks).all { it.item == SetupItem.AI_KEY }
+    /** Setup is complete when nothing is left open. */
+    fun complete(checks: List<SetupCheck>): Boolean = open(checks).isEmpty()
 }

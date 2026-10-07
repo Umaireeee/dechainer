@@ -15,8 +15,13 @@ object Rules {
     /** How often the trusted clock writes its checkpoint when called from the UI; wake-ups write every time. */
     const val CLOCK_CHECKPOINT_INTERVAL_MS = 10_000L
 
-    /** Section 5.2. How long an urge lock lasts. Fixed: nothing extends it and nothing ends it early. */
-    const val URGE_LOCK_MS = 10 * 60_000L
+    /**
+     * Section 6.2. The urge lock's length is the owner's setting ([io.github.warleysr.dechainer.urge.UrgeSettings]).
+     * These bound it and give the default. Nothing extends a running lock and nothing ends it early.
+     */
+    const val URGE_LOCK_DEFAULT_MINUTES = 10
+    const val URGE_LOCK_MIN_MINUTES = 1
+    const val URGE_LOCK_MAX_MINUTES = 60
 
     /** Section 5.4. Two crashes within this window, while a brick runs, abort the brick. */
     const val CRASH_WINDOW_MS = 5 * 60_000L
@@ -35,27 +40,8 @@ object Rules {
     const val BREATH_EXHALE_MS = 6_000L
     const val BREATH_PROMPT_MS = 60_000L
 
-    /** Section 6.2. After this long without an answer the AI's questions give way to the three fixed ones. */
-    const val AI_QUESTIONS_TIMEOUT_MS = 20_000L
-
-    /** Section 6.2. The AI is asked for 3 to 5 questions; a reply outside that range is not used. */
-    const val MIN_AI_QUESTIONS = 3
-    const val MAX_AI_QUESTIONS = 5
-
-    /**
-     * How long after an urge started (or its lock ended) the app still opens straight back into the
-     * flow, so a killed app or a Home press does not lose the writing step. Older entries stay as
-     * the counted stubs they are.
-     */
-    const val URGE_RESUME_WINDOW_MS = 60 * 60_000L
-
-    /** The longest note, personal reason and answer the app stores or sends. */
-    const val MAX_NOTE_CHARS = 4_000
-    const val MAX_ANSWER_CHARS = 600
+    /** The longest personal reason the app stores. */
     const val MAX_REASON_CHARS = 300
-
-    /** D10. A slip goes straight to writing. Flip to true and a slip also starts an urge lock. */
-    const val LOCK_AFTER_SLIP = false
 
     /** Section 6.3. A focus block is at least this long (also the shortest session a block plans). */
     const val FOCUS_BLOCK_MIN_MS = 10 * 60_000L

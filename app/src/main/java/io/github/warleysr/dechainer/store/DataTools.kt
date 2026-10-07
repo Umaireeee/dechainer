@@ -4,9 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeSource
-import io.github.warleysr.dechainer.urge.UrgeStatus
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -32,17 +30,9 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
     private val urges = Store.urgeEntries(ctx)
     private val focus = Store.focus(ctx)
 
-    private fun urgeDeletable(e: io.github.warleysr.dechainer.urge.UrgeEntry): Boolean =
-        e.status in setOf(UrgeStatus.DONE, UrgeStatus.SKIPPED, UrgeStatus.PENDING_DEEPDIVE)
-
     fun deleteUrge(id: Long): DeleteResult {
-        val e = urges.get(id) ?: return DeleteResult.MISSING
-        if (!urgeDeletable(e)) return DeleteResult.NOT_ALLOWED
+        urges.get(id) ?: return DeleteResult.MISSING
         return if (urges.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
-    }
-
-    fun deleteDeepDive(id: Long): DeleteResult {
-        return if (urges.deleteDeepDive(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
     fun deleteSession(id: Long): DeleteResult {
@@ -60,11 +50,7 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
         val db = Store.raw(ctx).writableDatabase
         db.beginTransaction()
         try {
-            urges.all().forEach { e ->
-                if (e.status.isFinal || e.status == UrgeStatus.PENDING_DEEPDIVE) {
-                    if (urgeDeletable(e) && urges.delete(e.id)) removed++ else kept++
-                } else kept++ // still in the flow
-            }
+            urges.all().forEach { e -> if (urges.delete(e.id)) removed++ else kept++ }
             focus.sessions().forEach { s ->
                 if (s.endedAt != null) { focus.delete(s.id); removed++ } else kept++
             }
@@ -87,8 +73,7 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
     }
 
     /**
-     * Reads a file made by [export] back in. It only adds: a row already here is left exactly as it is,
-     * and an entry that was mid-flow is kept as a counted stub.
+     * Reads a file made by [export] back in. It only adds: a row already here is left exactly as it is.
      */
     fun import(json: String): ImportResult {
         val root = runCatching { JSONObject(json) }.getOrNull()
@@ -102,18 +87,11 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
             fun rows(t: String): List<JSONObject> = root.optJSONArray(t)?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty()
 
             for (r in rows("urge_entry")) {
-                val kind = UrgeKind.entries.firstOrNull { it.name == r.optString("kind") }
                 val source = UrgeSource.entries.firstOrNull { it.name == r.optString("source") }
-                val status = UrgeStatus.entries.firstOrNull { it.name == r.optString("status") }
-                if (kind == null || source == null || status == null || !r.has("created_at") || exists(db, "urge_entry", "created_at = ? AND kind = ?", r.getLong("created_at").toString(), kind.name)) { skipped++; continue }
-                val kept = when (status) { UrgeStatus.LOCKED, UrgeStatus.WRITING -> UrgeStatus.SKIPPED; UrgeStatus.QUESTIONS -> UrgeStatus.PENDING_DEEPDIVE; else -> status }
-                val note = if (kept == UrgeStatus.SKIPPED) null else r.optNullString("raw_text")
+                if (source == null || !r.has("created_at") || exists(db, "urge_entry", "created_at = ? AND source = ?", r.getLong("created_at").toString(), source.name)) { skipped++; continue }
                 db.insertOrThrow("urge_entry", null, ContentValues().apply {
-                    put("created_at", r.getLong("created_at")); put("kind", kind.name); put("source", source.name)
-                    putLong("lock_started_at", r); putLong("lock_ended_at", r); put("status", kept.name)
-                    put("raw_text", note); put("questions_json", r.optNullString("questions_json"))
-                    put("answers_json", r.optNullString("answers_json")); put("deep_dive", r.optNullString("deep_dive"))
-                    put("support", r.optInt("support"))
+                    put("created_at", r.getLong("created_at")); put("source", source.name)
+                    putLong("lock_started_at", r); putLong("lock_ended_at", r)
                 }); added++
             }
 

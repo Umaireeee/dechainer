@@ -397,14 +397,6 @@
     <string name="urge_shortcut_short">Urge</string>
     <string name="urge_shortcut_long">I feel an urge</string>
 
-    <!-- The urge choice -->
-    <string name="urge_choice_title">What is happening?</string>
-    <string name="urge_choice_ongoing">Ongoing</string>
-    <string name="urge_choice_ongoing_desc">Lock the phone for ten minutes and breathe until it passes.</string>
-    <string name="urge_choice_ongoing_desc_nolock">Breathe for ten minutes. The phone cannot be locked until Device Owner is set up.</string>
-    <string name="urge_choice_slip">I slipped</string>
-    <string name="urge_choice_slip_desc">No lock. Write down what happened.</string>
-
     <!-- Breathing -->
     <string name="urge_breath_in">Breathe in</string>
     <string name="urge_breath_out">Breathe out</string>
@@ -420,88 +412,25 @@
         <item>You don’t have to decide anything for the next few minutes.</item>
         <item>Notice what your hands are doing. Let them rest.</item>
         <item>The strongest part is usually behind you.</item>
-        <item>Almost there. Stay with the breath until the lock ends.</item>
+        <item>Stay with the breath. You are safe here. Nothing has to happen.</item>
     </string-array>
 
-    <!-- Writing and the questions -->
-    <string name="urge_write_title">What happened?</string>
-    <string name="urge_write_hint">Write it plainly, in your own words. Once your deep dive is made, this note is deleted from the phone.</string>
-    <string name="urge_write_label">Your note</string>
-    <string name="urge_write_continue">Continue</string>
-    <string name="urge_write_skip">Not now</string>
-    <string name="urge_questions_title">A few questions</string>
-    <string name="urge_questions_loading">Reading what you wrote…</string>
-    <string name="urge_questions_submit">Get my deep dive</string>
-    <string name="urge_questions_skip">Skip the questions</string>
-    <string name="urge_answer_label">Your answer</string>
-    <string name="urge_scale_low">Barely</string>
-    <string name="urge_scale_high">Very strong</string>
-    <string name="urge_fixed_q1">What was happening just before the urge started?</string>
-    <string name="urge_fixed_q2">How were you feeling, in a word or two?</string>
-    <string name="urge_fixed_q3">Where were you, and roughly what time was it?</string>
+    <!-- The quiet close -->
+    <string name="urge_complete_title">You stayed with it</string>
+    <string name="urge_complete_body">The urge has passed. Nothing had to happen. Carry that with you.</string>
+    <string name="urge_complete_close">Done</string>
 
-    <!-- The deep dive -->
-    <string name="urge_dd_title">Your deep dive</string>
-    <string name="urge_dd_writing">Writing your deep dive…</string>
-    <string name="urge_dd_deleted">Your note was deleted from this phone. Only the deep dive is kept.</string>
-    <string name="urge_dd_pending_title">The deep dive is not made yet</string>
-    <string name="urge_dd_pending_note">Your note is still saved on this phone. It is deleted once the deep dive exists, or when you delete it.</string>
-    <string name="urge_dd_why_no_key">No AI key is set. Add one under Settings, Urge and AI, and the deep dive is made then.</string>
-    <string name="urge_dd_why_no_consent">You have not agreed yet to send your note to the AI. You can agree under Settings, Urge and AI.</string>
-    <string name="urge_dd_why_offline">There is no connection right now. It will be tried again when the phone is online.</string>
-    <string name="urge_dd_why_busy">It is being made in the background.</string>
-    <string name="urge_ai_err_bad_key">The AI service refused the key. Check it under Settings, Urge and AI.</string>
-    <string name="urge_ai_err_no_credits">The AI account has no credit left.</string>
-    <string name="urge_ai_err_bad_model">The AI service does not know that model. Check it under Settings, Urge and AI.</string>
-    <string name="urge_ai_err_bad_url">The AI address is not a valid web address.</string>
-    <string name="urge_ai_err_insecure">The AI address must start with https://, so that your key is never sent in the clear.</string>
-    <string name="urge_ai_err_rate">The AI service is busy. It will be tried again.</string>
-    <string name="urge_ai_err_network">The connection failed. It will be tried again.</string>
-    <string name="urge_ai_err_server">The AI service had a problem. It will be tried again.</string>
-    <string name="urge_ai_err_empty">The AI service sent nothing usable. It will be tried again.</string>
-    <string name="urge_dd_done">Done</string>
-    <string name="urge_dd_delete">Delete this entry</string>
-    <string name="urge_dd_delete_title">Delete this entry?</string>
-    <string name="urge_dd_delete_body">The note and everything saved with it are removed from this phone.</string>
-    <string name="urge_dd_delete_confirm">Delete</string>
-    <string name="urge_dd_delete_keep">Keep</string>
-
-    <!-- The crisis card -->
-    <string name="urge_support_title">Please reach someone now</string>
-    <string name="urge_support_body">What you wrote worries me. You do not have to carry this alone. Call or message someone you trust, or your local emergency number or a crisis line.</string>
-    <string name="urge_support_call">Call %1$s</string>
-    <string name="urge_support_text">Text %1$s</string>
-    <string name="urge_support_nobody">You have not saved anyone yet. You can add a person under Settings, Urge and AI.</string>
-    <string name="urge_support_sms_body">Can you call me? I need someone right now.</string>
-
-    <!-- Urge and AI settings -->
-    <string name="urge_settings_title">Urge and AI</string>
-    <string name="urge_settings_desc">Your reason, someone to call, and the AI behind your deep dives</string>
+    <!-- Urge settings -->
+    <string name="urge_settings_title">Urge</string>
+    <string name="urge_settings_desc">Your reason and how long the lock lasts</string>
     <string name="urge_saved">Saved.</string>
     <string name="urge_save">Save</string>
     <string name="urge_reason_section">Your reason</string>
-    <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone and is never sent to the AI.</string>
+    <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone.</string>
     <string name="urge_reason_field">Why you set this up</string>
-    <string name="urge_contact_section">Someone to call</string>
-    <string name="urge_contact_hint">Saved on this phone only and never sent to the AI. The crisis card offers to call or text this person.</string>
-    <string name="urge_contact_name">Name</string>
-    <string name="urge_contact_number">Phone number</string>
-    <string name="ai_section">AI</string>
-    <string name="ai_privacy">What goes to the AI you choose: for an urge, your note and your answers, with a short summary of your last month (when earlier urges happened, and the earliest link and plan their deep dives found). The note is deleted from this phone once its deep dive exists. Your reason and the person to call never leave the phone. The key is kept encrypted on this phone. Without a key you still get three standard questions, and no deep dive.</string>
-    <string name="ai_provider">Provider</string>
-    <string name="ai_key_label">API key</string>
-    <string name="ai_key_none">No key is saved.</string>
-    <string name="ai_key_saved">A key is saved. Type a new one to replace it, or save an empty box to remove it.</string>
-    <string name="ai_key_cannot_encrypt">This phone could not encrypt the key, so it was not saved.</string>
-    <string name="ai_provider_required">Choose your provider above so your key is sent only there.</string>
-    <string name="ai_key_get">Get a key at %1$s</string>
-    <string name="ai_model_label">Model</string>
-    <string name="ai_model_default">Leave empty to use %1$s.</string>
-    <string name="ai_base_label">Address (https only)</string>
-    <string name="ai_base_insecure">Use an https:// address. A plain http:// address would send your key in the clear.</string>
-    <string name="ai_base_bad">That does not look like a web address. It should start with https://.</string>
-    <string name="ai_consent_label">Send my notes to %1$s</string>
-    <string name="ai_consent_hint">Without this, nothing leaves the phone.</string>
+    <string name="urge_length_section">Urge length</string>
+    <string name="urge_length_hint">How long the urge lock lasts when you press Urge. You can change it any time.</string>
+    <string name="urge_length_value">%1$d min</string>
 
     <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
     <string name="focus_flow_prompt_title">Focus session started</string>
@@ -542,22 +471,19 @@
     <!-- Your data tools -->
     <string name="data_title">Your data</string>
     <string name="data_export_section">Backup</string>
-    <string name="data_export_hint">The file holds your entries, sessions and goals. Entries still waiting for a deep dive keep their text in it. Keep it somewhere private.</string>
+    <string name="data_export_hint">The file holds your urges and focus sessions. Keep it somewhere private.</string>
     <string name="data_export">Save a backup file</string>
     <string name="data_import">Read a backup file</string>
     <string name="data_exported">Backup saved.</string>
     <string name="data_export_failed">The backup could not be saved.</string>
     <string name="data_imported">Read the backup: %1$d added, %2$d left as they are or not taken.</string>
     <string name="data_import_failed">That file could not be read, and nothing was changed.</string>
-    <string name="data_entries">Urges and slips</string>
+    <string name="data_entries">Urges</string>
     <string name="data_sessions">Focus sessions</string>
     <string name="data_none">Nothing here.</string>
-    <string name="data_urge_row">%1$s · %2$s · %3$s</string>
+    <string name="data_urge_row">%1$s</string>
     <string name="data_session_row">%1$s · %2$d min · %3$s</string>
-    <string name="data_kind_urge">Urge</string>
-    <string name="data_kind_slip">Slip</string>
     <string name="data_delete">Delete</string>
-    <string name="data_delete_deep_dive">Delete the deep dive</string>
     <string name="data_deleted">Deleted.</string>
     <string name="data_not_allowed">That cannot be deleted while it is still in progress.</string>
     <string name="data_wipe_section">Wipe all data</string>
@@ -574,14 +500,12 @@
     <string name="setup_status_title">Setup status</string>
     <string name="setup_fix">Fix</string>
     <string name="setup_done">Done</string>
-    <string name="setup_ai_optional">Optional. Without a key, urges get the three fixed questions and no deep dives.</string>
     <string name="setup_item_device_owner">Device Owner</string>
     <string name="setup_item_notifications">Notifications</string>
     <string name="setup_item_full_screen">Full-screen alerts</string>
     <string name="setup_item_usage">Usage access (daily limits)</string>
     <string name="setup_item_battery">Battery set to no restrictions (also turn Autostart on and lock the app in recents)</string>
     <string name="setup_item_recovery">Recovery code</string>
-    <string name="setup_item_ai">AI key</string>
     <!-- The lock at the front door -->
     <string name="entry_gate_title">Déchaîner is locked</string>
     <string name="private_title">Private</string>
@@ -592,7 +516,7 @@
     <string name="entry_gate_wait">Too many tries. Wait %1$s.</string>
     <string name="entry_gate_forgot">Forgot the pattern</string>
     <string name="entry_gate_create_title">Draw a pattern</string>
-    <string name="entry_gate_create_text">You will draw it each time you open Déchaîner and its private pages: urges and deep dives. Make it different from your phone\'s lock.</string>
+    <string name="entry_gate_create_text">You will draw it each time you open Déchaîner and its private pages. Make it different from your phone\'s lock.</string>
     <string name="entry_draw_new">Draw a pattern of at least 4 dots.</string>
     <string name="entry_draw_again">Draw it again to confirm.</string>
     <string name="entry_pattern_short">Join at least 4 dots.</string>
@@ -610,10 +534,4 @@
     <string name="dns_cleanbrowsing_adult">CleanBrowsing Adult · adult sites; Reddit allowed</string>
     <string name="dns_cleanbrowsing_family">CleanBrowsing Family · strictest, but throttled; blocks VPNs, Reddit</string>
     <string name="recovery_code_progress">%1$d/16</string>
-    <string name="data_status_locked">Waiting to start</string>
-    <string name="data_status_writing">Writing</string>
-    <string name="data_status_questions">Answering questions</string>
-    <string name="data_status_pending">Waiting for its deep dive</string>
-    <string name="data_status_done">Done</string>
-    <string name="data_status_skipped">Skipped</string>
 </resources>

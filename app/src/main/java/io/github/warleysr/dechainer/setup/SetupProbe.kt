@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
-import io.github.warleysr.dechainer.ai.AiSettings
 import io.github.warleysr.dechainer.data.FullScreenAlerts
 import io.github.warleysr.dechainer.data.TimeLimits
 import io.github.warleysr.dechainer.security.SecurityManager
@@ -31,7 +30,6 @@ object SetupProbe {
             SetupItem.USAGE_ACCESS -> TimeLimits.hasUsageAccess(ctx)
             SetupItem.BATTERY -> ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
             SetupItem.RECOVERY_CODE -> SecurityManager.hasRecoveryCode(ctx)
-            SetupItem.AI_KEY -> AiSettings(ctx).configured
         }
     } catch (_: Exception) {
         false

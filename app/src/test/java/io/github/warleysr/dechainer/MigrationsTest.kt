@@ -59,6 +59,15 @@ class MigrationsTest {
     }
 
     @Test
+    fun theUrgeTableIsRebuiltAsAPlainLogAndTheOldNotesAreDropped() {
+        val v10 = Migrations.statementsBetween(9, 10).joinToString(" ").lowercase()
+        assertTrue("drop table if exists urge_entry" in v10)
+        assertTrue("create table urge_entry" in v10)
+        for (c in listOf("created_at", "source", "lock_started_at", "lock_ended_at")) assertTrue(c, c in v10)
+        for (c in listOf("raw_text", "questions_json", "answers_json", "deep_dive", "kind", "status")) assertFalse(c, c in v10)
+    }
+
+    @Test
     fun aFreshDatabaseRunsEveryStepInOrder() {
         assertEquals(listOf("a1", "a2", "b1", "c1", "c2"), Migrations.statementsBetween(0, 3, chain))
     }

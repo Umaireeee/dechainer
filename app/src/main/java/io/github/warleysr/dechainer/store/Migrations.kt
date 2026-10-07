@@ -127,6 +127,18 @@ object Migrations {
                 "DROP TABLE IF EXISTS goal",
                 "DROP TABLE IF EXISTS day"
             )
+        ),
+        // The owner's decision: the AI, the questions and the deep dive are gone, and the owner
+        // asked to wipe the old urge data. The table is dropped and rebuilt as a plain session log
+        // (when an urge lock ran and for how long), so no note, question, answer or deep dive can
+        // ever be read back.
+        Migration(
+            from = 9, to = 10,
+            statements = listOf(
+                "DROP TABLE IF EXISTS urge_entry",
+                "CREATE TABLE urge_entry (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, " +
+                    "source TEXT NOT NULL, lock_started_at INTEGER, lock_ended_at INTEGER)"
+            )
         )
     )
 

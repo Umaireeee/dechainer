@@ -18,7 +18,7 @@ class UrgeLockRuleTest {
 
     @Test
     fun anUrgeLockIsTenMinutesFromTheMomentItIsChosen() {
-        assertEquals(10 * minute, Rules.URGE_LOCK_MS)
+        assertEquals(10 * minute, Rules.URGE_LOCK_DEFAULT_MINUTES * 60_000L)
         assertEquals(UrgeStart.Started(now + 10 * minute), decide())
     }
 

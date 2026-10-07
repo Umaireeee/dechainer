@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.SystemClock
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.DnsGuard
@@ -253,14 +252,17 @@ object LockEngine {
     fun brickRunning(context: Context): Boolean = refreshStatus(context) != null
 
     /**
-     * The owner asked for an urge lock (the panic button, the Quick Settings tile, the door; blueprint
-     * 5.2). The rule is [UrgeLockRule]: ten minutes, never extended by a second tap, no second lock
-     * inside a focus block. The lock is stored and shown before this returns and
-     * before the caller does anything else: it never waits on the network. Returns what happened.
+     * The owner asked for an urge lock (the Urge button, the Quick Settings tile, the shortcut;
+     * blueprint 5.2). The length is the owner's setting ([io.github.warleysr.dechainer.urge.UrgeSettings]).
+     * The rule is [UrgeLockRule]: never extended by a second tap, no second lock inside a focus
+     * block. The lock is stored and shown before this returns and before the caller does anything
+     * else: it never waits on the network. Returns what happened.
      */
-    fun startUrgeLock(context: Context): UrgeStart = startUrgeLock(context, Rules.URGE_LOCK_MS)
+    fun startUrgeLock(context: Context): UrgeStart =
+        startUrgeLock(context, io.github.warleysr.dechainer.urge.UrgeSettings(context).durationMs)
 
-    private fun startUrgeLock(context: Context, lockMs: Long): UrgeStart {
+    /** The same, with an explicit length: the debug control and the tests use it. */
+    fun startUrgeLock(context: Context, lockMs: Long): UrgeStart {
         val ctx = context.applicationContext
         val decision = synchronized(startLock) {
             val now = TrustedClock.checkpoint(ctx)

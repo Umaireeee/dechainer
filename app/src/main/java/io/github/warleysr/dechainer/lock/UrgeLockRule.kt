@@ -30,7 +30,7 @@ object UrgeLockRule {
         runningUrgeEndsAt: Long,
         focusBlockActive: Boolean,
         deviceOwner: Boolean,
-        lockMs: Long = Rules.URGE_LOCK_MS
+        lockMs: Long = Rules.URGE_LOCK_DEFAULT_MINUTES * 60_000L
     ): UrgeStart = when {
         // First: whatever is stored and still running is never touched, by any number of taps.
         runningUrgeEndsAt > now -> UrgeStart.AlreadyRunning(runningUrgeEndsAt)

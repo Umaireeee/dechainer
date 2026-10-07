@@ -54,7 +54,6 @@ fun SetupStatusCard(onNavigate: (Route) -> Unit, modifier: Modifier = Modifier) 
                     when {
                         intent != null -> try { ctx.startActivity(intent) } catch (_: Exception) { }
                         check.item == SetupItem.DEVICE_OWNER -> onNavigate(Route.SETUP_DEVICE_OWNER)
-                        check.item == SetupItem.AI_KEY -> onNavigate(Route.URGE_SETTINGS)
                     }
                 }
             }
@@ -67,10 +66,6 @@ private fun SetupRow(check: SetupCheck, onFix: () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(stringResource(labelOf(check.item)), style = MaterialTheme.typography.bodyLarge)
-            if (!check.done && check.item == SetupItem.AI_KEY) {
-                Text(stringResource(R.string.setup_ai_optional), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
         if (check.done) {
             Icon(Icons.Outlined.CheckCircle, stringResource(R.string.setup_done), tint = MaterialTheme.colorScheme.primary)
@@ -87,5 +82,4 @@ private fun labelOf(item: SetupItem): Int = when (item) {
     SetupItem.USAGE_ACCESS -> R.string.setup_item_usage
     SetupItem.BATTERY -> R.string.setup_item_battery
     SetupItem.RECOVERY_CODE -> R.string.setup_item_recovery
-    SetupItem.AI_KEY -> R.string.setup_item_ai
 }

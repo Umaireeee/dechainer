@@ -148,5 +148,15 @@ class DechainerApplication : Application() {
                 false
             }
         }
+        // The AI is gone (owner's decision). Any key an older build sealed is removed from the phone.
+        state.runOnce("ai_removed_v1") {
+            try {
+                getSharedPreferences("ai", Context.MODE_PRIVATE).edit().clear().commit()
+                true
+            } catch (e: Exception) {
+                Timber.w(e, "Old AI key not removed")
+                false
+            }
+        }
     }
 }

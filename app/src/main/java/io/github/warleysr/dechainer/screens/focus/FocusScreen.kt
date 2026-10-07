@@ -655,15 +655,15 @@ private fun DialogSection(text: String) {
 
 /**
  * An urge during a block (blueprint 6.2, 5.3): the Urge button opens the same flow as everywhere
- * else. The phone is already bricked, so no second lock starts, and the breathing still runs for ten
- * minutes.
+ * else. The phone is already bricked, so no second lock starts, and the breathing still runs for
+ * the chosen length.
  */
 @Composable
 private fun UrgeButton() {
     val urge: UrgeViewModel = viewModel()
     Spacer(Modifier.height(24.dp))
     OutlinedButton(
-        onClick = { urge.openChoice(UrgeSource.FOCUS) },
+        onClick = { urge.startUrge(UrgeSource.FOCUS) },
         modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
     ) { Text(stringResource(R.string.urge_button)) }
 }

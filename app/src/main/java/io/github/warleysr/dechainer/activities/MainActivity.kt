@@ -59,13 +59,11 @@ import io.github.warleysr.dechainer.screens.urge.UrgeSettingsScreen
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import io.github.warleysr.dechainer.ui.theme.Motion
-import io.github.warleysr.dechainer.urge.DeepDiveScheduler
 import io.github.warleysr.dechainer.urge.UrgeSource
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import io.github.warleysr.dechainer.viewmodels.Route
 import io.github.warleysr.dechainer.viewmodels.UrgeViewModel
-import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     /** The urge flow's state, shared with every screen that can start it (Home, Focus, the tile). */
@@ -151,8 +149,7 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra(EXTRA_URGE_SOURCE)
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
-        // From the tile or shortcut with the app locked: the lock and breathing only, the rest waits for the pattern.
-        urgeVm.startOngoing(source, holdPrivate = lockScreenCovers())
+        urgeVm.startUrge(source)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -176,8 +173,6 @@ class MainActivity : ComponentActivity() {
         // The first frame already knows whether something holds the phone.
         LockEngine.refreshStatus(this)
         if (savedInstanceState == null) handleUrgeIntent(intent)
-        // A deep dive that could not be made earlier gets another try (a job already waiting is left alone).
-        thread { DeepDiveScheduler.enqueueIfPending(applicationContext) }
         setContent {
             val focusState by Pomodoro.state.collectAsState()
             val lockStatus by LockEngine.status.collectAsState()
@@ -200,7 +195,7 @@ class MainActivity : ComponentActivity() {
             }
             // Every urge lock gets its counted entry and its breathing, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
-                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock(holdPrivate = lockScreenCovers())
+                if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
             }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
@@ -315,7 +310,7 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when {
-                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.startOngoing(UrgeSource.HOME, holdPrivate = true) })
+                        gateShown -> EntryGate(onUnlocked = { entryUnlocked = true }, onUrge = { urgeVm.startUrge(UrgeSource.HOME) })
 
                         !recoverySet -> SetupRecovery(innerPadding)
 
@@ -332,14 +327,14 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 lock = lockedHome,
                                 menuEnabled = Route.menuFor(brick).isNotEmpty(),
-                                onUrge = { urgeVm.openChoice(UrgeSource.HOME) },
+                                onUrge = { urgeVm.startUrge(UrgeSource.HOME) },
                                 onMenu = { menuOpen = true },
                                 modifier = Modifier.padding(innerPadding)
                             )
                             if (menuOpen) {
                                 MenuSheet(
                                     routes = Route.menuFor(brick),
-                                    onUrge = { menuOpen = false; urgeVm.openChoice(UrgeSource.HOME) },
+                                    onUrge = { menuOpen = false; urgeVm.startUrge(UrgeSource.HOME) },
                                     onRoute = { menuOpen = false; navViewModel.navigateTo(it) },
                                     onDismiss = { menuOpen = false }
                                 )

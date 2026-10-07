@@ -64,11 +64,4 @@ class ResourceReferencesTest {
         assertTrue("urge_breath_prompts is missing", block != null)
         assertEquals(Breathing.PROMPT_COUNT, Regex("<item>").findAll(block!!.groupValues[1]).count())
     }
-
-    @Test
-    fun theFixedQuestionsAndTheLockedScreenTextMatchTheBlueprint() {
-        assertTrue("What was happening just before the urge started?" in strings)
-        assertTrue("How were you feeling, in a word or two?" in strings)
-        assertTrue("Where were you, and roughly what time was it?" in strings)
-    }
 }

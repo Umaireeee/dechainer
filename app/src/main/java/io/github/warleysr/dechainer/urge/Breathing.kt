@@ -28,9 +28,9 @@ object Breathing {
         else 1f - (t - Rules.BREATH_INHALE_MS).toFloat() / Rules.BREATH_EXHALE_MS
     }
 
-    /** The prompt on screen after [elapsedMs]: 0 for the first minute, up to [PROMPT_COUNT] - 1, then the last one stays. */
+    /** The prompt on screen after [elapsedMs]: one per minute, cycling through the list so a long sit stays gentle. */
     fun promptIndex(elapsedMs: Long): Int =
-        (elapsedMs.coerceAtLeast(0L) / Rules.BREATH_PROMPT_MS).coerceAtMost((PROMPT_COUNT - 1).toLong()).toInt()
+        ((elapsedMs.coerceAtLeast(0L) / Rules.BREATH_PROMPT_MS) % PROMPT_COUNT).toInt()
 
     /** True when the prompt at [index] is shown as the owner's own reason instead of the written one. */
     fun usesReason(index: Int, reason: String): Boolean = index == REASON_SLOT && reason.isNotBlank()
