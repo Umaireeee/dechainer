@@ -16,12 +16,19 @@ object Rules {
     const val CLOCK_CHECKPOINT_INTERVAL_MS = 10_000L
 
     /**
-     * Section 6.2. The urge lock's length is the owner's setting ([io.github.warleysr.dechainer.urge.UrgeSettings]).
+     * The blackout's length is the owner's setting ([io.github.warleysr.dechainer.urge.UrgeSettings]).
      * These bound it and give the default. Nothing extends a running lock and nothing ends it early.
+     * The owner asked for up to twelve hours.
      */
     const val URGE_LOCK_DEFAULT_MINUTES = 10
     const val URGE_LOCK_MIN_MINUTES = 1
-    const val URGE_LOCK_MAX_MINUTES = 60
+    const val URGE_LOCK_MAX_MINUTES = 12 * 60
+
+    /**
+     * The blackout screen's window brightness (0.0 to 1.0). Low enough that the OLED panel is nearly
+     * dark and there is no glare, high enough that the countdown is still readable. One line to change.
+     */
+    const val BLACKOUT_BRIGHTNESS = 0.05f
 
     /** Section 5.4. Two crashes within this window, while a brick runs, abort the brick. */
     const val CRASH_WINDOW_MS = 5 * 60_000L
@@ -34,14 +41,6 @@ object Rules {
      * chime: the phone was off or the alarm was lost, and ringing now would only be noise.
      */
     const val LATE_BLOCK_END_MS = 30_000L
-
-    /** Section 6.2. Breathing: inhale and exhale lengths (a ten second cycle) and how long one prompt stays. */
-    const val BREATH_INHALE_MS = 4_000L
-    const val BREATH_EXHALE_MS = 6_000L
-    const val BREATH_PROMPT_MS = 60_000L
-
-    /** The longest personal reason the app stores. */
-    const val MAX_REASON_CHARS = 300
 
     /** Section 6.3. A focus block is at least this long (also the shortest session a block plans). */
     const val FOCUS_BLOCK_MIN_MS = 10 * 60_000L

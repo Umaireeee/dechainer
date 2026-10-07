@@ -82,7 +82,6 @@ fun ConfigTab(
     val scope = rememberCoroutineScope()
     var unlockDelay by remember { mutableIntStateOf(SecurityManager.getUnlockDelayMinutes(context)) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val shizukuNotRunningMsg = stringResource(R.string.shizuku_not_running)
     val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }

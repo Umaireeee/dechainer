@@ -6,8 +6,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.warleysr.dechainer.urge.UrgeEntry
 import io.github.warleysr.dechainer.urge.UrgeFlow
-import io.github.warleysr.dechainer.urge.UrgeFlowRules
-import io.github.warleysr.dechainer.urge.UrgeScreen
 import io.github.warleysr.dechainer.urge.UrgeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,8 +21,8 @@ data class UrgeUiState(val entry: UrgeEntry? = null) {
 }
 
 /**
- * Drives the urge flow (blueprint 6.2) for the single Activity. The lock starts the moment the owner
- * asks for it, and the meditative breathing screen runs for the chosen length. There is nothing else:
+ * Drives the blackout flow for the single Activity. The lock starts the moment the owner
+ * asks for it, and the pure-black countdown runs for the chosen length. There is nothing else:
  * no choice, no note, no questions, no deep dive.
  */
 class UrgeViewModel(app: Application) : AndroidViewModel(app) {
@@ -83,7 +81,4 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
         suppressAdoptUntil = SystemClock.elapsedRealtime() + 10_000L
         _state.value = UrgeUiState()
     }
-
-    /** Which screen the current entry belongs on, at [now]. Null when there is no entry. */
-    fun screenAt(now: Long): UrgeScreen? = _state.value.entry?.let { UrgeFlowRules.screenFor(it, now) }
 }

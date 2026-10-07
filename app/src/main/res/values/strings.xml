@@ -207,7 +207,7 @@
     <string name="schedule_error_no_days">Select at least one day</string>
     <string name="schedule_error_nothing">Select at least one app, service or website</string>
     <string name="removal_needs_code">Set a recovery code first. Device Owner can\'t be removed without one, except through Forced removal.</string>
-    <string name="schedule_locked_blocks_removal">A locked schedule or a brick (focus block or urge lock) is running. Device Owner can only be removed after it ends, or through Forced removal.</string>
+    <string name="schedule_locked_blocks_removal">A locked schedule or a brick (focus block or blackout) is running. Device Owner can only be removed after it ends, or through Forced removal.</string>
     <string name="schedule_error_not_saved">Could not save this schedule. Nothing was changed; try again.</string>
     <string name="schedule_error_no_free_time">Locked schedules would cover the whole week with less than an hour free, so you could never change them. Shorten a locked window or turn off Lock while active.</string>
     <string name="schedule_long_lock_title">Lock this for %1$s?</string>
@@ -363,7 +363,7 @@
     <string name="dns_off_desc">Automatic DNS, nothing blocked. For when a network blocks Private DNS and your internet stops working.</string>
     <string name="dns_error_unreachable">This network can\'t reach that provider on port 853, which Private DNS needs: the network may be blocking it, or the server is too far away. Pick one with a ✓, or try Wi-Fi.</string>
     <string name="focus_brick_source">Focus block</string>
-    <string name="urge_lock_source">Urge lock</string>
+    <string name="urge_lock_source">Blackout</string>
     <string name="locked_until">Locked until %1$s</string>
     <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge button and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_block_start">Start focus block</string>
@@ -385,51 +385,33 @@
     <string name="forced_removal_cancel_action">Cancel forced removal</string>
 
     <!-- Home and the menu -->
-    <string name="urge_button">Urge</string>
+    <string name="urge_button">Blackout</string>
     <string name="home_open_menu">Open the menu</string>
     <string name="home_menu_hint">Tap the clock or swipe up for the menu</string>
-    <string name="menu_urge">Urge</string>
-    <string name="home_reason_urge">The urge lock ends by itself. Nothing can end it sooner.</string>
+    <string name="menu_urge">Blackout</string>
+    <string name="home_reason_urge">The blackout ends by itself. Nothing can end it sooner.</string>
     <string name="menu_apps_limits">Apps and limits</string>
     <string name="back">Back</string>
     <string name="end_session">End the unlock session</string>
-    <string name="urge_tile_label">Urge</string>
-    <string name="urge_shortcut_short">Urge</string>
-    <string name="urge_shortcut_long">I feel an urge</string>
+    <string name="urge_tile_label">Blackout</string>
+    <string name="urge_shortcut_short">Blackout</string>
+    <string name="urge_shortcut_long">Start the blackout</string>
 
-    <!-- Breathing -->
-    <string name="urge_breath_in">Breathe in</string>
-    <string name="urge_breath_out">Breathe out</string>
-    <string name="urge_breath_left">%1$s left</string>
-    <string name="urge_breath_reason">Remember why: %1$s</string>
-    <string-array name="urge_breath_prompts">
-        <item>Let your shoulders drop. You only have to get through this minute.</item>
-        <item>Find where the urge sits in your body. Watch it, don’t fight it.</item>
-        <item>Urges rise, peak and pass. This one is already changing.</item>
-        <item>Breathe out slower than you breathe in.</item>
-        <item>Remember why you set this lock up when you were thinking clearly.</item>
-        <item>Name it quietly: this is an urge, not an instruction.</item>
-        <item>You don’t have to decide anything for the next few minutes.</item>
-        <item>Notice what your hands are doing. Let them rest.</item>
-        <item>The strongest part is usually behind you.</item>
-        <item>Stay with the breath. You are safe here. Nothing has to happen.</item>
-    </string-array>
+    <!-- The blackout screen: a pure black, immersive countdown. -->
+    <string name="blackout_timer_desc">Time left: %1$s</string>
 
     <!-- The quiet close -->
-    <string name="urge_complete_title">You stayed with it</string>
-    <string name="urge_complete_body">The urge has passed. Nothing had to happen. Carry that with you.</string>
+    <string name="urge_complete_title">It is over</string>
+    <string name="urge_complete_body">The blackout has ended. The phone is yours again.</string>
     <string name="urge_complete_close">Done</string>
 
-    <!-- Urge settings -->
-    <string name="urge_settings_title">Urge</string>
-    <string name="urge_settings_desc">Your reason and how long the lock lasts</string>
+    <!-- Blackout settings -->
+    <string name="urge_settings_title">Blackout</string>
+    <string name="urge_settings_desc">How long the blackout lasts, up to twelve hours</string>
     <string name="urge_saved">Saved.</string>
     <string name="urge_save">Save</string>
-    <string name="urge_reason_section">Your reason</string>
-    <string name="urge_reason_hint">One line, written on a calm day. It is shown while you breathe. It stays on this phone.</string>
-    <string name="urge_reason_field">Why you set this up</string>
-    <string name="urge_length_section">Urge length</string>
-    <string name="urge_length_hint">How long the urge lock lasts when you press Urge. You can change it any time.</string>
+    <string name="urge_length_section">Blackout length</string>
+    <string name="urge_length_hint">How long the blackout lasts when you start it. You can change it any time.</string>
     <string name="urge_length_value">%1$d min</string>
 
     <!-- Focus sessions (Phase 4): the pre-session prompt, the check-in, the reset, the plain timer -->
@@ -510,7 +492,7 @@
     <string name="entry_gate_title">Déchaîner is locked</string>
     <string name="private_title">Private</string>
     <string name="entry_gate_draw">Draw your pattern to continue.</string>
-    <string name="entry_gate_urge">Urge hit? Start the lock</string>
+    <string name="entry_gate_urge">Start the blackout</string>
     <string name="pattern_pad">Pattern pad. Drag your finger across the dots.</string>
     <string name="entry_gate_wrong">That is not the pattern.</string>
     <string name="entry_gate_wait">Too many tries. Wait %1$s.</string>

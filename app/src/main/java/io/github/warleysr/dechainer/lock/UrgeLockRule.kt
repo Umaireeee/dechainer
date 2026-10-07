@@ -12,12 +12,12 @@ sealed interface UrgeStart {
 
     /**
      * A focus block already holds the phone, so no second lock starts. The
-     * breathing screen still runs for the full ten minutes, until [breathingUntil].
+     * blackout screen still runs for the full length, until [until].
      */
-    data class Covered(val by: LockMode, val breathingUntil: Long) : UrgeStart
+    data class Covered(val by: LockMode, val until: Long) : UrgeStart
 
-    /** This app is not Device Owner, so nothing can be locked. The breathing still runs until [breathingUntil]. */
-    data class Unavailable(val breathingUntil: Long) : UrgeStart
+    /** This app is not Device Owner, so nothing can be locked. The blackout still runs until [until]. */
+    data class Unavailable(val until: Long) : UrgeStart
 }
 
 /**

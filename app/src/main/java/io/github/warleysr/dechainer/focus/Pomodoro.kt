@@ -342,14 +342,6 @@ object Pomodoro {
         }
     }
 
-    fun setIntention(context: Context, text: String) {
-        ensureLoaded(context)
-        synchronized(lock) {
-            _intention.value = text.take(80)
-            prefs(context).edit { putString(K_INTENTION, _intention.value) }
-        }
-    }
-
     /** Removes one session from the log for good (a test run, a mistaken start). */
     fun deleteSession(context: Context, id: Long) {
         ensureLoaded(context)

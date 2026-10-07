@@ -34,8 +34,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * The urge flow end to end on the real store and the real lock engine: the lock starts at once and
- * the breathing runs for the chosen length. There is no AI, no note, no questions and no deep dive.
+ * The blackout flow end to end on the real store and the real lock engine: the lock starts at once
+ * and the blackout runs for the chosen length. There is no AI, no note, no questions and no deep dive.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = DechainerApplication::class)
@@ -114,7 +114,7 @@ class UrgeFlowTest {
     }
 
     @Test
-    fun aSecondTapDuringTheBreathingIsTheSameUrgeAndNeverExtendsTheLock() {
+    fun aSecondTapDuringTheBlackoutIsTheSameUrgeAndNeverExtendsTheLock() {
         makeDeviceOwner()
         val f = flow()
         val first = f.startUrge(UrgeSource.HOME)
@@ -128,7 +128,7 @@ class UrgeFlowTest {
     }
 
     @Test
-    fun withoutDeviceOwnerTheBreathingStillRunsAndNoLockIsStored() {
+    fun withoutDeviceOwnerTheBlackoutStillRunsAndNoLockIsStored() {
         val e = flow().startUrge(UrgeSource.HOME)
         assertEquals(10 * minute, e.lockEndedAt!! - e.lockStartedAt!!)
         assertEquals("nothing can be locked", 0L, LockStateStore.urge(ctx).endsAt)

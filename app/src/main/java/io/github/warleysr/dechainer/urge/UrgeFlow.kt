@@ -9,8 +9,8 @@ import io.github.warleysr.dechainer.store.UrgeEntryRepository
 import timber.log.Timber
 
 /**
- * The urge flow's actions (blueprint 6.2): the lock starts the moment the owner asks for it, and the
- * meditative breathing screen runs for the chosen length. The lock never waits on anything; a store
+ * The blackout flow's actions: the lock starts the moment the owner asks for it, and the blackout
+ * screen runs for the chosen length. The lock never waits on anything; a store
  * that cannot be written is a log line, not a reason to hold back. Blocking: call it off the main
  * thread.
  */
@@ -34,7 +34,7 @@ class UrgeFlow(
         val id = createEntry(source, first)
         val decision = LockEngine.startUrgeLock(ctx, lockMs)
         val now = TrustedClock.now(ctx)
-        val window = UrgeFlowRules.breathingFor(decision, now, lockMs, LockStateStore.startedAt(ctx).takeIf { it > 0L })
+        val window = UrgeFlowRules.windowFor(decision, now, lockMs, LockStateStore.startedAt(ctx).takeIf { it > 0L })
         if (id >= 0L) runCatching { repo.setLockWindow(id, window.startsAt, window.endsAt) }
             .onFailure { Timber.w(it, "Urge lock window not stored") }
         return UrgeEntry(id, first, source, window.startsAt, window.endsAt)

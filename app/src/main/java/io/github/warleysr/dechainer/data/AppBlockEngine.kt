@@ -50,15 +50,6 @@ abstract class AppBlockEngine {
     fun ownedApps(context: Context): Set<String> =
         state(context).getStringSet(KEY_OWNED_APPS, emptySet())?.toSet() ?: emptySet()
 
-    /**
-     * Takes ownership of a package that is already blocked for another reason, so that when that
-     * other reason ends the app stays blocked until this engine releases it.
-     */
-    fun adopt(context: Context, pkg: String) = synchronized(lock) {
-        val owned = ownedApps(context)
-        if (pkg !in owned) state(context).edit(commit = true) { putStringSet(KEY_OWNED_APPS, owned + pkg) }
-    }
-
     /** Gives up ownership without releasing — used when the person blocks an app by hand. */
     fun disown(context: Context, pkg: String) = synchronized(lock) {
         val owned = ownedApps(context)

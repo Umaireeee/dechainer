@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer
 
-import io.github.warleysr.dechainer.urge.Breathing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -8,8 +7,8 @@ import java.io.File
 
 /**
  * Cheap guards on the resources, so a missing string is a red unit test rather than a build that
- * fails late: every `R.string`, `R.array` and `R.drawable` the code names exists, every `@string` and
- * `@drawable` the manifest and XML name exists, and the breathing screen has exactly its ten prompts.
+ * fails late: every `R.string`, `R.array` and `R.drawable` the code names exists, and every `@string`
+ * and `@drawable` the manifest and XML name exists.
  */
 class ResourceReferencesTest {
     private fun module(): File = listOf(File("."), File("app")).first { File(it, "src/main/AndroidManifest.xml").exists() }
@@ -56,12 +55,5 @@ class ResourceReferencesTest {
             Regex("@drawable/(\\w+)").findAll(text).forEach { if (it.groupValues[1] !in drawables) missing += "${file.name}: drawable ${it.groupValues[1]}" }
         }
         assertTrue("Missing resources: $missing", missing.isEmpty())
-    }
-
-    @Test
-    fun theBreathingScreenHasExactlyItsTenPrompts() {
-        val block = Regex("<string-array name=\"urge_breath_prompts\">([\\s\\S]*?)</string-array>").find(strings)
-        assertTrue("urge_breath_prompts is missing", block != null)
-        assertEquals(Breathing.PROMPT_COUNT, Regex("<item>").findAll(block!!.groupValues[1]).count())
     }
 }

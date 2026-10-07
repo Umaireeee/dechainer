@@ -18,10 +18,11 @@ class BrickTargetsTest {
     )
 
     @Test
-    fun anUrgeLockLeavesOnlyTheAlarmAndTheProtectedApps() {
-        // D3: Emergency Info and SMS are blocked too, and the owner's list does not apply.
+    fun aBlackoutLeavesOnlyTheProtectedAppsAndTheIncomingCallScreen() {
+        // The owner's choice: only incoming calls get through. The alarm clock, Emergency Info and
+        // SMS are blocked too, and the owner's list does not apply.
         assertEquals(
-            setOf("chrome", "games", "com.android.emergency", "notes", "sms"),
+            setOf("chrome", "games", "com.android.emergency", "clock", "notes", "sms"),
             LockAllow.blocked(phone, LockAllow.URGE, ownerApps = setOf("notes"))
         )
     }

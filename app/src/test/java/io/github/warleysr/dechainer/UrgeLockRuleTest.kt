@@ -38,7 +38,7 @@ class UrgeLockRuleTest {
     }
 
     @Test
-    fun anUrgeInsideAFocusBlockStartsNoSecondLockButTheBreathingStillRunsTenMinutes() {
+    fun anUrgeInsideAFocusBlockStartsNoSecondLockButTheBlackoutStillRunsTenMinutes() {
         assertEquals(UrgeStart.Covered(LockMode.FOCUS_BLOCK, now + 10 * minute), decide(focus = true))
     }
 
@@ -50,7 +50,7 @@ class UrgeLockRuleTest {
     }
 
     @Test
-    fun withoutDeviceOwnerNothingIsLockedButTheBreathingStillRuns() {
+    fun withoutDeviceOwnerNothingIsLockedButTheBlackoutStillRuns() {
         assertEquals(UrgeStart.Unavailable(now + 10 * minute), decide(deviceOwner = false))
         assertTrue(decide(deviceOwner = false, focus = true) is UrgeStart.Unavailable)
     }

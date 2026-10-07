@@ -9,5 +9,4 @@ object Motion {
     const val SCREEN_OUT_MS = 120
     const val PHASE_MS = 400     // focus ↔ break colour shift
     const val LIST_MS = 250      // a row moving between sections
-    const val NUMBER_MS = 300    // counts on the Today card
 }

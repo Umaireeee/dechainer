@@ -70,13 +70,14 @@ class MainActivity : ComponentActivity() {
     private val urgeVm: UrgeViewModel by viewModels()
 
     /**
-     * Pins the phone to Déchaîner while any brick runs (an urge lock or a focus
+     * Pins the phone to Déchaîner while any brick runs (a blackout or a focus
      * block), and releases it when the last one ends. [ownerApps] are the apps the running bricks all
-     * let through ([io.github.warleysr.dechainer.lock.BrickStatus.ownerApps]). Only as device owner: without it, Android would show its
-     * own "pin this app?" prompt instead. If the app crashes, Android drops the pin by itself:
-     * the phone is never trapped, and suspension keeps blocking underneath.
+     * let through ([io.github.warleysr.dechainer.lock.BrickStatus.ownerApps]). [blackout] is true for
+     * the total lockdown: no shade, home, recents or power menu. Only as device owner: without it,
+     * Android would show its own "pin this app?" prompt instead. If the app crashes, Android drops
+     * the pin by itself: the phone is never trapped, and suspension keeps blocking underneath.
      */
-    private fun syncBrickPin(brick: Boolean, ownerApps: Set<String> = emptySet()) {
+    private fun syncBrickPin(brick: Boolean, ownerApps: Set<String> = emptySet(), blackout: Boolean = false) {
         try {
             val dpm = getSystemService(android.app.admin.DevicePolicyManager::class.java)
             if (!dpm.isDeviceOwnerApp(packageName)) return
@@ -86,11 +87,16 @@ class MainActivity : ComponentActivity() {
                 // Setting up the pin can't stop the pin itself: a refused setting is logged and
                 // the phone is pinned anyway.
                 try {
-                    io.github.warleysr.dechainer.data.DeviceOwnerRepository.prepareBrick(this, ownerApps)
+                    io.github.warleysr.dechainer.data.DeviceOwnerRepository.prepareBrick(this, ownerApps, blackout)
                 } catch (e: Exception) {
                     timber.log.Timber.w(e, "Brick setup partly refused")
                 }
                 startLockTask()
+            } else if (brick && pinned) {
+                // Already pinned, but the lockdown can change between modes: re-apply the features.
+                try {
+                    io.github.warleysr.dechainer.data.DeviceOwnerRepository.prepareBrick(this, ownerApps, blackout)
+                } catch (_: Exception) { }
             } else if (!brick && pinned) {
                 stopLockTask()
             }
@@ -132,7 +138,7 @@ class MainActivity : ComponentActivity() {
         LockEngine.requestSync(this)
         // Coming back mid-brick (say, after answering a call): pin again.
         val status = LockEngine.refreshStatus(this)
-        if (status != null) syncBrickPin(true, status.ownerApps)
+        if (status != null) syncBrickPin(true, status.ownerApps, status.primary == LockMode.URGE_LOCK)
         else if (Pomodoro.brickActive()) syncBrickPin(true, Pomodoro.allowedApps.value)
         // An urge that was left half-written opens straight back into its step.
         // Not while the locked screen covers the app: the writing is private and waits for the pattern.
@@ -140,14 +146,21 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * The Quick Settings tile and the icon shortcut start the ongoing path with no question first
-     * (D2). The extra is taken off once handled, and an intent replayed from recents is ignored, so
-     * neither can start a second lock by accident.
+     * The Quick Settings tile, the icon shortcut and the assistant gesture all land here. The tile
+     * and shortcut start the ongoing path with no question first (D2); the assist intent (the
+     * long-press / corner gesture, once Déchaîner is the default assistant) does the same. The extra
+     * is taken off once handled, and an intent replayed from recents is ignored, so neither can start
+     * a second blackout by accident.
      */
     private fun handleUrgeIntent(intent: Intent?) {
-        val name = intent?.getStringExtra(EXTRA_URGE_SOURCE) ?: return
-        intent.removeExtra(EXTRA_URGE_SOURCE)
+        if (intent == null) return
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        if (intent.action == Intent.ACTION_ASSIST) {
+            urgeVm.startUrge(UrgeSource.ASSIST)
+            return
+        }
+        val name = intent.getStringExtra(EXTRA_URGE_SOURCE) ?: return
+        intent.removeExtra(EXTRA_URGE_SOURCE)
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
         urgeVm.startUrge(source)
     }
@@ -184,7 +197,9 @@ class MainActivity : ComponentActivity() {
             val focusBrick = brick && lockedHome == null
             val allowedApps by Pomodoro.allowedApps.collectAsState()
             val pinApps = lockStatus?.ownerApps ?: allowedApps
-            LaunchedEffect(brick, pinApps) { syncBrickPin(brick, pinApps) }
+            // The urge lock is the blackout kiosk: it pins with every system feature off.
+            val blackout = lockStatus?.primary == LockMode.URGE_LOCK
+            LaunchedEffect(brick, pinApps, blackout) { syncBrickPin(brick, pinApps, blackout) }
             // The status ends with the clock: when the end time has passed, ask for the plan again.
             RepeatWhileVisible(1000) {
                 val ends = LockEngine.status.value?.endsAt ?: return@RepeatWhileVisible

@@ -93,31 +93,40 @@ object DeviceOwnerRepository {
     /** The DNS guard putting the pinned provider back. */
     fun restorePrivateDns(host: String): Int = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
 
-    /** What a refused change returns, in the same terms as Android's own result codes. */
-    private const val REFUSED = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
-
-    /**
-     * "Automatic" Private DNS: encrypted where the network allows, plain otherwise, and no
-     * filtering. The closest thing to off a device owner can set.
-     */
     /**
      * Prepares pinning for the brick: Déchaîner and the dialers may run pinned (so incoming calls
-     * still show), and the pinned phone keeps the status bar, the notification shade with Quick
-     * Settings (airplane mode, mobile data, hotspot) and the power menu. Home, recents and every
-     * other app are out of reach.
+     * still show). A normal brick keeps the status bar, the notification shade with Quick Settings
+     * (airplane mode, mobile data, hotspot) and the power menu. A [blackout] brick is the total
+     * lockdown: no status bar, no shade, no home, no recents and no power menu
+     * ([DevicePolicyManager.LOCK_TASK_FEATURE_NONE]). Home, recents and every other app are out of
+     * reach in both.
      */
-    fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet()) {
+    fun prepareBrick(context: android.content.Context, allowed: Set<String> = emptySet(), blackout: Boolean = false) {
         // Déchaîner, the dialers, and the apps you allowed: a pinned phone opens only these.
         val pkgs = mutableSetOf(context.packageName)
         pkgs += allowed
-        // The alarm clock is allowed by every brick, so it may also run pinned (D3).
-        try { pkgs += ScheduleEnforcer.alarmApps(context) } catch (_: Exception) { }
+        // The alarm clock is allowed by a focus brick, so it may also run pinned. The blackout does
+        // not let it through: only incoming calls do.
+        if (!blackout) try { pkgs += ScheduleEnforcer.alarmApps(context) } catch (_: Exception) { }
         try {
             val telecom = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager
             telecom.defaultDialerPackage?.let { pkgs += it }
             telecom.systemDialerPackage?.let { pkgs += it }
         } catch (_: Exception) { }
         dpm.setLockTaskPackages(adminName, pkgs.toTypedArray())
+
+        if (blackout) {
+            // The blackout kiosk: nothing but this app and the incoming-call screen. The display is
+            // dimmed to near-black by the blackout screen itself.
+            try {
+                dpm.setLockTaskFeatures(adminName, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+            } catch (e: Exception) {
+                // Stock Android refuses nothing here; the phone still pins either way.
+                timber.log.Timber.w(e, "Blackout features refused")
+            }
+            return
+        }
+
         // Android only allows the notification shade (Quick Settings) together with the Home
         // button feature: asked for alone, it's rejected with an error, and the pin never started.
         // The Home button shows, but can't open the launcher: it isn't on the list above.
@@ -141,6 +150,10 @@ object DeviceOwnerRepository {
         }
     }
 
+    /**
+     * "Automatic" Private DNS: encrypted where the network allows, plain otherwise, and no
+     * filtering. The closest thing to off a device owner can set.
+     */
     fun setPrivateDnsAutomatic(): Int {
         return dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
     }

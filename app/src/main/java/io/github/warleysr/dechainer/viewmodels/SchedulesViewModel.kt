@@ -94,8 +94,6 @@ class SchedulesViewModel : ViewModel() {
 
     fun isLocked(schedule: BlockSchedule): Boolean = ScheduleRepository.isLockedNow(schedule)
 
-    fun isAnyLocked(): Boolean = schedules.any { ScheduleRepository.isLockedNow(it) }
-
     // --- Editor ---
 
     fun startNew(defaultName: String) {

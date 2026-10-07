@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,8 +30,8 @@ import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.urge.UrgeSettings
 
 /**
- * Urge settings (blueprint D5 and 6.2): the personal reason shown while breathing, and how long the
- * urge lock lasts. There is no AI now.
+ * Blackout settings: how long the blackout lasts. Up to twelve hours. There is no AI, no reason and
+ * no breathing now.
  */
 @Composable
 fun UrgeSettingsScreen() {
@@ -40,8 +39,6 @@ fun UrgeSettingsScreen() {
     val urge = remember { UrgeSettings(context) }
 
     var message by remember { mutableStateOf<Int?>(null) }
-
-    var reason by remember { mutableStateOf(urge.reason) }
     var minutes by remember { mutableFloatStateOf(urge.durationMinutes.toFloat()) }
 
     Column(
@@ -50,23 +47,7 @@ fun UrgeSettingsScreen() {
     ) {
         message?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
 
-        // ---- the reason ----
-        Header(R.string.urge_reason_section)
-        Hint(R.string.urge_reason_hint)
-        OutlinedTextField(
-            value = reason,
-            onValueChange = { reason = it },
-            label = { Text(stringResource(R.string.urge_reason_field)) },
-            modifier = Modifier.fillMaxWidth()
-        )
-        SaveButton {
-            urge.setReason(reason)
-            message = R.string.urge_saved
-            reason = urge.reason
-        }
-
-        // ---- how long the lock lasts ----
-        Spacer(Modifier.height(16.dp))
+        // ---- how long the blackout lasts ----
         Header(R.string.urge_length_section)
         Hint(R.string.urge_length_hint)
         Text(
@@ -80,11 +61,14 @@ fun UrgeSettingsScreen() {
             steps = Rules.URGE_LOCK_MAX_MINUTES - Rules.URGE_LOCK_MIN_MINUTES - 1,
             modifier = Modifier.fillMaxWidth()
         )
-        SaveButton {
-            urge.setDurationMinutes(minutes.toInt())
-            minutes = urge.durationMinutes.toFloat()
-            message = R.string.urge_saved
-        }
+        Button(
+            onClick = {
+                urge.setDurationMinutes(minutes.toInt())
+                minutes = urge.durationMinutes.toFloat()
+                message = R.string.urge_saved
+            },
+            modifier = Modifier.heightIn(min = 48.dp)
+        ) { Text(stringResource(R.string.urge_save)) }
 
         Spacer(Modifier.height(24.dp))
     }
@@ -103,9 +87,4 @@ private fun Header(res: Int) {
 @Composable
 private fun Hint(res: Int) {
     Text(stringResource(res), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun SaveButton(onClick: () -> Unit) {
-    Button(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.urge_save)) }
 }

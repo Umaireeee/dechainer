@@ -50,19 +50,20 @@ class LockModesTest {
     private fun schedule(name: String, start: Int, end: Int, vararg pkgs: String, allowOnly: Boolean = false) =
         BlockSchedule(id = name, name = name, startMinute = start, endMinute = end, packages = pkgs.toSet(), allowOnly = allowOnly)
 
-    /** What an urge lock leaves open besides the protected apps: the alarm only. */
-    private val everythingButHomeAndTheAlarm = setOf("chrome", "games", "notes", "mail", "settings", "sms", "com.android.emergency")
+    /** What the blackout leaves open besides the protected apps (this app and the call screen): nothing. */
+    private val everythingButHomeThisAppAndTheCallScreen =
+        setOf("chrome", "games", "clock", "notes", "mail", "settings", "sms", "com.android.emergency")
 
     // ================= 5.2  URGE_LOCK =================
 
     @Test
-    fun anUrgeLockLeavesOpenOnlyThisAppCallsAndTheAlarm() {
+    fun aBlackoutLeavesOpenOnlyThisAppAndTheIncomingCallScreen() {
         val p = plan(at(10), state(urge = UrgeInput(at(10, 10))))
-        assertEquals(everythingButHomeAndTheAlarm, p.desiredApps)
-        assertTrue("Emergency Info is blocked (D3)", "com.android.emergency" in p.desiredApps)
-        assertTrue("so is SMS (D3)", "sms" in p.desiredApps)
-        assertFalse("the alarm clock stays open", "clock" in p.desiredApps)
-        assertFalse("and this app and the home screen are never taken away", "dechainer" in p.desiredApps || "home" in p.desiredApps)
+        assertEquals(everythingButHomeThisAppAndTheCallScreen, p.desiredApps)
+        assertTrue("Emergency Info is blocked", "com.android.emergency" in p.desiredApps)
+        assertTrue("SMS is blocked", "sms" in p.desiredApps)
+        assertTrue("the alarm clock is blocked too: only calls get through", "clock" in p.desiredApps)
+        assertFalse("this app and the home screen are never taken away", "dechainer" in p.desiredApps || "home" in p.desiredApps)
     }
 
     @Test

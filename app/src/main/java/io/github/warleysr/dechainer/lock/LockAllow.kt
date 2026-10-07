@@ -21,8 +21,11 @@ data class AllowSet(
  * here, made by the owner, never by a build on its own.
  */
 object LockAllow {
-    /** D3: calls and the dialer, the alarm clock. Everything else is blocked, SMS and Emergency Info included. */
-    val URGE = AllowSet(alarm = true, emergency = false, sms = false, ownerList = false)
+    /**
+     * The blackout: incoming calls and the dialer only. The alarm clock, SMS and Emergency Info are
+     * blocked too, and the owner's allow list does not apply. Nothing but a call gets through.
+     */
+    val URGE = AllowSet(alarm = false, emergency = false, sms = false, ownerList = false)
 
     /** As it has always been: calls, the alarm clock, the emergency apps, and the apps the owner allowed. SMS stays off. */
     val FOCUS = AllowSet(alarm = true, emergency = true, sms = false, ownerList = true)

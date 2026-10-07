@@ -10,14 +10,13 @@ import io.github.warleysr.dechainer.urge.UrgeSettings
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** The urge settings: the personal reason and how long the lock lasts. */
+/** The blackout settings: how long the lock lasts. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class UrgeSettingsTest {
@@ -40,18 +39,8 @@ class UrgeSettingsTest {
     }
 
     @Test
-    fun theReasonIsSavedTrimmedAndCapped() {
+    fun aDefaultLengthByDefault() {
         val s = UrgeSettings(ctx)
-        assertTrue(s.setReason("  For my daughter\nand me  "))
-        assertEquals("For my daughter and me", s.reason)
-        assertTrue(s.setReason("x".repeat(1_000)))
-        assertEquals(Rules.MAX_REASON_CHARS, s.reason.length)
-    }
-
-    @Test
-    fun noReasonAndADefaultLengthByDefault() {
-        val s = UrgeSettings(ctx)
-        assertEquals("", s.reason)
         assertEquals(Rules.URGE_LOCK_DEFAULT_MINUTES, s.durationMinutes)
         assertFalse(s.durationMs <= 0)
     }
@@ -69,10 +58,8 @@ class UrgeSettingsTest {
     }
 
     @Test
-    fun theSettingsSurviveANewInstance() {
-        UrgeSettings(ctx).apply { setReason("Keep going"); setDurationMinutes(20) }
-        val back = UrgeSettings(ctx)
-        assertEquals("Keep going", back.reason)
-        assertEquals(20, back.durationMinutes)
+    fun theLengthSurvivesANewInstance() {
+        UrgeSettings(ctx).apply { setDurationMinutes(20) }
+        assertEquals(20, UrgeSettings(ctx).durationMinutes)
     }
 }

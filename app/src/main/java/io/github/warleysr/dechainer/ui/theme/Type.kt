@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
@@ -30,7 +29,3 @@ val AppTypography = Typography(
     labelMedium = base.labelMedium.copy(fontWeight = FontWeight.Medium),
     labelSmall = base.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.04.em),
 )
-
-/** The block screens' single calm line: larger, lighter, a little more air between the lines. */
-val CalmLineStyle: TextStyle
-    get() = AppTypography.headlineMedium.copy(lineHeight = 38.sp)

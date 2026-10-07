@@ -48,7 +48,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Long-press the app icon: "I feel an urge" starts the ongoing path with no question first. -->
+            <!-- The assistant gesture (long-press the power button or the corner swipe), once
+                 Déchaîner is chosen as the default assistant app. Starts the blackout at once. -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Long-press the app icon: "Start the blackout" starts it with no question first. -->
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
