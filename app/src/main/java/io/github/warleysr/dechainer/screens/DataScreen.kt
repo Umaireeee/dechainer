@@ -15,10 +15,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.clock.TrustedClock
-import io.github.warleysr.dechainer.report.DataTools
-import io.github.warleysr.dechainer.report.DeleteResult
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.store.DataTools
+import io.github.warleysr.dechainer.store.DeleteResult
 import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeStatus
@@ -27,15 +27,15 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /**
- * Your data (blueprint 6.6): delete single entries, sessions, deep dives and reports, wipe everything
- * the rules allow (behind the recovery code), and the backup file.
+ * Your data (blueprint 6.6): delete single entries, sessions and deep dives, wipe everything the rules
+ * allow (behind the recovery code), and the backup file.
  */
 @Composable
 fun DataScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val resources = LocalResources.current
     val zone = TrustedClock.zone()
-    val tools = remember { DataTools(ctx, zone) { TrustedClock.now(ctx) } }
+    val tools = remember { DataTools(ctx) { TrustedClock.now(ctx) } }
     val gate = rememberRecoveryGate()
     var version by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -45,11 +45,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
 
     val urges = remember(version) { Store.urgeEntries(ctx).all().asReversed() }
     val sessions = remember(version) { Store.focus(ctx).sessions().asReversed() }
-    val reports = remember(version) { Store.reports(ctx).all().filter { !it.deleted } }
-    val periodReports = remember(version) {
-        io.github.warleysr.dechainer.report.PeriodKind.entries.flatMap { Store.periodReports(ctx).all(it) }.filter { !it.deleted }
-    }
-    val goalDays = remember(version) { Store.days(ctx).datesWithGoals().asReversed() }
 
     val savedMsg = stringResource(R.string.data_exported)
     val saveFailedMsg = stringResource(R.string.data_export_failed)
@@ -57,7 +52,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
     val notAllowedMsg = stringResource(R.string.data_not_allowed)
     val importFailedMsg = stringResource(R.string.data_import_failed)
 
-    fun report(r: DeleteResult) {
+    fun showResult(r: DeleteResult) {
         message = when (r) {
             DeleteResult.DELETED -> deletedMsg
             DeleteResult.NOT_ALLOWED -> notAllowedMsg
@@ -69,7 +64,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) message = runCatching {
             ctx.contentResolver.openOutputStream(uri)!!.use { it.write(tools.export().toByteArray(Charsets.UTF_8)) }
-            io.github.warleysr.dechainer.report.BackupReminder.markDone(ctx)
         }.fold({ savedMsg }, { saveFailedMsg })
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -106,9 +100,9 @@ fun DataScreen(modifier: Modifier = Modifier) {
                     stringResource(if (e.kind == UrgeKind.SLIP) R.string.data_kind_slip else R.string.data_kind_urge),
                     stringResource(statusLabel(e.status))))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton({ report(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
+                    TextButton({ showResult(tools.deleteUrge(e.id)) }) { Text(stringResource(R.string.data_delete)) }
                     if (e.status == UrgeStatus.DONE && e.deepDive != null)
-                        TextButton({ report(tools.deleteDeepDive(e.id)) }) { Text(stringResource(R.string.data_delete_deep_dive)) }
+                        TextButton({ showResult(tools.deleteDeepDive(e.id)) }) { Text(stringResource(R.string.data_delete_deep_dive)) }
                 }
             }
         }
@@ -118,31 +112,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         items(sessions, key = { "s${it.id}" }) { s ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { "-" }), Modifier.weight(1f))
-                TextButton({ report(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
-            }
-        }
-
-        item { Text(stringResource(R.string.data_reports), style = MaterialTheme.typography.titleLarge) }
-        if (reports.isEmpty() && periodReports.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(reports, key = { "r${it.id}" }) { r ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(at(r.periodStart), Modifier.weight(1f))
-                TextButton({ report(tools.deleteReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
-            }
-        }
-        items(periodReports, key = { "p${it.id}" }) { r ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(io.github.warleysr.dechainer.report.PeriodInputs.label(r.kind, r.key), Modifier.weight(1f))
-                TextButton({ report(tools.deletePeriodReport(r.id)) }) { Text(stringResource(R.string.data_delete)) }
-            }
-        }
-
-        item { Text(stringResource(R.string.data_goals), style = MaterialTheme.typography.titleLarge) }
-        if (goalDays.isEmpty()) item { Text(stringResource(R.string.data_none)) }
-        items(goalDays, key = { "g$it" }) { d ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.data_goals_row, d.toString()), Modifier.weight(1f))
-                TextButton({ report(tools.deleteGoals(d)) }, enabled = tools.canDeleteGoals(d)) { Text(stringResource(R.string.data_delete)) }
+                TextButton({ showResult(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
 

@@ -3,7 +3,7 @@
 A calm, minimal Android app that locks your phone when you need it locked, and shows you the truth about yourself. It runs as Device Owner and does two jobs:
 
 1. **Lock the phone when it is needed:** a ten-minute urge lock, scheduled focus sessions, recurring app-block schedules and daily time limits, all on one lock engine.
-2. **Show you the truth about yourself:** it records urges, slips, focus check-ins and a daily checklist, and an AI you choose turns that data into a deep dive after every urge and weekly, monthly and yearly reports, with progress graphs.
+2. **Show you the truth about yourself:** it records urges, slips and focus check-ins, and an AI you choose turns that data into a deep dive after every urge.
 
 > An unofficial fork of [Déchaîner](https://github.com/warleysr/dechainer) by **@warleysr**. All credit for the original app and its blocking engine goes to him. This build is not an official release and is not supported by him.
 
@@ -14,7 +14,7 @@ The design rule: **tightening is easy, loosening is hard.** Anything that makes 
 ## What it does
 
 ### Home and the Urge button
-Home is a large clock and one button, **Urge**. Tap the clock or swipe up for the menu: Urge, Today, Focus, Schedules, Apps and limits, Reports, Settings. The same screen is shown during any lock, with the end time under the clock.
+Home is a large clock and one button, **Urge**. Tap the clock or swipe up for the menu: Urge, Focus, Schedules, Apps and limits, Settings. The same screen is shown during any lock, with the end time under the clock.
 
 - **Ongoing:** the phone locks at once for ten minutes (calls, the dialer and the alarm clock stay open; nothing ends it early and a second tap never extends it). A breathing screen runs for the full ten minutes, then you may write what happened, answer three to five questions (from the AI, or three fixed ones when it is offline), and get a short deep dive. The raw text is deleted once its deep dive is saved.
 - **I slipped:** straight to writing, then questions and a deep dive. No shaming.
@@ -23,12 +23,6 @@ Home is a large clock and one button, **Urge**. Tap the clock or swipe up for th
 
 ### Focus sessions
 A focus block is a committed lock until an end time you pick (10 minutes to 8 hours), or a **FOCUS** entry in the weekly timetable that starts it by itself. A usual session runs Pomodoro phases with a check-in, "Did you do the work?", after each focus phase; answering No starts a ten-minute reset (meditation, then something physical) inside the block. A special session is one continuous lock with a single question at the end. The end time never moves.
-
-### The daily checklist
-Each evening, 20:00 to 23:59, you write tomorrow's 3 to 7 goals and close today. A goal can be ticked by you, or measured (focus minutes reached, or no slip that day); unfinished goals can be carried over with one tap. Each finished day is recorded honestly: how much was done and, if it fell short, why. Nothing locks the phone because of it; the results show on Today, in the graphs and in the reports. One rest day in any seven days skips that day's goals and scheduled focus sessions.
-
-### Reports and progress graphs
-When a week, a calendar month or a year with something recorded ends, the AI you chose writes a report from your numbers, answers, deep dives, focus sessions and goals: what went well, the patterns that repeat (time of day, day of the week, the earliest link), how the period compares with the ones before, and a few if-then plans for the next one. It never sees your raw urge notes. A report due while the phone was off is made the next time the phone is on and online. **Reports** opens on graphs of urges, slips, focus hours and goals done over 28 days, 12 weeks or 12 months; tap a bar to see that period, or show them as a table. It reminds you to save a backup when the last one is a month old. Under **Your data** you can delete entries, back everything up to a file, read a backup back in, or wipe what the rules allow.
 
 ### Blocking
 - **Apps:** suspend any app with one switch; suspended apps are greyed out and cannot open.
@@ -71,9 +65,9 @@ There is no accessibility service and nothing watches your screen. Locks run on 
      adb shell dpm set-device-owner io.github.warleysr.dechainer/.DechainerDeviceAdminReceiver
      ```
 4. **Add your accounts back.**
-5. Follow the first-run steps: notifications, usage access, the recovery code, an optional AI key, and the checklist rules.
+5. Follow the first-run steps: notifications, usage access, the recovery code, and an optional AI key.
 
-> ⚠️ **Don't uninstall to update.** Install new versions over the old one. Uninstalling removes device owner and wipes your data. Keep a backup file from **Reports → Your data**. If you are moving from the old two-app version, install this build over Déchaîner first, then uninstall the old Urge Journal; its entries are not migrated, so export them from the old journal first if you want a copy.
+> ⚠️ **Don't uninstall to update.** Install new versions over the old one. Uninstalling removes device owner and wipes your data. Keep a backup file from **Settings → Your data**. If you are moving from the old two-app version, install this build over Déchaîner first, then uninstall the old Urge Journal; its entries are not migrated, so export them from the old journal first if you want a copy.
 
 > Test a new build on an emulator or a spare phone before your daily phone (see BLUEPRINT.md section 14A). A bug in a lock can keep the phone locked for hours.
 
@@ -91,7 +85,7 @@ Locally: open the project in Android Studio, or run `./gradlew assembleDebug`.
 ---
 
 ## Privacy
-Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), the deep dive also gets a short summary of your last month (when earlier urges happened, the earliest link and plan their deep dives found), and the reports get numbers, answers, deep dives, sessions and checklist goals, never raw notes. Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
+Everything stays on your phone: no accounts, no analytics, no servers of ours. Only derived data goes to the AI provider you choose, with your key and your consent: the questions and deep dive get the note you just wrote (then it is deleted), and the deep dive also gets a short summary of your last month (when earlier urges happened, the earliest link and plan their deep dives found). Your crisis contact is never sent. The Private DNS setting hands your DNS lookups to the provider you choose.
 
 ---
 

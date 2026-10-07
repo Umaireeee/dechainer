@@ -36,18 +36,6 @@ object AppStateKeys {
      */
     const val FOCUS_SETTLED = "focusSettled"
 
-    /** The local date (YYYY-MM-DD) enforcement of the daily checklist began. Not deletable (blueprint 7). */
-    const val ACTIVATED_ON = "activatedOn"
-
-    /**
-     * The local date (YYYY-MM-DD) of the first data point: week 0 of the weekly reports starts that day.
-     * Set once. Not deletable (blueprint 7), so wiping the data does not move the weeks.
-     */
-    const val WEEK_ANCHOR = "weekAnchor"
-
-    /** When the last backup file was written (trusted-clock epoch millis), for the backup reminder. */
-    const val LAST_BACKUP_AT = "lastBackupAt"
-
     /** Prefix of the flags that mark a one-off migration as done: `migrated:<name>`. */
     const val MIGRATED_PREFIX = "migrated:"
 }

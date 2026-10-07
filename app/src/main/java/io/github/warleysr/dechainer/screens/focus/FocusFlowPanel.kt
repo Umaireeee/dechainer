@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.screens.focus
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -19,7 +17,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.clock.TrustedClock
-import io.github.warleysr.dechainer.day.DayWindow
 import io.github.warleysr.dechainer.focus.Flavor
 import io.github.warleysr.dechainer.focus.FlowStage
 import io.github.warleysr.dechainer.focus.FlowState
@@ -44,9 +40,6 @@ import io.github.warleysr.dechainer.focus.FocusFlow
 import io.github.warleysr.dechainer.focus.FocusRunner
 import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
-import io.github.warleysr.dechainer.store.Store
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Whether [FocusFlowPanel] has something to show for [stage]. A usual block that is running shows the
@@ -195,16 +188,6 @@ private fun PromptContent(flow: FlowState, now: Long) {
     val context = LocalContext.current
     var flavor by remember { mutableStateOf<Flavor?>(null) }
     var purpose by remember { mutableStateOf("") }
-    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
-    // Today's goals, offered as a pick list (blueprint 6.3), read off the main thread.
-    LaunchedEffect(flow.startedAt) {
-        suggestions = withContext(Dispatchers.IO) {
-            runCatching {
-                val today = DayWindow.dateOf(TrustedClock.now(context), TrustedClock.zone())
-                Store.days(context).goals(today).map { it.text }.filter { it.isNotBlank() }.distinct()
-            }.getOrDefault(emptyList())
-        }
-    }
     val valid = flavor != null && FocusFlow.cleanPurpose(purpose) != null
 
     Title(stringResource(R.string.focus_flow_prompt_text))
@@ -239,23 +222,6 @@ private fun PromptContent(flow: FlowState, now: Long) {
         shape = MaterialTheme.shapes.large,
         modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth()
     )
-    if (suggestions.isNotEmpty()) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.focus_flow_goals_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            suggestions.forEach { goal ->
-                FilterChip(selected = purpose == goal, onClick = { purpose = goal }, label = { Text(goal) })
-            }
-        }
-    }
     Spacer(Modifier.height(16.dp))
     Button(
         enabled = valid,

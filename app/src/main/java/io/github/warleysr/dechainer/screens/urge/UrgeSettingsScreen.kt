@@ -66,7 +66,6 @@ fun UrgeSettingsScreen() {
     fun retryWaiting() {
         thread {
             DeepDiveScheduler.enqueueIfPending(context, replace = true)
-            io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(context)
         }
     }
 

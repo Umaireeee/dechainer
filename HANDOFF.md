@@ -1,6 +1,6 @@
 # Project handoff (read this first in a new session)
 
-Last updated: 2026-10-02. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
+Last updated: 2026-10-06. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
 The full history of earlier sessions (the two-app project, every phase report) is in `docs/handoff-history.md`.
 
 ## What this is
@@ -12,20 +12,23 @@ Déchaîner 2.0: one Android app (`:app`, package `io.github.warleysr.dechainer`
   schedules and daily limits, all planned by the pure `LockPlanner` and applied by `LockEngine.sync`.
 - **Urge flow:** breathing, writing, AI questions, a deep dive that sees the last 30 days through earlier deep
   dives (`ai/DeepDiveHistory.kt`), the note deleted once the deep dive exists.
-- **Daily checklist (Today):** 3 to 7 goals planned each evening (manual, focus minutes or no slip), one rest day
-  a week. Each finished day is recorded with its counts and why it fell short. **There is no punishment day**
-  (removed in 1.2 on the owner's decision).
-- **Reports:** weekly (anchored on the first data point), monthly and yearly (calendar), all from derived data
-  only, plus progress graphs (28 days, 12 weeks, 12 months) and a backup reminder.
+- **No daily checklist (removed after 1.2 on the owner's decision):** the Today screen, the `day`/`goal` tables,
+  the evening reminders, the rules onboarding, `activatedOn` and the rest-day link are gone. There is no rest
+  day and no scheduled-focus skip. Deleting a finished urge, slip, session or deep dive is always allowed.
+  See section 17C of the blueprint.
+- **Deep dive (the one AI piece):** no word cap. It names the chain, the earliest link, the pattern,
+  what the urge is really costing, what helped, a short line for the next time and if-then plans, and
+  it keeps its memory of the last 30 days through earlier deep dives. The weekly, monthly and yearly
+  reports, their progress graphs and the backup reminder were removed after 1.2 on the owner's decision.
 
 ## State at hand-off (2026-10-02)
 
 Branch `ccr-0b16a937-euwxt4` holds, on top of `main-clean`:
 1. The six unmerged commits of `ccr-ac71bc41-lqfs5j` (opening pattern lock, database creation race fix).
-2. Punishment day and settings freeze removed; day evaluation wired into every sync (it was never called before,
-   so no evening reminders were armed); rest day skips scheduled focus; Today screen polish.
-3. Deeper deep dives and weekly reports.
-4. Monthly and yearly reports (schema 6, `period_report`), progress graphs, backup reminder.
+2. A deeper deep dive; then the weekly, monthly and yearly reports removed after 1.2 on the owner's decision,
+   with the deep dive uncapped and expanded (section 17B of the blueprint).
+3. The daily checklist (Today) removed entirely after 1.2 on the owner's decision, with a simpler delete,
+   export and import, and a redesigned Home (section 17C of the blueprint).
 
 CI (unit tests, debug and release builds) is the only full compiler. `tools/pure-tests.sh` compiles and runs
 the pure-logic tests on a plain JVM (about 200 tests) and works in the sandbox: run it before every push.
@@ -51,8 +54,5 @@ the pure-logic tests on a plain JVM (about 200 tests) and works in the sandbox: 
    installing a launcher with a browser is a way around schedules outside a brick. Protecting only the default
    launcher has its own trap (a suspended default home); needs a careful design and a phone to test on.
 2. Two crashes within five minutes during a brick end it (the crash-loop breaker, by design). Aborts are not shown
-   anywhere yet; showing them in the weekly report would make the escape visible.
-3. The weekly report is anchored on the first data point while monthly and yearly are calendar periods; the
-   graphs use Monday weeks. Fine in practice; noted in case it confuses.
-4. A sick or travel day (declared ahead, like a rest day) if the one rest day a week proves too tight.
-5. Home-screen widget for the urge button (the tile and icon shortcut exist).
+   anywhere yet; there is no report left to record them in.
+3. A home-screen widget for the urge button (the tile and icon shortcut exist).

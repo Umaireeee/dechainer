@@ -15,9 +15,6 @@ enum class SkipReason {
     /** Its window has already ended. */
     WINDOW_OVER,
 
-    /** A declared rest day skips scheduled focus (D18). Block schedules and limits still run. */
-    REST_DAY,
-
     /** The urge lock outlasts the window, so there is nothing left to start. */
     URGE_LOCK_OUTLASTS_WINDOW,
 
@@ -32,11 +29,10 @@ enum class SkipReason {
  */
 object FocusStartRule {
     fun decide(
-        now: Long, windowEndsAt: Long, restDay: Boolean, urgeEndsAt: Long,
+        now: Long, windowEndsAt: Long, urgeEndsAt: Long,
         minLeftMs: Long = 0L
     ): FocusStart = when {
         windowEndsAt <= now -> FocusStart.Skip(SkipReason.WINDOW_OVER)
-        restDay -> FocusStart.Skip(SkipReason.REST_DAY)
         urgeEndsAt > now ->
             when {
                 urgeEndsAt >= windowEndsAt -> FocusStart.Skip(SkipReason.URGE_LOCK_OUTLASTS_WINDOW)

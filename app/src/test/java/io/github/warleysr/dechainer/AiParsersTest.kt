@@ -129,28 +129,6 @@ class AiParsersTest {
         assertNull(MarkdownReply.clean("```json\n{\"a\":1}\n```"))
     }
 
-    @Test
-    fun wordsAreCounted() {
-        assertEquals(0, MarkdownReply.wordCount(""))
-        assertEquals(4, MarkdownReply.wordCount("## One two\nthree  four"))
-    }
-
-    @Test
-    fun anOverLongReplyIsTrimmedToWholeSentencesAtTheWordCap() {
-        val short = "One two three."
-        assertEquals(short, MarkdownReply.limitWords(short, 300))
-        val long = (1..400).joinToString(" ") { "w$it." }
-        val capped = MarkdownReply.limitWords(long, 300)
-        assertTrue(MarkdownReply.wordCount(capped) <= 300)
-        assertTrue("whole sentences are kept", capped.endsWith("."))
-    }
-
-    @Test
-    fun aSingleSentenceOverTheCapIsCutAtTheWord() {
-        val one = (1..400).joinToString(" ") { "x$it" } + "."
-        assertEquals(300, MarkdownReply.wordCount(MarkdownReply.limitWords(one, 300)))
-    }
-
     // ---- the Markdown the screen shows ----
 
     @Test

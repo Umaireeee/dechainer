@@ -1,3 +1,9 @@
+## Déchaîner 2.2
+
+- **The reports are gone** (your decision). No weekly, monthly or yearly reports, no progress graphs, no backup reminder and no Reports screen. The "Reports" notification channel is gone too. Your data tools stay under **Settings → Your data**: save a backup, read one back, delete single entries and sessions, or wipe (with the recovery code). Goal text can be deleted once its day has passed.
+- **The deep dive is now the one AI piece, and it is deeper.** The 300-word cap is removed. It also names what the urge is really costing you and closes with a short, direct piece written for the moment the next urge arrives, so you can read it in one breath when it matters. It keeps its memory of your last 30 days.
+- Smaller: the AI and settings copy no longer mentions reports. Nothing else changes.
+
 ## Déchaîner 2.1
 
 - **The punishment day is gone** (your decision). The daily checklist stays: each finished day is recorded with how much was done and why it fell short, and nothing locks the phone because of it. The settings freeze went with it.

@@ -59,10 +59,9 @@ data class AiLimits(val maxTokens: Int, val connectTimeoutMs: Int, val readTimeo
     companion object {
         /** Section 6.2: if the questions take longer than 20 seconds the fixed ones are shown, so the call is cut off there too. */
         val QUESTIONS = AiLimits(maxTokens = 1_500, connectTimeoutMs = 8_000, readTimeoutMs = 20_000)
-        val DEEP_DIVE = AiLimits(maxTokens = 2_500, connectTimeoutMs = 15_000, readTimeoutMs = 60_000)
-        val WEEKLY = AiLimits(maxTokens = 6_000, connectTimeoutMs = 15_000, readTimeoutMs = 120_000)
-        /** The monthly and yearly reports read more and write more, and are never waited on by a person. */
-        val LONG_REPORT = AiLimits(maxTokens = 8_000, connectTimeoutMs = 15_000, readTimeoutMs = 180_000)
+
+        /** The deep dive has no word cap, so it is allowed the room and the time to be substantial. */
+        val DEEP_DIVE = AiLimits(maxTokens = 4_000, connectTimeoutMs = 15_000, readTimeoutMs = 90_000)
     }
 }
 

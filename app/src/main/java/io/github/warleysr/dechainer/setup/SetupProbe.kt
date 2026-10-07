@@ -11,7 +11,6 @@ import androidx.core.app.NotificationManagerCompat
 import io.github.warleysr.dechainer.ai.AiSettings
 import io.github.warleysr.dechainer.data.FullScreenAlerts
 import io.github.warleysr.dechainer.data.TimeLimits
-import io.github.warleysr.dechainer.day.DayEngine
 import io.github.warleysr.dechainer.security.SecurityManager
 
 /** Reads the phone for the setup checks and says where each Fix goes. */
@@ -33,7 +32,6 @@ object SetupProbe {
             SetupItem.BATTERY -> ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
             SetupItem.RECOVERY_CODE -> SecurityManager.hasRecoveryCode(ctx)
             SetupItem.AI_KEY -> AiSettings(ctx).configured
-            SetupItem.RULES -> DayEngine.rulesConfirmed(ctx)
         }
     } catch (_: Exception) {
         false

@@ -37,13 +37,11 @@ object ScreenInfos {
     /** The explainer for [route], or null for screens that need none. */
     fun forRoute(route: Route): ScreenInfo? = when (route) {
         Route.FOCUS, Route.FOCUS_LOG -> ScreenInfo(R.string.focus_tab, R.string.info_focus_what, R.string.info_focus_does, R.string.info_focus_how)
-        Route.TODAY -> ScreenInfo(R.string.today_tab, R.string.info_today_what, R.string.info_today_does, R.string.info_today_how)
         Route.APPS -> ScreenInfo(R.string.apps, R.string.info_apps_what, R.string.info_apps_does, R.string.info_apps_how)
         Route.SCHEDULES, Route.SCHEDULE_EDITOR -> ScreenInfo(R.string.schedules, R.string.info_schedules_what, R.string.info_schedules_does, R.string.info_schedules_how)
         Route.SETTINGS -> ScreenInfo(R.string.settings, R.string.info_config_what, R.string.info_config_does, R.string.info_config_how)
         Route.RESTRICTIONS -> ScreenInfo(R.string.protections, R.string.info_restrictions_what, R.string.info_restrictions_does, R.string.info_restrictions_how)
         Route.SETUP_DEVICE_OWNER -> ScreenInfo(R.string.info_owner_title, R.string.info_owner_what, R.string.info_owner_does, R.string.info_owner_how)
-        Route.REPORTS -> ScreenInfo(R.string.reports_tab, R.string.info_reports_what, R.string.info_reports_does, R.string.info_reports_how)
         Route.HOME, Route.URGE_SETTINGS, Route.DATA -> null
     }
 }

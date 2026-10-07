@@ -109,6 +109,24 @@ object Migrations {
             statements = listOf(
                 "ALTER TABLE urge_entry ADD COLUMN support INTEGER NOT NULL DEFAULT 0"
             )
+        ),
+        // The owner's decision: the weekly, monthly and yearly reports are gone, so their tables go too.
+        // The deep dive is the one thing the AI writes now; it keeps its memory through earlier deep dives.
+        Migration(
+            from = 7, to = 8,
+            statements = listOf(
+                "DROP TABLE IF EXISTS weekly_report",
+                "DROP TABLE IF EXISTS period_report"
+            )
+        ),
+        // The owner's decision: the daily checklist (Today) is gone, so its tables go too. Urges, slips,
+        // focus sessions and the deep dive are the whole record now.
+        Migration(
+            from = 8, to = 9,
+            statements = listOf(
+                "DROP TABLE IF EXISTS goal",
+                "DROP TABLE IF EXISTS day"
+            )
         )
     )
 

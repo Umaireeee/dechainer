@@ -1,24 +1,19 @@
-package io.github.warleysr.dechainer.report
+package io.github.warleysr.dechainer.store
 
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import io.github.warleysr.dechainer.day.DayWindow
-import io.github.warleysr.dechainer.store.AppStateKeys
-import io.github.warleysr.dechainer.store.Store
 import io.github.warleysr.dechainer.urge.UrgeKind
 import io.github.warleysr.dechainer.urge.UrgeSource
 import io.github.warleysr.dechainer.urge.UrgeStatus
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.LocalDate
-import java.time.ZoneId
 
 enum class DeleteResult {
     DELETED,
 
-    /** The rules of 6.4 say no: the open week's goals, a slip or session whose day is not settled, one still running. */
+    /** The entry is still in the flow, or the session is still running. */
     NOT_ALLOWED,
     MISSING
 }
@@ -30,23 +25,15 @@ data class ImportResult(val ok: Boolean, val added: Int, val skipped: Int)
 data class WipeResult(val removed: Int, val kept: Int)
 
 /**
- * Delete, wipe, export and import (blueprint 6.6). Nothing here touches `app_state`, `day` rows,
- * rest days, `activatedOn` or `weekAnchor`, so the daily results the progress graphs read stay. The
- * wipe's recovery code is asked by the screen.
+ * Delete, wipe, export and import (blueprint 6.6). Nothing here touches `app_state`, so the
+ * surviving state stays. The wipe's recovery code is asked by the screen.
  */
-class DataTools(private val ctx: Context, private val zone: ZoneId, private val now: () -> Long) {
+class DataTools(private val ctx: Context, private val now: () -> Long) {
     private val urges = Store.urgeEntries(ctx)
     private val focus = Store.focus(ctx)
-    private val days = Store.days(ctx)
-    private val reports = Store.reports(ctx)
-    private val periodReports = Store.periodReports(ctx)
-
-    private fun measuredOk(at: Long): Boolean =
-        ReportRules.canDeleteMeasured(at, now(), zone, days.goals(DayWindow.dateOf(at, zone)))
 
     private fun urgeDeletable(e: io.github.warleysr.dechainer.urge.UrgeEntry): Boolean =
-        e.status in setOf(UrgeStatus.DONE, UrgeStatus.SKIPPED, UrgeStatus.PENDING_DEEPDIVE) &&
-            (e.kind != UrgeKind.SLIP || measuredOk(e.createdAt))
+        e.status in setOf(UrgeStatus.DONE, UrgeStatus.SKIPPED, UrgeStatus.PENDING_DEEPDIVE)
 
     fun deleteUrge(id: Long): DeleteResult {
         val e = urges.get(id) ?: return DeleteResult.MISSING
@@ -60,25 +47,9 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
 
     fun deleteSession(id: Long): DeleteResult {
         val s = focus.session(id) ?: return DeleteResult.MISSING
-        if (s.endedAt == null || !measuredOk(s.startedAt)) return DeleteResult.NOT_ALLOWED
+        if (s.endedAt == null) return DeleteResult.NOT_ALLOWED
         focus.delete(id)
         return DeleteResult.DELETED
-    }
-
-    fun deleteReport(id: Long): DeleteResult {
-        return if (reports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
-    }
-
-    /** Deletes a monthly or yearly report's text; the row stays so the period is not built again. */
-    fun deletePeriodReport(id: Long): DeleteResult =
-        if (periodReports.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
-
-    /** Whether the goal text of [date] may go: a report must cover the day (blueprint 6.4). */
-    fun canDeleteGoals(date: LocalDate): Boolean = ReportRules.canDeleteGoals(date, reports.latestEnd(), zone)
-
-    fun deleteGoals(date: LocalDate): DeleteResult {
-        if (!canDeleteGoals(date)) return DeleteResult.NOT_ALLOWED
-        return if (days.deleteGoals(date) > 0) DeleteResult.DELETED else DeleteResult.MISSING
     }
 
     /** Wipe all data: everything the rules allow to go. The caller has asked for the recovery code. */
@@ -95,11 +66,8 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                 } else kept++ // still in the flow
             }
             focus.sessions().forEach { s ->
-                if (s.endedAt != null && measuredOk(s.startedAt)) { focus.delete(s.id); removed++ } else kept++
+                if (s.endedAt != null) { focus.delete(s.id); removed++ } else kept++
             }
-            days.datesWithGoals().forEach { d -> if (canDeleteGoals(d)) { days.deleteGoals(d); removed++ } else kept++ }
-            reports.deleteAll()
-            periodReports.deleteAll()
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -109,33 +77,22 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
 
     // ---- export and import ----
 
-    /** The whole store, except `app_state` (activation and rest-day state are never exported). */
+    /** The whole store, except `app_state` (the trusted clock checkpoints are never exported). */
     fun export(): String {
         val db = Store.raw(ctx).readableDatabase
         return JSONObject()
             .put("format", FORMAT).put("version", VERSION).put("exportedAt", now())
-            .put("weekAnchor", Store.appState(ctx).get(AppStateKeys.WEEK_ANCHOR) ?: JSONObject.NULL)
             .also { o -> TABLES.forEach { t -> o.put(t, dump(db, t)) } }
             .toString()
     }
 
     /**
      * Reads a file made by [export] back in. It only adds: a row already here is left exactly as it is,
-     * so an import can never rewrite a day's recorded result. Days and
-     * their goals come back only from before `activatedOn`, reports only if they belong to this store's
-     * weeks, and an entry that was mid-flow is kept as a counted stub.
+     * and an entry that was mid-flow is kept as a counted stub.
      */
     fun import(json: String): ImportResult {
         val root = runCatching { JSONObject(json) }.getOrNull()
         if (root == null || root.optString("format") != FORMAT || root.optInt("version", -1) !in 1..VERSION) return ImportResult(false, 0, 0)
-
-        val state = Store.appState(ctx)
-        val fileAnchor = root.optString("weekAnchor", "").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        if (state.get(AppStateKeys.WEEK_ANCHOR) == null && fileAnchor != null) state.set(AppStateKeys.WEEK_ANCHOR, fileAnchor.toString())
-        val sameWeeks = fileAnchor != null && state.get(AppStateKeys.WEEK_ANCHOR) == fileAnchor.toString()
-        val activated = state.get(AppStateKeys.ACTIVATED_ON)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        val today = DayWindow.dateOf(now(), zone)
-        val dayLimit = activated ?: today
 
         var added = 0
         var skipped = 0
@@ -185,47 +142,6 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
                 }); added++
             }
 
-            val newDays = mutableSetOf<String>()
-            for (r in rows("day")) {
-                val date = runCatching { LocalDate.parse(r.optString("date")) }.getOrNull()
-                if (date == null || !date.isBefore(dayLimit) || exists(db, "day", "date = ?", date.toString())) { skipped++; continue }
-                db.insertOrThrow("day", null, ContentValues().apply {
-                    put("date", date.toString()); put("kind", r.optString("kind", "NORMAL")); putLong("plan_written_at", r)
-                    putLong("resolved_at", r); put("done_count", r.optInt("done_count")); put("total_count", r.optInt("total_count"))
-                    put("evaluated", r.optInt("evaluated")); put("violation", r.optNullString("violation"))
-                }); newDays += date.toString(); added++
-            }
-            for (r in rows("goal")) {
-                if (r.optString("day_date") !in newDays) { skipped++; continue }
-                db.insertOrThrow("goal", null, ContentValues().apply {
-                    put("day_date", r.getString("day_date")); put("position", r.optInt("position")); put("text", r.optString("text"))
-                    put("type", r.optString("type", "MANUAL")); putInt("target_minutes", r); put("state", r.optString("state", "OPEN"))
-                    put("resolved_by", r.optNullString("resolved_by"))
-                }); added++
-            }
-
-            for (r in rows("weekly_report")) {
-                val index = r.optInt("period_index", Int.MIN_VALUE)
-                if (!sameWeeks || index == Int.MIN_VALUE || r.optString("body_md").isBlank() || exists(db, "weekly_report", "period_index = ?", index.toString())) { skipped++; continue }
-                db.insertOrThrow("weekly_report", null, ContentValues().apply {
-                    put("period_index", index); put("period_start", r.getLong("period_start")); put("period_end", r.getLong("period_end"))
-                    put("created_at", r.getLong("created_at")); put("status", "DONE"); put("body_md", r.getString("body_md"))
-                    put("summary_json", r.optString("summary_json", ""))
-                }); added++
-            }
-            // Monthly and yearly reports are keyed by the calendar, so they fit any store.
-            for (r in rows("period_report")) {
-                val kind = PeriodKind.entries.firstOrNull { it.name == r.optString("kind") }
-                val key = r.optString("period_key")
-                if (kind == null || !PeriodMath.isValid(kind, key) || r.optString("body_md").isBlank() ||
-                    exists(db, "period_report", "kind = ? AND period_key = ?", kind.name, key)
-                ) { skipped++; continue }
-                db.insertOrThrow("period_report", null, ContentValues().apply {
-                    put("kind", kind.name); put("period_key", key); put("period_start", r.getLong("period_start")); put("period_end", r.getLong("period_end"))
-                    put("created_at", r.getLong("created_at")); put("status", "DONE"); put("body_md", r.getString("body_md"))
-                    put("summary_json", r.optString("summary_json", ""))
-                }); added++
-            }
             db.setTransactionSuccessful()
         } catch (e: Exception) {
             // One bad row stops the import and nothing of it is kept.
@@ -240,7 +156,7 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
         db.query(table, arrayOf("1"), where, arrayOf(*args), null, null, null, "1").use { it.moveToFirst() }
 
     private fun dump(db: SQLiteDatabase, table: String): JSONArray = JSONArray().also { out ->
-        db.query(table, null, if (table == "weekly_report" || table == "period_report") "status = 'DONE'" else null, null, null, null, null).use { c ->
+        db.query(table, null, null, null, null, null, null).use { c ->
             while (c.moveToNext()) {
                 val o = JSONObject()
                 for (i in 0 until c.columnCount) {
@@ -258,11 +174,10 @@ class DataTools(private val ctx: Context, private val zone: ZoneId, private val 
 
     private fun JSONObject.optNullString(key: String): String? = if (isNull(key)) null else optString(key)
     private fun ContentValues.putLong(key: String, from: JSONObject) { if (from.isNull(key)) putNull(key) else put(key, from.getLong(key)) }
-    private fun ContentValues.putInt(key: String, from: JSONObject) { if (from.isNull(key)) putNull(key) else put(key, from.getInt(key)) }
 
     companion object {
         const val FORMAT = "dechainer-export"
         const val VERSION = 1
-        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin", "day", "goal", "weekly_report", "period_report")
+        private val TABLES = listOf("urge_entry", "focus_session", "focus_checkin")
     }
 }

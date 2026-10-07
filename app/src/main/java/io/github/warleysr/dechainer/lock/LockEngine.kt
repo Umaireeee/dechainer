@@ -9,7 +9,6 @@ import io.github.warleysr.dechainer.Rules
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.data.DnsGuard
-import io.github.warleysr.dechainer.day.DayEngine
 import io.github.warleysr.dechainer.data.LockSafety
 import io.github.warleysr.dechainer.data.ScheduleEnforcer
 import io.github.warleysr.dechainer.data.ScheduleRepository
@@ -129,9 +128,6 @@ object LockEngine {
             // The wake-up reading is written down before anything is decided on it.
             val now = TrustedClock.checkpoint(ctx)
             val zone = TrustedClock.zone()
-            // The daily checklist first: it closes the days that ended and arms the evening and midnight
-            // wake-ups. It locks nothing, and it must know today's rest day before a FOCUS entry starts.
-            DayEngine.runPass(ctx, now)
             // The focus session's own clock next (prompt and check-in timeouts, the reset, a FOCUS
             // timetable entry that is due): it can start or end a block, which the plan below must see.
             try {

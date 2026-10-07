@@ -329,18 +329,6 @@ class FocusRunnerTest {
     }
 
     @Test
-    fun aFocusEntryDoesNotStartOnADeclaredRestDay() {
-        makeDeviceOwner()
-        val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(ctx), TrustedClock.zone())
-        Store.days(ctx).setRest(today, true)
-        storeOpenFocusEntry()
-        LockEngine.sync(ctx)
-        assertNull(FocusRunner.flow.value)
-        assertFalse(Pomodoro.state.value.inBlock)
-        assertEquals(0, repo.count())
-    }
-
-    @Test
     fun noBlockStartsWithoutDeviceOwner() {
         storeOpenFocusEntry()
         LockEngine.sync(ctx)

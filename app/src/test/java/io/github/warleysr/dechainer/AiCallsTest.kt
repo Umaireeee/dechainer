@@ -78,15 +78,6 @@ class AiCallsTest {
         assertEquals(MarkdownOutcome.Failed(AiError.SERVER), calls(reply = AiResult.Failed(AiError.SERVER)).deepDive(cfg, input))
     }
 
-    @Test
-    fun theWeeklyReportUsesTheLongLimitAndSendsOnlyWhatItIsGiven() {
-        val seen = Seen()
-        val out = calls(seen, AiResult.Ok("## Week at a glance\n4 urges")).weeklyReport(cfg, "urges: 4")
-        assertEquals(MarkdownOutcome.Ok("## Week at a glance\n4 urges"), out)
-        assertEquals(AiLimits.WEEKLY, seen.limits)
-        assertTrue("urges: 4" in seen.user)
-    }
-
     // ---- the crisis contact ----
 
     @Test

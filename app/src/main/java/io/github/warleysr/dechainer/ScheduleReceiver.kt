@@ -31,8 +31,6 @@ class ScheduleReceiver : BroadcastReceiver() {
                 // The pin does not survive a reboot or an update: if any brick runs, open Déchaîner so
                 // it pins again. Only then; on any other wake-up it would drag you out of an allowed app.
                 if (fresh) LockEngine.reopenIfBrick(ctx)
-                // A weekly report that came due while the phone was off is queued again (blueprint 6.5).
-                if (fresh) io.github.warleysr.dechainer.report.ReportScheduler.ensureQueued(ctx)
             } finally {
                 pending.finish()
             }

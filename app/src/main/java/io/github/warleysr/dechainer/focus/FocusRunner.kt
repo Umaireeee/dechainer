@@ -204,16 +204,8 @@ object FocusRunner {
         val schedules = ScheduleRepository.getSchedules(ctx)
         if (schedules.none { it.isFocus }) return false
         val settled = readSettled(ctx)
-        // A declared rest day skips scheduled focus; block schedules and limits still run (D18).
-        val restDay = try {
-            Store.days(ctx).isRest(io.github.warleysr.dechainer.day.DayWindow.dateOf(now, TrustedClock.zone()))
-        } catch (e: Exception) {
-            Timber.w(e, "Rest day not readable; the focus entry runs")
-            false
-        }
         val due = FocusTimetable.due(
             now = now, zone = TrustedClock.zone(), schedules = schedules, settledKeys = settled,
-            restDay = restDay,
             urgeEndsAt = LockStateStore.urge(ctx).endsAt
         ) ?: return false
         return when (val decision = due.decision) {

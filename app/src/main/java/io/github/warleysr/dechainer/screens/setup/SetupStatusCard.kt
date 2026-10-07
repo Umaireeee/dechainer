@@ -74,7 +74,7 @@ private fun SetupRow(check: SetupCheck, onFix: () -> Unit) {
         }
         if (check.done) {
             Icon(Icons.Outlined.CheckCircle, stringResource(R.string.setup_done), tint = MaterialTheme.colorScheme.primary)
-        } else if (check.item != SetupItem.RECOVERY_CODE && check.item != SetupItem.RULES) {
+        } else if (check.item != SetupItem.RECOVERY_CODE) {
             OutlinedButton(onClick = onFix) { Text(stringResource(R.string.setup_fix)) }
         }
     }
@@ -88,5 +88,4 @@ private fun labelOf(item: SetupItem): Int = when (item) {
     SetupItem.BATTERY -> R.string.setup_item_battery
     SetupItem.RECOVERY_CODE -> R.string.setup_item_recovery
     SetupItem.AI_KEY -> R.string.setup_item_ai
-    SetupItem.RULES -> R.string.setup_item_rules
 }

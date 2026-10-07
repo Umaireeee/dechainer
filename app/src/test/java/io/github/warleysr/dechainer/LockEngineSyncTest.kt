@@ -208,22 +208,6 @@ class LockEngineSyncTest {
     }
 
     @Test
-    fun everySyncClosesTheDaysThatEndedAndAShortDayNeverLocksThePhone() {
-        makeDeviceOwner()
-        val zone = TrustedClock.zone()
-        val today = io.github.warleysr.dechainer.day.DayWindow.dateOf(TrustedClock.now(ctx), zone)
-        // Rules confirmed three days ago, and no plan was ever written: every day fell short.
-        Store.appState(ctx).set(io.github.warleysr.dechainer.store.AppStateKeys.ACTIVATED_ON, today.minusDays(3).toString())
-        LockEngine.sync(ctx)
-        val days = Store.days(ctx)
-        val yesterday = days.day(today.minusDays(1))
-        assertTrue("the sync ran the day evaluation", yesterday?.evaluated == true)
-        assertEquals(io.github.warleysr.dechainer.day.Violation.PLAN_MISSING, yesterday?.violation)
-        assertFalse("nothing is locked because of it", dpm.isPackageSuspended(admin, games))
-        assertEquals(null, LockEngine.status.value)
-    }
-
-    @Test
     fun theCrashBreakerEndsAnUrgeLockOnRecord() {
         makeDeviceOwner()
         LockEngine.startUrgeLock(ctx)

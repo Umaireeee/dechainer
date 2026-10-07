@@ -55,7 +55,7 @@ object QuestionsParser {
     }
 }
 
-/** Reads the Markdown replies of the deep dive and the weekly report. */
+/** Reads the Markdown reply of the deep dive. */
 object MarkdownReply {
     /**
      * The reply as clean Markdown, or null when it cannot be used: empty, or a JSON object where
@@ -67,28 +67,5 @@ object MarkdownReply {
         if (fence != null) t = fence.groupValues[1].trim()
         if (t.isEmpty() || t.startsWith("{")) return null
         return t
-    }
-
-    /** Words, not Markdown marks: a token counts when it has a letter or a digit in it. */
-    fun wordCount(text: String): Int = text.trim().split(Regex("\\s+")).count { t -> t.any { it.isLetterOrDigit() } }
-
-    /**
-     * [text] cut to at most [maxWords], keeping whole sentences where it can (blueprint 8: the deep
-     * dive is at most 300 words). A single opening sentence already over the cap is cut at the word.
-     */
-    fun limitWords(text: String, maxWords: Int): String {
-        if (maxWords <= 0 || wordCount(text) <= maxWords) return text
-        val sentences = text.trim().split(Regex("(?<=[.!?])\\s+"))
-        val kept = StringBuilder()
-        var count = 0
-        for (s in sentences) {
-            val words = wordCount(s)
-            if (count + words > maxWords) break
-            if (kept.isNotEmpty()) kept.append(' ')
-            kept.append(s)
-            count += words
-        }
-        if (kept.isNotEmpty()) return kept.toString()
-        return text.trim().split(Regex("\\s+")).take(maxWords).joinToString(" ")
     }
 }

@@ -8,8 +8,7 @@ enum class SetupItem {
     USAGE_ACCESS,
     BATTERY,
     RECOVERY_CODE,
-    AI_KEY,
-    RULES
+    AI_KEY
 }
 
 data class SetupCheck(val item: SetupItem, val done: Boolean)
