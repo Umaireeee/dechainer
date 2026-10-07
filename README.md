@@ -14,7 +14,7 @@ The design rule: **tightening is easy, loosening is hard.** Anything that makes 
 Home is a large clock and one button, **Blackout**. Tap the clock or swipe up for the menu: Blackout, Focus, Schedules, Apps and limits, Settings. The same screen is shown during any lock, with the end time under the clock.
 
 - **Blackout:** the phone locks at once for a length you choose (1 minute to 12 hours, 10 minutes by default). The screen turns full-screen pure black with one dim monospace countdown in the middle, and only incoming calls get through: the notification shade, Home, Recents, the power menu, the alarm clock and every other app are blocked. Nothing ends it early and a second tap never extends it.
-- Triggers, from anywhere: the **Blackout** button, the **Quick Settings tile**, the icon **shortcut**, or the **assistant gesture** (long-press / corner swipe) once Déchaîner is set as your default assistant app.
+- Triggers: the **Blackout** button, the **Quick Settings tile**, or the icon **shortcut**. The tile and shortcut go straight to black with no question and no pattern prompt.
 - The countdown is driven by a monotonic trusted clock and the stored end time, so rebooting does not reset it.
 
 ### Focus sessions

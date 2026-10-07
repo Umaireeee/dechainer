@@ -64,6 +64,7 @@ import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import io.github.warleysr.dechainer.viewmodels.Route
 import io.github.warleysr.dechainer.viewmodels.UrgeViewModel
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     /** The urge flow's state, shared with every screen that can start it (Home, Focus, the tile). */
@@ -112,6 +113,12 @@ class MainActivity : ComponentActivity() {
     private var entryUnlocked by mutableStateOf(false)
     private var leftAt = 0L
 
+    /**
+     * True from the instant a trigger starts a blackout until the flow takes over, so the opening
+     * pattern never flashes between the tap and the countdown.
+     */
+    private var urgePending by mutableStateOf(false)
+
     /** Whether the locked screen covers the app right now (a brick does not lift this for the private steps). */
     private fun lockScreenCovers(): Boolean =
         SecurityManager.isEntryLockEnabled(this) && SecurityManager.hasRecoveryCode(this) && !entryUnlocked
@@ -145,22 +152,19 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * The Quick Settings tile, the icon shortcut and the assistant gesture all land here. The tile
-     * and shortcut start the ongoing path with no question first (D2); the assist intent (the
-     * long-press / corner gesture, once Déchaîner is the default assistant) does the same. The extra
-     * is taken off once handled, and an intent replayed from recents is ignored, so neither can start
-     * a second blackout by accident.
+     * The Quick Settings tile and the icon shortcut land here. They start the blackout with no
+     * question first (D2). The extra is taken off once handled, and an intent replayed from recents
+     * is ignored, so a second blackout is never started by accident.
      */
     private fun handleUrgeIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
-        if (intent.action == Intent.ACTION_ASSIST) {
-            urgeVm.startUrge(UrgeSource.ASSIST)
-            return
-        }
         val name = intent.getStringExtra(EXTRA_URGE_SOURCE) ?: return
         intent.removeExtra(EXTRA_URGE_SOURCE)
         val source = UrgeSource.entries.firstOrNull { it.name == name } ?: return
+        // A trigger is exempt from the opening pattern (the flow is, by design): the blackout must
+        // start at once, with nothing to read or negotiate first.
+        urgePending = true
         urgeVm.startUrge(source)
     }
 
@@ -210,6 +214,10 @@ class MainActivity : ComponentActivity() {
             // Every blackout gets its counted entry, also one found with none.
             LaunchedEffect(lockStatus?.primary, urge.entry == null) {
                 if (lockStatus?.primary == LockMode.URGE_LOCK && urge.entry == null) urgeVm.adoptRunningLock()
+            }
+            // A trigger hides the opening pattern just long enough for the blackout to take over.
+            LaunchedEffect(urge.active) {
+                if (urge.active) urgePending = false else { delay(2_000L); urgePending = false }
             }
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
@@ -268,8 +276,8 @@ class MainActivity : ComponentActivity() {
                 var menuOpen by rememberSaveable { mutableStateOf(false) }
 
                 // Before anything else: opening the app asks for the opening pattern. A brick and the
-                // urge flow are never behind it, so the Urge button always works.
-                val gateShown = EntryLock.required(
+                // blackout are never behind it, and a trigger hides it from the first frame.
+                val gateShown = !urgePending && EntryLock.required(
                     enabled = SecurityManager.isEntryLockEnabled(context),
                     recoverySet = recoverySet,
                     unlocked = entryUnlocked,

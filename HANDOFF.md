@@ -12,8 +12,8 @@ blueprint in places, so where they disagree, report before changing anything.
 - **Locks:** a full-screen **blackout** (formerly the urge lock: 1 minute to 12 hours, a pure-black countdown,
   incoming calls only, no early exit and never extended), focus blocks (manual, or weekly FOCUS timetable entries
   set once), block schedules and daily limits, all planned by the pure `LockPlanner` and applied by `LockEngine.sync`.
-- **Blackout triggers:** the Home button, the Quick Settings tile, the icon shortcut, and the assistant gesture
-  (`ACTION_ASSIST`, once Déchaîner is set as the default assistant app).
+- **Blackout triggers:** the Home button, the Quick Settings tile and the icon shortcut. (An earlier
+  assistant-gesture trigger was removed: it fired too easily by accident.)
 - **No AI and no reports:** the deep dive, the questions, the weekly/monthly/yearly reports and their code are gone.
   Nothing is sent off the phone.
 - **No daily checklist (removed after 1.2 on the owner's decision):** the Today screen, the `day`/`goal` tables, the

@@ -10,7 +10,7 @@ package io.github.warleysr.dechainer.urge
  */
 
 /** Where the owner started it from. */
-enum class UrgeSource { HOME, TILE, SHORTCUT, FOCUS, ASSIST }
+enum class UrgeSource { HOME, TILE, SHORTCUT, FOCUS }
 
 /** One urge lock. [lockStartedAt] and [lockEndedAt] are trusted-clock epoch millis, null only if the entry could not be stored. */
 data class UrgeEntry(

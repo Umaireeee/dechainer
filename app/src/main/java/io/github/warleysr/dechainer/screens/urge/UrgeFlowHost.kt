@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -83,9 +84,18 @@ private fun BlackoutWindowEffect() {
         if (window == null) {
             onDispose { }
         } else {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             val controller = WindowCompat.getInsetsController(window, view)
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
+            // A swipe can still flash the bars in for a moment; put them straight back so the back
+            // button never comes to rest on the black.
+            ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+                if (insets.isVisible(WindowInsetsCompat.Type.systemBars())) {
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                }
+                insets
+            }
 
             val previousBrightness = window.attributes.screenBrightness
             val hadKeepScreenOn = (window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
@@ -93,6 +103,7 @@ private fun BlackoutWindowEffect() {
             window.attributes = window.attributes.apply { screenBrightness = Rules.BLACKOUT_BRIGHTNESS }
 
             onDispose {
+                ViewCompat.setOnApplyWindowInsetsListener(view, null)
                 val restore = window.attributes
                 restore.screenBrightness = previousBrightness
                 window.attributes = restore

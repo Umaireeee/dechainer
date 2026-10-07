@@ -29,8 +29,9 @@ Tap **Blackout** on Home. The phone locks at once for the length you chose: the 
 
 You can also start a blackout from anywhere:
 - the **Quick Settings tile**: pull the shade down fully, tap the pencil or "Edit", find the **Blackout** tile, and drag it to the top row;
-- the app icon's long-press **shortcut**;
-- the **assistant gesture** (long-press power, or the corner swipe), after you set Déchaîner as your default assistant app in *Settings → Apps → Default apps → Digital assistant*. This is optional and replaces your usual assistant.
+- the app icon's long-press **shortcut**.
+
+Both go straight to black: no question and no pattern prompt.
 
 ## Step 6: Focus sessions
 1. **Manual:** open **Focus**, pick an end time (10 minutes to 8 hours), write what the session is for, choose usual or special, and commit.
