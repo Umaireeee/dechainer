@@ -33,6 +33,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
+import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
@@ -69,6 +71,7 @@ class PomodoroEndActivity : ComponentActivity() {
             val settings by Pomodoro.settings.collectAsStateWithLifecycle()
             val focusState by Pomodoro.state.collectAsStateWithLifecycle()
             DechainerTheme {
+                BackHandler(enabled = true) { /* Do not dismiss question with back button */ }
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column(
                         modifier = Modifier
@@ -106,11 +109,16 @@ class PomodoroEndActivity : ComponentActivity() {
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(32.dp))
-                        var answered by remember { mutableStateOf(false) }
+                        fun safeFinish() {
+                            if (Pomodoro.brickActive() || LockEngine.brickRunning(this@PomodoroEndActivity)) {
+                                LockEngine.reopenIfBrick(this@PomodoroEndActivity)
+                            }
+                            finish()
+                        }
                         fun afterAnswer() {
                             // Answering stops the alarm. If the break is waiting, offer it here;
                             // otherwise (it started by itself) there's nothing left to do.
-                            if (Pomodoro.state.value.isIdle) answered = true else finish()
+                            if (Pomodoro.state.value.isIdle) answered = true else safeFinish()
                         }
                         fun reply(done: Boolean) {
                             Pomodoro.answer(this@PomodoroEndActivity, session.id, done)
@@ -131,10 +139,10 @@ class PomodoroEndActivity : ComponentActivity() {
                         } else {
                             val breakMinutes = settings.minutesFor(focusState.phase)
                             Button(
-                                onClick = { Pomodoro.start(this@PomodoroEndActivity); finish() },
+                                onClick = { Pomodoro.start(this@PomodoroEndActivity); safeFinish() },
                                 modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth().height(52.dp)
                             ) { Text(stringResource(R.string.focus_start_break, breakMinutes)) }
-                            TextButton(onClick = { finish() }) { Text(stringResource(R.string.focus_later)) }
+                            TextButton(onClick = { safeFinish() }) { Text(stringResource(R.string.focus_later)) }
                         }
                     }
                 }

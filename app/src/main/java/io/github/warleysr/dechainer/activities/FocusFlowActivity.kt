@@ -17,6 +17,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.activity.compose.BackHandler
+import io.github.warleysr.dechainer.focus.Pomodoro
+import io.github.warleysr.dechainer.lock.LockEngine
 import io.github.warleysr.dechainer.focus.FocusRunner
 import io.github.warleysr.dechainer.screens.focus.FocusFlowPanel
 import io.github.warleysr.dechainer.screens.focus.flowAsksNow
@@ -40,12 +43,21 @@ class FocusFlowActivity : ComponentActivity() {
         FocusRunner.ensureLoaded(this)
         setContent {
             DechainerTheme {
+                // In a block or flow, Back does nothing: questions cannot be dismissed without answering
+                BackHandler(enabled = true) { }
                 val flow by FocusRunner.flow.collectAsState()
                 val current = flow
                 val showing = current != null && flowAsksNow(current.stage)
                 // Nothing left to ask (answered, answered from the notification, or timed out): close, and the
                 // Focus page under it shows the rest of the flow.
-                LaunchedEffect(showing) { if (!showing) finish() }
+                LaunchedEffect(showing) {
+                    if (!showing) {
+                        if (Pomodoro.brickActive() || LockEngine.brickRunning(this@FocusFlowActivity)) {
+                            LockEngine.reopenIfBrick(this@FocusFlowActivity)
+                        }
+                        finish()
+                    }
+                }
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Box(
                         modifier = Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()),

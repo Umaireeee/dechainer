@@ -244,8 +244,18 @@ object Pomodoro {
         )
     }
 
+    fun isLocked(context: Context? = null): Boolean {
+        if (_state.value.inBlock || _state.value.isRunning || _state.value.isPaused || brickActive() || sessionLockActive()) return true
+        if (context != null && LockEngine.brickRunning(context)) return true
+        return false
+    }
+
     fun updateSettings(context: Context, new: PomodoroSettings) {
         ensureLoaded(context)
+        if (isLocked(context)) {
+            Timber.w("Refusing updateSettings: pomodoro session or brick is active")
+            return
+        }
         val s = new.clamped()
         synchronized(lock) {
             _settings.value = s
@@ -265,6 +275,10 @@ object Pomodoro {
 
     fun toggleAllowedApp(context: Context, pkg: String) {
         ensureLoaded(context)
+        if (isLocked(context)) {
+            Timber.w("Refusing toggleAllowedApp: pomodoro session or brick is active")
+            return
+        }
         synchronized(lock) {
             _allowed.value = if (pkg in _allowed.value) _allowed.value - pkg else _allowed.value + pkg
             prefs(context).edit { putStringSet(K_ALLOWED, _allowed.value) }

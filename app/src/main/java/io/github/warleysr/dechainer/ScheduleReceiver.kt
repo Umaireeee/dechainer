@@ -28,9 +28,12 @@ class ScheduleReceiver : BroadcastReceiver() {
                     intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
                 Pomodoro.rearm(ctx)
                 LockEngine.sync(ctx)
-                // The pin does not survive a reboot or an update: if any brick runs, open Déchaîner so
-                // it pins again. Only then; on any other wake-up it would drag you out of an allowed app.
-                if (fresh) LockEngine.reopenIfBrick(ctx)
+                // The pin does not survive a reboot or an update, or when a scheduled brick starts:
+                // if any brick runs and the device is unpinned, open Déchaîner so it pins again.
+                // When already pinned, do not reopen so a user in an allowed app is not dragged away.
+                if (fresh || (LockEngine.brickRunning(ctx) && !LockEngine.isPinned(ctx))) {
+                    LockEngine.reopenIfBrick(ctx)
+                }
             } finally {
                 pending.finish()
             }

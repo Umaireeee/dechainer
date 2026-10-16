@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.lock
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
@@ -152,6 +153,9 @@ object LockEngine {
             ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
             SystemGuard.apply(ctx)
             DnsGuard.enforce(ctx)
+            if (plan.brick && !isPinned(ctx)) {
+                reopenIfBrick(ctx)
+            }
         } finally {
             inPass.set(false)
         }
@@ -282,9 +286,15 @@ object LockEngine {
         return decision
     }
 
+    /** True when an activity is running in Lock Task mode (pinned or locked). */
+    fun isPinned(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        return am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+    }
+
     /**
-     * After a reboot or an update the pin is gone: if any brick is running, open this app, which pins
-     * itself again. Suspension holds meanwhile (it is the layer under the pin).
+     * After a reboot, an update, or when a scheduled brick starts, the pin is gone: if any brick is
+     * running, open this app, which pins itself again. Suspension holds meanwhile (it is the layer under the pin).
      */
     fun reopenIfBrick(context: Context) {
         val ctx = context.applicationContext

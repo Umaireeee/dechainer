@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import io.github.warleysr.dechainer.focus.Pomodoro
 import io.github.warleysr.dechainer.lock.LockEngine
 import android.os.UserManager
 import androidx.compose.runtime.getValue
@@ -154,7 +155,7 @@ class SchedulesViewModel : ViewModel() {
         val current = draft ?: return SaveResult.OK
         // Re-read the stored copy: the window may have opened while the editor was on screen.
         val stored = ScheduleRepository.getSchedule(context, current.id)
-        if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
+        if (stored != null && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (current.days.isEmpty()) return SaveResult.NO_DAYS
         if (current.isFocus) {
             // A focus entry holds nothing itself: when its window opens a focus block starts, and a block is
@@ -194,7 +195,7 @@ class SchedulesViewModel : ViewModel() {
     fun deleteDraft(): SaveResult {
         val current = draft ?: return SaveResult.OK
         val stored = ScheduleRepository.getSchedule(context, current.id)
-        if (stored != null && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
+        if (stored != null && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (!ScheduleRepository.delete(context, current.id)) return SaveResult.NOT_SAVED
         draft = null
         applyAndRefresh()
@@ -209,7 +210,7 @@ class SchedulesViewModel : ViewModel() {
 
     fun setEnabled(schedule: BlockSchedule, enabled: Boolean): SaveResult {
         val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.OK
-        if (!enabled && ScheduleRepository.isLockedNow(stored)) return SaveResult.LOCKED
+        if (!enabled && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (enabled && stored.lockWhileActive) {
             val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
             if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME

@@ -143,6 +143,15 @@ fun FocusScreen(onOpenLog: () -> Unit) {
     var showSettings by remember { mutableStateOf(false) }
     var confirmStop by remember { mutableStateOf(false) }
 
+    val isLocked = state.inBlock || Pomodoro.brickActive() || Pomodoro.sessionLockActive() || flow != null || !state.isIdle
+    LaunchedEffect(isLocked) {
+        if (isLocked) {
+            showSettings = false
+            showAppPicker = false
+            showBlock = false
+        }
+    }
+
     // The phase's own planned length: a block may shorten its last session below the setting.
     val total = (state.plannedMinutes.takeIf { it > 0 } ?: settings.minutesFor(state.phase)) * 60_000L
     val remaining = state.remaining(now, settings)
@@ -160,7 +169,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = { showSettings = true }, enabled = state.isIdle) {
+            IconButton(onClick = { showSettings = true }, enabled = !isLocked) {
                 Icon(Icons.Outlined.Tune, contentDescription = stringResource(R.string.focus_settings))
             }
         }
@@ -357,7 +366,7 @@ fun FocusScreen(onOpenLog: () -> Unit) {
         FocusSettingsDialog(
             settings,
             allowedCount = allowedApps.size,
-            onPickApps = { showAppPicker = true },
+            onPickApps = { if (!isLocked) showAppPicker = true },
             onDismiss = { showSettings = false }
         ) {
             Pomodoro.updateSettings(context, it)

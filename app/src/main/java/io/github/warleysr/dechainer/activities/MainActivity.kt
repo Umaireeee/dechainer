@@ -178,6 +178,8 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         SecurityManager.consumeDebugAutoStartSession(this)
         SecurityManager.consumeDebugRestoreUnknownSourcesRestriction(this)
         enableEdgeToEdge(

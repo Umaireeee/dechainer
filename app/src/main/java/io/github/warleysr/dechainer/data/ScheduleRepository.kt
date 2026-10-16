@@ -55,9 +55,9 @@ object ScheduleRepository {
         list.removeAll { it.id == id }
     }
 
-    /** True while [schedule]'s window is open and it was set to lock itself during that time. */
+    /** True while [schedule]'s window is open and it was set to lock itself during that time, or while a focus window is open. */
     fun isLockedNow(schedule: BlockSchedule, now: LocalDateTime = LocalDateTime.now()): Boolean =
-        schedule.lockWhileActive && schedule.isActiveAt(now)
+        (schedule.lockWhileActive || schedule.isFocus) && schedule.isActiveAt(now)
 }
 
 /** What was read from storage: the schedules that parsed, and the rows that did not, kept as they were. */
