@@ -109,6 +109,7 @@ class PomodoroEndActivity : ComponentActivity() {
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(32.dp))
+                        var answered by remember { mutableStateOf(false) }
                         fun safeFinish() {
                             if (Pomodoro.brickActive() || LockEngine.brickRunning(this@PomodoroEndActivity)) {
                                 LockEngine.reopenIfBrick(this@PomodoroEndActivity)
