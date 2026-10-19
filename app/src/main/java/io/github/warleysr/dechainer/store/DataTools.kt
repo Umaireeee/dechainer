@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import io.github.warleysr.dechainer.urge.UrgeEntry
 import io.github.warleysr.dechainer.urge.UrgeSource
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,9 +32,13 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
     private val focus = Store.focus(ctx)
 
     fun deleteUrge(id: Long): DeleteResult {
-        urges.get(id) ?: return DeleteResult.MISSING
+        val entry = urges.get(id) ?: return DeleteResult.MISSING
+        // An urge whose lock is still running is not finished: deleting it would drop the row the lock writes into.
+        if (running(entry, now())) return DeleteResult.NOT_ALLOWED
         return if (urges.delete(id)) DeleteResult.DELETED else DeleteResult.MISSING
     }
+
+    private fun running(entry: UrgeEntry, at: Long): Boolean = entry.lockEndedAt?.let { it > at } ?: false
 
     fun deleteSession(id: Long): DeleteResult {
         val s = focus.session(id) ?: return DeleteResult.MISSING
@@ -50,7 +55,10 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
         val db = Store.raw(ctx).writableDatabase
         db.beginTransaction()
         try {
-            urges.all().forEach { e -> if (urges.delete(e.id)) removed++ else kept++ }
+            val at = now()
+            urges.all().forEach { e ->
+                if (!running(e, at) && urges.delete(e.id)) removed++ else kept++
+            }
             focus.sessions().forEach { s ->
                 if (s.endedAt != null) { focus.delete(s.id); removed++ } else kept++
             }
@@ -113,10 +121,13 @@ class DataTools(private val ctx: Context, private val now: () -> Long) {
                 }); newSessions += id; added++
             }
             for (r in rows("focus_checkin")) {
-                if (r.optLong("session_id", -1) !in newSessions) { skipped++; continue }
+                // Only values this build reads back: an unknown answer is added but then skipped on every read.
+                val answer = runCatching { io.github.warleysr.dechainer.focus.CheckinAnswer.valueOf(r.optString("answer")) }.getOrNull()
+                val reset = runCatching { io.github.warleysr.dechainer.focus.ResetResult.valueOf(r.optString("reset_result", "NONE")) }.getOrNull()
+                if (r.optLong("session_id", -1) !in newSessions || answer == null || reset == null) { skipped++; continue }
                 db.insertOrThrow("focus_checkin", null, ContentValues().apply {
                     put("session_id", r.getLong("session_id")); put("at", r.getLong("at"))
-                    put("answer", r.optString("answer")); put("reset_result", r.optString("reset_result", "NONE"))
+                    put("answer", answer.name); put("reset_result", reset.name)
                 }); added++
             }
 

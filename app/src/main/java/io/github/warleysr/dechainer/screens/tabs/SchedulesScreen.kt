@@ -361,6 +361,7 @@ fun ScheduleEditorScreen(
     val scope = rememberCoroutineScope()
     val lockedMsg = stringResource(R.string.schedule_locked_message)
     val noDaysMsg = stringResource(R.string.schedule_error_no_days)
+    val noNameMsg = stringResource(R.string.schedule_error_no_name)
     val nothingMsg = stringResource(R.string.schedule_error_nothing)
     val noFreeTimeMsg = stringResource(R.string.schedule_error_no_free_time)
     val notSavedMsg = stringResource(R.string.schedule_error_not_saved)
@@ -384,6 +385,7 @@ fun ScheduleEditorScreen(
             }
             SchedulesViewModel.SaveResult.LOCKED -> scope.launch { snackbarHostState.showSnackbar(lockedMsg) }
             SchedulesViewModel.SaveResult.NO_DAYS -> scope.launch { snackbarHostState.showSnackbar(noDaysMsg) }
+            SchedulesViewModel.SaveResult.NO_NAME -> scope.launch { snackbarHostState.showSnackbar(noNameMsg) }
             SchedulesViewModel.SaveResult.NOTHING_TO_BLOCK ->
                 scope.launch { snackbarHostState.showSnackbar(nothingMsg) }
             SchedulesViewModel.SaveResult.NO_FREE_TIME ->

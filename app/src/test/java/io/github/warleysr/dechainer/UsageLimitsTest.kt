@@ -20,6 +20,27 @@ class UsageLimitsTest {
     }
 
     @Test
+    fun anAppStillInFrontAtMidnightCountsFromMidnight() {
+        // Resumed 40 minutes before the day began, still in front 10 minutes after it.
+        val dayStart = 100 * min
+        val ev = listOf(e(UsageMath.RESUMED, "a", "A1", dayStart - 40 * min))
+        val all = UsageMath.foregroundMillisAll(ev, setOf("a"), dayStart + 10 * min, from = dayStart)
+        assertEquals(10 * min, all["a"])
+    }
+
+    @Test
+    fun timeBeforeTheDayStartIsNotCounted() {
+        val dayStart = 100 * min
+        val ev = listOf(
+            e(UsageMath.RESUMED, "a", "A1", dayStart - 30 * min), e(UsageMath.PAUSED, "a", "A1", dayStart + 5 * min)
+        )
+        assertEquals(5 * min, fg2(ev, "a", dayStart + 20 * min, dayStart))
+    }
+
+    private fun fg2(ev: List<UsageEvt>, pkg: String, now: Long, from: Long) =
+        UsageMath.foregroundMillisAll(ev, setOf(pkg), now, from = from).getValue(pkg)
+
+    @Test
     fun otherAppsDontCount() {
         val ev = listOf(
             e(UsageMath.RESUMED, "a", "A1", 0), e(UsageMath.PAUSED, "a", "A1", 10_000),

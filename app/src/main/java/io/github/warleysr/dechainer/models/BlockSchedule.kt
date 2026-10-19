@@ -8,6 +8,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.Locale
 
 /**
  * What a timetable entry does when its window opens (blueprint D12, 6.3). [BLOCK] is the original
@@ -176,6 +177,6 @@ data class BlockSchedule(
             return host.takeIf { it.isNotEmpty() && it.contains('.') && !it.contains(' ') }
         }
 
-        fun formatMinute(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
+        fun formatMinute(minute: Int): String = String.format(Locale.ROOT, "%02d:%02d", minute / 60, minute % 60)
     }
 }

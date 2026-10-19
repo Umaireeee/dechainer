@@ -230,7 +230,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 // A brick shows its own screen, whatever was open before it started.
-                val route = if (lockedHome != null) Route.HOME else navViewModel.current()
+                val route = if (brick || lockedHome != null) Route.HOME else navViewModel.current()
                 val recoverySet = SecurityManager.isRecoveryCodeSet(this@MainActivity)
 
                 BackHandler(enabled = route != Route.HOME) {

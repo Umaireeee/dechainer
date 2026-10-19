@@ -2,10 +2,12 @@ package io.github.warleysr.dechainer.data
 
 import android.content.Context
 import androidx.core.content.edit
+import io.github.warleysr.dechainer.clock.TrustedClock
 import io.github.warleysr.dechainer.models.BlockSchedule
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
+import java.time.Instant
 import java.time.LocalDateTime
 
 /**
@@ -55,9 +57,14 @@ object ScheduleRepository {
         list.removeAll { it.id == id }
     }
 
-    /** True while [schedule]'s window is open and it was set to lock itself during that time, or while a focus window is open. */
-    fun isLockedNow(schedule: BlockSchedule, now: LocalDateTime = LocalDateTime.now()): Boolean =
-        (schedule.lockWhileActive || schedule.isFocus) && schedule.isActiveAt(now)
+    /**
+     * True while [schedule]'s window is open and it was set to lock itself during that time, or while a focus
+     * window is open. Reads the trusted clock, so setting the phone's clock back cannot open an edit window.
+     */
+    fun isLockedNow(context: Context, schedule: BlockSchedule): Boolean {
+        val now = Instant.ofEpochMilli(TrustedClock.now(context)).atZone(TrustedClock.zone()).toLocalDateTime()
+        return (schedule.lockWhileActive || schedule.isFocus) && schedule.isActiveAt(now)
+    }
 }
 
 /** What was read from storage: the schedules that parsed, and the rows that did not, kept as they were. */

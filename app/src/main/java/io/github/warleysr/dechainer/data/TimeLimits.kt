@@ -32,6 +32,7 @@ object TimeLimits {
     private const val PREFS = "app_time_limits"
     private const val RC_CHECK = 31
     private const val MAX_MINUTES = 720
+    private const val DAY_MS = 24L * 60 * 60 * 1000
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -57,7 +58,11 @@ object TimeLimits {
     }
 
     /** Milliseconds of foreground time today per package, from one read of the usage log. */
-    fun usedToday(ctx: Context, pkgs: Set<String>, now: Long = System.currentTimeMillis()): Map<String, Long> {
+    fun usedToday(ctx: Context, pkgs: Set<String>, now: Long = System.currentTimeMillis()): Map<String, Long> =
+        readUsage(ctx, pkgs, now) ?: emptyMap()
+
+    /** Like [usedToday], but null when the log could not be read: a failed read is not "no time used". */
+    private fun readUsage(ctx: Context, pkgs: Set<String>, now: Long): Map<String, Long>? {
         if (pkgs.isEmpty() || !hasUsageAccess(ctx)) return emptyMap()
         // The day starts at local midnight on the time the caller measures with (the trusted clock), not the system clock.
         val zone = ZoneId.systemDefault()
@@ -65,7 +70,9 @@ object TimeLimits {
         val events = ArrayList<UsageEvt>()
         try {
             val usm = ctx.getSystemService(UsageStatsManager::class.java)
-            val it = usm.queryEvents(startOfDay, now)
+            // Read from the day before, so an app resumed before midnight and still in front is in the log;
+            // UsageMath clips its time to startOfDay.
+            val it = usm.queryEvents(startOfDay - DAY_MS, now)
             val e = UsageEvents.Event()
             while (it.hasNextEvent()) {
                 it.getNextEvent(e)
@@ -76,9 +83,9 @@ object TimeLimits {
             }
         } catch (ex: Exception) {
             Timber.w(ex, "Usage log not readable")
-            return emptyMap()
+            return null
         }
-        return UsageMath.foregroundMillisAll(events, pkgs, now)
+        return UsageMath.foregroundMillisAll(events, pkgs, now, from = startOfDay)
     }
 
     fun midnightMillis(now: Long): Long {
@@ -106,7 +113,10 @@ object TimeLimits {
             return Status(carried, if (carried.isNotEmpty()) untilMidnight.coerceAtLeast(LimitMath.MIN_DELAY_MS) else null)
         }
         // Measured, the log is the truth: a limit raised with the recovery code gives its time back.
-        val used = usedToday(ctx, limits.keys, now)
+        val used = readUsage(ctx, limits.keys, now)
+        // The log could not be read this pass: keep what is already known for today. Writing "nothing used" here
+        // would release every app that is out of time, and the stored record would forget it.
+            ?: return Status(carried, LimitMath.MIN_DELAY_MS)
         val reached = LimitMath.reached(limits, used)
         if (reached != carried || record.getString(KEY_REACHED_DAY, null) != today) {
             record.edit(commit = true) {

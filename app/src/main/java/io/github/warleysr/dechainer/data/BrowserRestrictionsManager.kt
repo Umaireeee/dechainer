@@ -78,7 +78,12 @@ class BrowserRestrictionsManager(private val context: Context) {
                     allSites.add(sitesArray.getString(j))
                 }
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) {
+            // A list that does not parse must not be pushed as a partial policy: that would drop the owner's
+            // permanent sites from every browser. Keep the policy already on the browsers.
+            e.printStackTrace()
+            return
+        }
         allSites.addAll(scheduledSites)
         prefs.edit {
             putBoolean(KEY_SCHEDULED_APPLIED, scheduledSites.isNotEmpty())

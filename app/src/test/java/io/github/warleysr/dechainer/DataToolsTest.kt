@@ -67,6 +67,17 @@ class DataToolsTest {
         assertEquals(DeleteResult.MISSING, tools().deleteUrge(id))
     }
 
+    @Test fun aRunningUrgeIsNotDeletedAndSurvivesTheWipe() {
+        val at = now
+        val running = Store.urgeEntries(ctx).insert(UrgeSource.TILE, at, at, at + 10 * 60_000L)
+        assertEquals(DeleteResult.NOT_ALLOWED, tools().deleteUrge(running))
+        assertNotNull(Store.urgeEntries(ctx).get(running))
+
+        val r = tools().wipeAll()
+        assertNotNull(Store.urgeEntries(ctx).get(running))
+        assertEquals(1, r.kept)
+    }
+
     @Test fun aCompletedSessionCanBeDeleted() {
         val id = session(ms(10, 20, 9))
         assertEquals(DeleteResult.DELETED, tools().deleteSession(id))

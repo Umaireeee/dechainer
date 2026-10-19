@@ -21,6 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.ui.theme.CalmCard
@@ -38,6 +41,16 @@ fun RestrictionsTab(
     navViewModel: NavigationViewModel = viewModel()
 ) {
     val recoveryGate = rememberRecoveryGate()
+    // The view model outlives this tab, and a schedule can set or lift a restriction while it is away. Re-read on
+    // every return, so a box is never shown stale (and never counted as switched on by hand when it was not).
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) restrictionsViewModel.loadRestrictions()
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
 
     if (!deviceOwnerViewModel.isDeviceOwner()) {
         NoDeviceOwnerPrivileges(navViewModel)

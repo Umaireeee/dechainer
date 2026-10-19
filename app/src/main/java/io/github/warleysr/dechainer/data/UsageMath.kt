@@ -16,17 +16,22 @@ object UsageMath {
     const val SHUTDOWN = 26
     const val STARTUP = 27
 
-    /** Foreground milliseconds of each of [pkgs] across [events], counting an app still in front until [now]. */
-    fun foregroundMillisAll(events: List<UsageEvt>, pkgs: Set<String>, now: Long): Map<String, Long> {
+    /**
+     * Foreground milliseconds of each of [pkgs] across [events], counting an app still in front until [now].
+     * Only time at or after [from] counts, so an app already in front when the day began is counted from
+     * the day's start, not from when it was resumed.
+     */
+    fun foregroundMillisAll(events: List<UsageEvt>, pkgs: Set<String>, now: Long, from: Long = 0L): Map<String, Long> {
         val sorted = events.sortedBy { it.time }
-        return pkgs.associateWith { sum(sorted, it, now) }
+        return pkgs.associateWith { sum(sorted, it, now, from) }
     }
 
-    private fun sum(sorted: List<UsageEvt>, pkg: String, now: Long): Long {
+    private fun sum(sorted: List<UsageEvt>, pkg: String, now: Long, from: Long): Long {
         var total = 0L
         val open = HashMap<String, Long>()   // activity class -> when it came to the front
+        fun span(start: Long, end: Long): Long = (end - maxOf(start, from)).coerceAtLeast(0L)
         fun closeAll(at: Long) {
-            open.values.forEach { total += (at - it).coerceAtLeast(0L) }
+            open.values.forEach { total += span(it, at) }
             open.clear()
         }
         for (e in sorted) {
@@ -34,11 +39,11 @@ object UsageMath {
                 SCREEN_OFF, SHUTDOWN, STARTUP -> closeAll(e.time)
                 RESUMED -> if (e.pkg == pkg) open.putIfAbsent(e.cls, e.time)
                 PAUSED, STOPPED -> if (e.pkg == pkg) {
-                    open.remove(e.cls)?.let { total += (e.time - it).coerceAtLeast(0L) }
+                    open.remove(e.cls)?.let { total += span(it, e.time) }
                 }
             }
         }
-        open.values.forEach { total += (now - it).coerceAtLeast(0L) }
+        open.values.forEach { total += span(it, now) }
         return total
     }
 }

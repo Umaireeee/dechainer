@@ -19,8 +19,13 @@ object LockStateStore {
     @Volatile private var lastUrge = UrgeInput()
 
     fun urge(context: Context): UrgeInput = try {
-        val ends = Store.appState(context).getLong(AppStateKeys.URGE_LOCK_ENDS) ?: 0L
-        UrgeInput(ends).also { lastUrge = it }
+        val raw = Store.appState(context).get(AppStateKeys.URGE_LOCK_ENDS)
+        when {
+            raw == null -> UrgeInput().also { lastUrge = it }
+            // A value that does not parse is not "no lock": keep the last known one instead of releasing it.
+            else -> raw.toLongOrNull()?.let { UrgeInput(it).also { input -> lastUrge = input } }
+                ?: run { Timber.w("Urge lock end is not a number; using the last known"); lastUrge }
+        }
     } catch (e: Exception) {
         Timber.w(e, "Urge lock not readable; using the last known")
         lastUrge

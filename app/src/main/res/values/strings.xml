@@ -205,6 +205,7 @@
     <string name="schedule_delete_confirm">Delete this schedule? Everything it is currently blocking will be released.</string>
     <string name="schedule_save">Save</string>
     <string name="schedule_error_no_days">Select at least one day</string>
+    <string name="schedule_error_no_name">Give the schedule a name</string>
     <string name="schedule_error_nothing">Select at least one app, service or website</string>
     <string name="removal_needs_code">Set a recovery code first. Device Owner can\'t be removed without one, except through Forced removal.</string>
     <string name="schedule_locked_blocks_removal">A locked schedule or a brick (focus block or blackout) is running. Device Owner can only be removed after it ends, or through Forced removal.</string>

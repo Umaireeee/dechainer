@@ -202,7 +202,10 @@ object ScheduleEnforcer : AppBlockEngine() {
         try {
             BrowserRestrictionsManager(ctx).applyRestrictions()
         } catch (e: Exception) {
+            // Put the old set back, so the next pass sees a difference and pushes again instead of
+            // treating a failed push as done.
             Timber.w(e, "Schedule: could not update browser blocklist")
+            prefs.edit(commit = true) { putStringSet(KEY_ACTIVE_SITES, previous) }
         }
     }
 
@@ -224,7 +227,7 @@ object ScheduleEnforcer : AppBlockEngine() {
 
     /** True while any schedule is inside a window it was told to lock. */
     fun isAnyScheduleLocked(context: Context): Boolean =
-        ScheduleRepository.getSchedules(context).any { ScheduleRepository.isLockedNow(it) }
+        ScheduleRepository.getSchedules(context).any { ScheduleRepository.isLockedNow(context, it) }
 
     /**
      * Gives up ownership of restrictions the person has just switched on by hand, without lifting

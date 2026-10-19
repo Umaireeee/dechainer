@@ -58,15 +58,21 @@ object TrustedClock {
         var toWrite: ClockCheckpoint? = null
         synchronized(lock) {
             if (!loaded) {
-                checkpoint = load(context)
-                lastSavedTrustedMs = checkpoint?.trustedMs ?: Long.MIN_VALUE
-                loaded = true
+                try {
+                    checkpoint = load(context)
+                    lastSavedTrustedMs = checkpoint?.trustedMs ?: Long.MIN_VALUE
+                    loaded = true
+                } catch (e: Exception) {
+                    // Not loaded: this reading runs from the wall time and nothing is written, so a failed read
+                    // cannot overwrite the stored high-water mark. The next read tries the load again.
+                    Timber.w(e, "Clock checkpoint not readable; starting from the wall time")
+                }
             }
             reading = TrustedClockMath.read(wall, elapsed, boot, checkpoint)
             checkpoint = reading.checkpoint
-            val due = writeNow || reading.wallDistrusted || boot != lastWrittenBoot ||
+            val due = loaded && (writeNow || reading.wallDistrusted || boot != lastWrittenBoot ||
                 lastWriteElapsed == Long.MIN_VALUE ||
-                elapsed - lastWriteElapsed >= Rules.CLOCK_CHECKPOINT_INTERVAL_MS
+                elapsed - lastWriteElapsed >= Rules.CLOCK_CHECKPOINT_INTERVAL_MS)
             if (due) {
                 toWrite = reading.checkpoint
                 lastWriteElapsed = elapsed
@@ -78,16 +84,14 @@ object TrustedClock {
         return reading.trustedMs
     }
 
-    private fun load(context: Context): ClockCheckpoint? = try {
+    /** Throws when the store cannot be read, so the caller can tell "no checkpoint" from "not read". */
+    private fun load(context: Context): ClockCheckpoint? {
         val state = Store.appState(context)
         val trusted = state.getLong(AppStateKeys.LAST_SEEN_WALL)
         val elapsed = state.getLong(AppStateKeys.LAST_SEEN_ELAPSED)
         val boot = state.getInt(AppStateKeys.LAST_SEEN_BOOT)
         // All three or nothing: a partial record cannot be built on.
-        if (trusted != null && elapsed != null && boot != null) ClockCheckpoint(trusted, elapsed, boot) else null
-    } catch (e: Exception) {
-        Timber.w(e, "Clock checkpoint not readable; starting from the wall time")
-        null
+        return if (trusted != null && elapsed != null && boot != null) ClockCheckpoint(trusted, elapsed, boot) else null
     }
 
     private fun save(context: Context, cp: ClockCheckpoint) {

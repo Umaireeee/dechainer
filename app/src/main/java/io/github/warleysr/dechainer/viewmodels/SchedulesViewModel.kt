@@ -28,7 +28,7 @@ import java.util.UUID
 class SchedulesViewModel : ViewModel() {
     private val context = DechainerApplication.getInstance()
 
-    enum class SaveResult { OK, LOCKED, NO_DAYS, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED, FOCUS_TOO_SHORT, FOCUS_TOO_LONG }
+    enum class SaveResult { OK, LOCKED, NO_DAYS, NO_NAME, NOTHING_TO_BLOCK, NO_FREE_TIME, NEEDS_CONFIRMATION, NOT_SAVED, FOCUS_TOO_SHORT, FOCUS_TOO_LONG }
 
     var schedules by mutableStateOf(ScheduleRepository.getSchedules(context))
         private set
@@ -155,8 +155,9 @@ class SchedulesViewModel : ViewModel() {
         val current = draft ?: return SaveResult.OK
         // Re-read the stored copy: the window may have opened while the editor was on screen.
         val stored = ScheduleRepository.getSchedule(context, current.id)
-        if (stored != null && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
+        if (stored != null && (ScheduleRepository.isLockedNow(context, stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (current.days.isEmpty()) return SaveResult.NO_DAYS
+        if (current.name.isBlank()) return SaveResult.NO_NAME
         if (current.isFocus) {
             // A focus entry holds nothing itself: when its window opens a focus block starts, and a block is
             // 10 minutes to 8 hours (blueprint 5.2). It has no lock of its own to guard against lock-out.
@@ -195,7 +196,7 @@ class SchedulesViewModel : ViewModel() {
     fun deleteDraft(): SaveResult {
         val current = draft ?: return SaveResult.OK
         val stored = ScheduleRepository.getSchedule(context, current.id)
-        if (stored != null && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
+        if (stored != null && (ScheduleRepository.isLockedNow(context, stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (!ScheduleRepository.delete(context, current.id)) return SaveResult.NOT_SAVED
         draft = null
         applyAndRefresh()
@@ -210,7 +211,7 @@ class SchedulesViewModel : ViewModel() {
 
     fun setEnabled(schedule: BlockSchedule, enabled: Boolean): SaveResult {
         val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.OK
-        if (!enabled && (ScheduleRepository.isLockedNow(stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
+        if (!enabled && (ScheduleRepository.isLockedNow(context, stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
         if (enabled && stored.lockWhileActive) {
             val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
             if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME

@@ -25,7 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,8 +62,9 @@ class PomodoroEndActivity : ComponentActivity() {
         val id = intent.getLongExtra(Pomodoro.EXTRA_SESSION_ID, 0L).takeIf { it > 0L }
             ?: Pomodoro.pendingQuestion.value
         val session = id?.let { Pomodoro.session(it) }
-        // Already answered (from the notification, say) or nothing to ask: nothing to show.
-        if (session == null || session.done != null) {
+        // Already answered (from the notification, say) or nothing to ask: nothing to show. A rotation after
+        // this screen's own answer keeps the page up, so the "start break" offer is not lost.
+        if (session == null || (session.done != null && savedInstanceState == null)) {
             finish()
             return
         }
@@ -109,7 +110,7 @@ class PomodoroEndActivity : ComponentActivity() {
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(32.dp))
-                        var answered by remember { mutableStateOf(false) }
+                        var answered by rememberSaveable { mutableStateOf(false) }
                         fun safeFinish() {
                             if (Pomodoro.brickActive() || LockEngine.brickRunning(this@PomodoroEndActivity)) {
                                 LockEngine.reopenIfBrick(this@PomodoroEndActivity)

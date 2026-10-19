@@ -286,12 +286,13 @@ object FocusRunner {
     }
 
     private fun publishAndApply(ctx: Context, previous: FlowState?, step: FlowStep) {
-        apply(ctx, step.state, step.effects)
-        // A question is cleared the moment the flow leaves the stage that asked it.
+        // A question is cleared the moment the flow leaves the stage that asked it. This runs before
+        // apply, so a question the same step posts (CHECKIN straight to FINAL_ASK) is not cleared after it.
         val asking = setOf(FlowStage.PROMPT, FlowStage.CHECKIN, FlowStage.FINAL_ASK)
         if (previous != null && previous.stage in asking && step.state.stage != previous.stage) {
             Pomodoro.cancelFlowQuestion(ctx)
         }
+        apply(ctx, step.state, step.effects)
         LockEngine.requestSync(ctx)
     }
 
