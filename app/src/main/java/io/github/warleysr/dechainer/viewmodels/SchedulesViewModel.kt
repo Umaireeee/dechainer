@@ -93,7 +93,7 @@ class SchedulesViewModel : ViewModel() {
 
     fun appName(pkg: String): String = apps.firstOrNull { it.packageName == pkg }?.name ?: pkg
 
-    fun isLocked(schedule: BlockSchedule): Boolean = ScheduleRepository.isLockedNow(schedule)
+    fun isLocked(schedule: BlockSchedule): Boolean = ScheduleRepository.isLockedNow(context, schedule)
 
     // --- Editor ---
 
@@ -163,6 +163,11 @@ class SchedulesViewModel : ViewModel() {
             // 10 minutes to 8 hours (blueprint 5.2). It has no lock of its own to guard against lock-out.
             val check = FocusTimetable.checkWindow(current.windowMinutes)
             if (check != null) return if (check < 0) SaveResult.FOCUS_TOO_SHORT else SaveResult.FOCUS_TOO_LONG
+            // A focus window locks the phone too, so it must leave the same free time as a locked schedule.
+            if (current.enabled) {
+                val others = ScheduleRepository.getSchedules(context).filter { it.id != current.id }
+                if (!LockSafety.leavesEnoughFreeTime(others + current)) return SaveResult.NO_FREE_TIME
+            }
             if (!ScheduleRepository.upsert(context, current.cleanedForFocus())) return SaveResult.NOT_SAVED
             draft = null
             applyAndRefresh()
@@ -210,9 +215,10 @@ class SchedulesViewModel : ViewModel() {
     // --- List actions ---
 
     fun setEnabled(schedule: BlockSchedule, enabled: Boolean): SaveResult {
-        val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.OK
+        // Gone since the list was shown: say so, rather than report a change that did not happen.
+        val stored = ScheduleRepository.getSchedule(context, schedule.id) ?: return SaveResult.NOT_SAVED
         if (!enabled && (ScheduleRepository.isLockedNow(context, stored) || LockEngine.brickRunning(context) || Pomodoro.brickActive())) return SaveResult.LOCKED
-        if (enabled && stored.lockWhileActive) {
+        if (enabled && (stored.lockWhileActive || stored.isFocus)) {
             val others = ScheduleRepository.getSchedules(context).filter { it.id != stored.id }
             if (!LockSafety.leavesEnoughFreeTime(others + stored.copy(enabled = true))) return SaveResult.NO_FREE_TIME
         }

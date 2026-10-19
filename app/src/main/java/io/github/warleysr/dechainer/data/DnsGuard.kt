@@ -34,6 +34,9 @@ object DnsGuard {
     // take seconds, and restores must never overlap or run on the main thread.
     private val worker = Executors.newSingleThreadExecutor()
 
+    /** Held while the pinned provider is read and restored, and while it is forgotten. */
+    private val restoreLock = Any()
+
     @Volatile
     private var observing = false
 
@@ -47,8 +50,11 @@ object DnsGuard {
         prefs(context).edit(commit = true) { putString(KEY_PINNED_HOST, host) }
     }
 
-    /** Drops the pinned provider, so the guard stops restoring it. Used when filtering is turned off. */
-    fun forget(context: Context) {
+    /**
+     * Drops the pinned provider, so the guard stops restoring it. Used when filtering is turned off. Waits for a
+     * restore already under way, so that restore cannot put the filter back after this has turned it off.
+     */
+    fun forget(context: Context) = synchronized(restoreLock) {
         prefs(context).edit(commit = true) { remove(KEY_PINNED_HOST) }
     }
 
@@ -71,16 +77,20 @@ object DnsGuard {
         val ctx = context.applicationContext
         worker.execute {
             try {
-                val pinned = pinnedHost(ctx) ?: return@execute
-                if (!needsRestore(pinned, currentHost())) return@execute
-                // Enforcement, not a change of setting: the pinned provider goes back at once.
-                val result = DeviceOwnerRepository.restorePrivateDns(pinned)
-                if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                    Timber.i("DNS filter restored to %s", pinned)
-                    // The browser policy depends on a DNS filter being set, so refresh it too.
-                    BrowserRestrictionsManager(ctx).applyRestrictions()
-                } else {
-                    Timber.w("DNS filter %s could not be restored (result %d)", pinned, result)
+                synchronized(restoreLock) {
+                    // Read and restore under the same lock as forget(): a forget that lands after the read is then
+                    // waited for, and one that lands before it leaves nothing pinned to restore.
+                    val pinned = pinnedHost(ctx) ?: return@synchronized
+                    if (!needsRestore(pinned, currentHost())) return@synchronized
+                    // Enforcement, not a change of setting: the pinned provider goes back at once.
+                    val result = DeviceOwnerRepository.restorePrivateDns(pinned)
+                    if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                        Timber.i("DNS filter restored to %s", pinned)
+                        // The browser policy depends on a DNS filter being set, so refresh it too.
+                        BrowserRestrictionsManager(ctx).applyRestrictions()
+                    } else {
+                        Timber.w("DNS filter %s could not be restored (result %d)", pinned, result)
+                    }
                 }
             } catch (e: Exception) {
                 Timber.w(e, "DNS guard failed")

@@ -9,6 +9,21 @@ import io.github.warleysr.dechainer.lock.LockEngine
 class PomodoroReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ctx = context.applicationContext
+        // The work (database and alarm writes) runs on the thread goAsync gives, not on the main thread.
+        val pending = goAsync()
+        Thread {
+            try {
+                dispatch(ctx, intent)
+                // Every receiver is a wake-up (blueprint 5.4): the lock is recomputed from stored data, so
+                // an alarm that arrives late or twice can never leave a stale brick behind.
+                LockEngine.sync(ctx)
+            } finally {
+                pending.finish()
+            }
+        }.start()
+    }
+
+    private fun dispatch(ctx: Context, intent: Intent) {
         when (intent.action) {
             Pomodoro.ACTION_PHASE_END -> Pomodoro.onPhaseAlarm(ctx)
             Pomodoro.ACTION_ANSWER -> {
@@ -29,15 +44,5 @@ class PomodoroReceiver : BroadcastReceiver() {
             }
             Pomodoro.ACTION_STOP_ALARM -> Pomodoro.dismissAlarm(ctx)
         }
-        // Every receiver is a wake-up (blueprint 5.4): the lock is recomputed from stored data, so
-        // an alarm that arrives late or twice can never leave a stale brick behind.
-        val pending = goAsync()
-        Thread {
-            try {
-                LockEngine.sync(ctx)
-            } finally {
-                pending.finish()
-            }
-        }.start()
     }
 }

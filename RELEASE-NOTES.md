@@ -1,3 +1,22 @@
+## Déchaîner 2.3
+
+A bug-hunt release: no new features, but several ways a lock could end early or a limit could be missed are closed.
+
+- **Time limits at midnight:** an app already open at midnight now counts from midnight. Before, its time from before midnight was lost, so a late-night limit could be passed without ever being reached.
+- **Time limits when the usage log fails:** a failed read keeps what is already known for today. Before, it counted every limited app as unused and released it.
+- **Urge lock:** a damaged stored end time no longer ends a running lock. An urge that was killed mid-start is completed, not counted twice.
+- **Clock:** a failed read of the saved clock checkpoint no longer lets a lower time overwrite the saved one.
+- **Locked schedules:** editing, deleting or disabling a locked schedule now reads the trusted clock, so setting the phone's clock back cannot open a locked window. A focus window now leaves the same free time as a locked schedule.
+- **Schedules:** a schedule needs a name to be saved. A schedule that no longer exists is reported, not silently "saved". The time picker follows the phone's 12 or 24 hour setting.
+- **Focus:** a final check-in question is no longer cancelled right after it appears. A second answer to the same session is ignored. An overdue phase ends rather than pausing a second before its end. A rotation after answering keeps the "start break" offer.
+- **Lock planning:** when the lock state or the schedule list cannot be read, the phone keeps its current state until a read works, instead of releasing it. Aborting a brick releases each step on its own.
+- **Browsers:** an unreadable site list no longer replaces the browsers' policy. A scheduled-site change that fails is retried.
+- **Apps:** a reload no longer shows an app as free after you suspended it. A refused unlock says so.
+- **Your data:** a running urge cannot be deleted, and the wipe keeps it. Backup export is written only after it is built. Backup import refuses files over 20 MB and check-ins with unknown answers.
+- **Recovery codes:** new codes use a stronger key derivation. Codes you already have keep working.
+- **Screens:** the Protections tab reloads when you come back to it. A focus block shows the home screen at once. The shuffle keys on the recovery dialog are at least 48 dp. Symbols and labels moved into the strings file.
+- **Release build:** the release workflow checks for debug controls, removes the signing key on every exit, and checks the tag name before it cuts a release.
+
 ## Déchaîner 2.2
 
 - **The reports are gone** (your decision). No weekly, monthly or yearly reports, no progress graphs, no backup reminder and no Reports screen. The "Reports" notification channel is gone too. Your data tools stay under **Settings → Your data**: save a backup, read one back, delete single entries and sessions, or wipe (with the recovery code). Goal text can be deleted once its day has passed.

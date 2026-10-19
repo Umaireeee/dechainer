@@ -55,6 +55,7 @@ class FocusSessionRepository(private val database: DechainerDatabase) {
     /** The flavor and purpose became known (or fell back to their default). */
     fun updateChoice(id: Long, flavor: Flavor, purpose: String) {
         inTransaction { db ->
+            if (!readableSession(db, id)) return@inTransaction
             val values = ContentValues().apply { put("flavor", flavor.name); put("purpose", purpose) }
             db.update(SESSIONS, values, "id = ?", arrayOf(id.toString()))
         }
@@ -63,12 +64,22 @@ class FocusSessionRepository(private val database: DechainerDatabase) {
     /** Closes the session. Closing one twice keeps the first closing. */
     fun end(id: Long, endedAt: Long, outcome: SessionOutcome, focusedMinutes: Int) {
         inTransaction { db ->
+            if (!readableSession(db, id)) return@inTransaction
             val values = ContentValues().apply {
                 put("ended_at", endedAt); put("outcome", outcome.name); put("focused_minutes", focusedMinutes)
             }
             db.update(SESSIONS, values, "id = ? AND ended_at IS NULL", arrayOf(id.toString()))
         }
     }
+
+    /** A session whose stored enums this build cannot read is left untouched, as the reads leave it (blueprint 7). */
+    private fun readableSession(db: SQLiteDatabase, id: Long): Boolean =
+        db.query(SESSIONS, arrayOf("source", "flavor", "outcome"), "id = ?", arrayOf(id.toString()), null, null, null).use { c ->
+            c.moveToFirst() &&
+                FocusSource.entries.any { it.name == c.getString(0) } &&
+                Flavor.entries.any { it.name == c.getString(1) } &&
+                (c.isNull(2) || SessionOutcome.entries.any { it.name == c.getString(2) })
+        }
 
     fun addCheckin(sessionId: Long, at: Long, answer: CheckinAnswer, reset: ResetResult) {
         inTransaction { db ->

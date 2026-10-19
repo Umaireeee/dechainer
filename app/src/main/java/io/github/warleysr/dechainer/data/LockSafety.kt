@@ -38,7 +38,8 @@ object LockSafety {
     /** Longest stretch of the week (wrapping Sunday -> Monday) not covered by any locked window. */
     fun longestUnlockedGapMinutes(schedules: List<BlockSchedule>): Int {
         val locked = BooleanArray(WEEK_MINUTES)
-        schedules.filter { it.enabled && it.lockWhileActive }.forEach { schedule ->
+        // A focus window locks the phone while it runs, so it takes up free time the same way.
+        schedules.filter { it.enabled && (it.lockWhileActive || it.isFocus) }.forEach { schedule ->
             schedule.days.forEach { day ->
                 val windowStart = (day.value - 1) * 1440 + schedule.startMinute
                 for (m in 0 until schedule.windowMinutes) locked[(windowStart + m) % WEEK_MINUTES] = true

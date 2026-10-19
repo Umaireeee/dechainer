@@ -61,12 +61,20 @@ fun DataScreen(modifier: Modifier = Modifier) {
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) message = runCatching {
-            ctx.contentResolver.openOutputStream(uri)!!.use { it.write(tools.export().toByteArray(Charsets.UTF_8)) }
+            // Built first: a failed export must not leave the chosen file empty or half written.
+            val bytes = tools.export().toByteArray(Charsets.UTF_8)
+            ctx.contentResolver.openOutputStream(uri)!!.use { it.write(bytes) }
         }.fold({ savedMsg }, { saveFailedMsg })
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val text = runCatching { ctx.contentResolver.openInputStream(uri)!!.use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
+            // Read with a limit: a huge file must not run the app out of memory.
+            val text = runCatching {
+                ctx.contentResolver.openInputStream(uri)!!.use { input ->
+                    val bytes = input.readNBytes(MAX_IMPORT_BYTES + 1)
+                    if (bytes.size > MAX_IMPORT_BYTES) null else String(bytes, Charsets.UTF_8)
+                }
+            }.getOrNull()
             val result = text?.let { tools.import(it) }
             message = when {
                 result == null || !result.ok -> importFailedMsg
@@ -103,7 +111,7 @@ fun DataScreen(modifier: Modifier = Modifier) {
         if (sessions.isEmpty()) item { Text(stringResource(R.string.data_none)) }
         items(sessions, key = { "s${it.id}" }) { s ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { "-" }), Modifier.weight(1f))
+                Text(stringResource(R.string.data_session_row, at(s.startedAt), s.focusedMinutes, s.purpose.ifBlank { stringResource(R.string.data_no_purpose) }), Modifier.weight(1f))
                 TextButton({ showResult(tools.deleteSession(s.id)) }) { Text(stringResource(R.string.data_delete)) }
             }
         }
@@ -133,3 +141,6 @@ fun DataScreen(modifier: Modifier = Modifier) {
     }
     RecoveryGateDialog(gate)
 }
+
+/** The largest backup file the import will read: far above any real store, far below what would exhaust memory. */
+private const val MAX_IMPORT_BYTES = 20 * 1024 * 1024

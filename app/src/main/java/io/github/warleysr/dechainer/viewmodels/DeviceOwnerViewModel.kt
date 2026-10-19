@@ -58,7 +58,9 @@ class DeviceOwnerViewModel : ViewModel() {
             if (io.github.warleysr.dechainer.data.LockSafety.removalBlocked(
                     scheduleLocked = ScheduleEnforcer.isAnyScheduleLocked(context),
                     brick = io.github.warleysr.dechainer.lock.LockEngine.brickRunning(context),
-                    forced = ignoreScheduleLock
+                    // Forced only once the four-day wait has really run out, whatever the screen asked for.
+                    forced = ignoreScheduleLock &&
+                        io.github.warleysr.dechainer.security.SecurityManager.getForcedRemovalRemainingTime(context) == 0L
                 )
             ) return false
             // Lift schedule blocks while we still hold the privileges needed to do so.

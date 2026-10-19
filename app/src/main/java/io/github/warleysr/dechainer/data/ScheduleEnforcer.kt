@@ -246,19 +246,22 @@ object ScheduleEnforcer : AppBlockEngine() {
     fun releaseAll(context: Context) {
         val ctx = context.applicationContext
         synchronized(lock) {
-            try {
+            // Each step on its own: a failure in one (the apps, say) must not keep the restrictions, the
+            // sites or the alarm from being released too. This is the path an abort takes.
+            fun stage(name: String, step: () -> Unit) {
+                try { step() } catch (e: Exception) { Timber.e(e, "Schedule releaseAll: $name failed") }
+            }
+            stage("apps and restrictions") {
                 val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
                 if (dpm.isDeviceOwnerApp(ctx.packageName)) {
                     applyApps(ctx, dpm, admin, emptySet()) { emptySet() }
                     applyRestrictions(ctx, dpm, admin, emptySet())
                 }
-                applySites(ctx, emptySet())
-                activeBlocks = emptyMap()
-                cancelAlarm(ctx)
-            } catch (e: Exception) {
-                Timber.e(e, "Schedule releaseAll failed")
             }
+            stage("sites") { applySites(ctx, emptySet()) }
+            activeBlocks = emptyMap()
+            stage("alarm") { cancelAlarm(ctx) }
         }
     }
 
@@ -295,6 +298,9 @@ object ScheduleEnforcer : AppBlockEngine() {
         protectedValidUntil = 0L
     }
 
+    private const val LAUNCHER_MEMORY = "launcher_memory"
+    private const val KEY_LAST_LAUNCHER = "last_launcher"
+
     private fun readProtectedPackages(context: Context): Set<String> {
         val pm = context.packageManager
         val result = LockSafety.neverBlocked(context.packageName).toMutableSet()
@@ -304,12 +310,17 @@ object ScheduleEnforcer : AppBlockEngine() {
             // home activity is just an app, so it can still be blocked (blueprint 5.2/9.1): otherwise
             // installing a second "launcher" that also browses would be a way around every schedule.
             val default = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            val memory = context.getSharedPreferences(LAUNCHER_MEMORY, Context.MODE_PRIVATE)
             if (default != null && default != context.packageName) {
                 result += default
+                memory.edit { putString(KEY_LAST_LAUNCHER, default) }
             } else {
-                // A brick is running (our own alias holds the home slot) or no default resolved:
-                // protect every home activity, so the real launcher is never suspended underneath it.
-                pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
+                // A brick is running (our own alias holds the home slot) or no default resolved. Protect the launcher
+                // seen last time, so no other app is widened into the exemption. Only if none was ever seen, protect
+                // every home activity, so the real launcher is never suspended underneath the brick.
+                val last = memory.getString(KEY_LAST_LAUNCHER, null)
+                if (last != null) result += last
+                else pm.queryIntentActivities(homeIntent, PackageManager.MATCH_ALL)
                     .forEach { result += it.activityInfo.packageName }
             }
         } catch (_: Exception) { }

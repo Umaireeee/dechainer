@@ -901,7 +901,8 @@ private fun ScheduleTimePickerDialog(initialMinute: Int, onConfirm: (Int) -> Uni
     val state = rememberTimePickerState(
         initialHour = initialMinute / 60,
         initialMinute = initialMinute % 60,
-        is24Hour = true
+        // Follows the phone's 12 or 24 hour setting, as the focus screen's picker does.
+        is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     )
     AlertDialog(
         onDismissRequest = onDismiss,

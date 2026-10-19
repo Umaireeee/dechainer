@@ -135,7 +135,11 @@ object LockEngine {
             } catch (e: Throwable) {
                 Timber.e(e, "Focus flow not advanced; the lock is planned without it")
             }
-            var gathered = gather(ctx, now)
+            // A pass that cannot read what it decides on changes nothing: the phone keeps what it has until a read works.
+            var gathered = try { gather(ctx, now) } catch (e: Exception) {
+                Timber.e(e, "Lock state not read; this pass changes nothing")
+                return
+            }
             var plan = plan(now, zone, gathered.state)
             if (plan.expiredFocusBlock) {
                 // The end alarm never closed this block (R1). Close it from the time, then plan again
@@ -146,7 +150,10 @@ object LockEngine {
                 } catch (e: Throwable) {
                     Timber.e(e, "Expired block record not closed; releasing what it held anyway")
                 }
-                gathered = gather(ctx, now)
+                gathered = try { gather(ctx, now) } catch (e: Exception) {
+                    Timber.e(e, "Lock state not read after closing the block; this pass changes nothing")
+                    return
+                }
                 plan = plan(now, zone, gathered.state)
             }
             _status.value = plan.brickStatus
@@ -166,7 +173,8 @@ object LockEngine {
     /** Reads everything [LockPlanner] decides from. The only place the plan's inputs come from. */
     private fun gather(ctx: Context, now: Long): Gathered {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-        val schedules = ScheduleRepository.getSchedules(ctx)
+        // Unreadable: the caller skips this pass, so nothing is released on a list that was never read.
+        val schedules = ScheduleRepository.readableSchedules(ctx) ?: throw IllegalStateException("Schedules not readable")
         fun label(mode: LockMode): String = ctx.getString(
             when (mode) {
                 LockMode.SCHEDULE -> R.string.schedules
@@ -176,9 +184,10 @@ object LockEngine {
                 LockMode.URGE_LOCK -> R.string.urge_lock_source
             }
         )
-        // The urge lock comes from `app_state`; it is known on any phone, so the status never
-        // depends on Device Owner being asked.
-        val urge = LockStateStore.urge(ctx)
+        // The urge lock comes from `app_state` and is read the same with or without Device Owner, so the
+        // non-owner branch below still sees it and can close an ended block. (The status line is owner-only.)
+        // Unknown (the store cannot be read and nothing was read in this process): the pass is skipped by the caller.
+        val urge = LockStateStore.urgeOrNull(ctx) ?: throw IllegalStateException("Urge lock state not readable")
 
         Pomodoro.ensureLoaded(ctx)
         val st = Pomodoro.state.value

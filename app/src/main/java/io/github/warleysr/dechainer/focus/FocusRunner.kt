@@ -143,14 +143,19 @@ object FocusRunner {
     /** "Usual" or "Special", with the purpose, at the prompt. False if the purpose is too short or the prompt is gone. */
     fun choose(context: Context, flavor: Flavor, purpose: String?): Boolean {
         if (FocusFlow.cleanPurpose(purpose) == null) return false
-        return transition(context) { s, now -> FocusFlow.onChosen(s, flavor, purpose, now) }
+        return transitionOutcome(context) { s, now -> FocusFlow.onChosen(s, flavor, purpose, now) } == Outcome.ACTED
     }
 
-    /** The yes or no to "Did you do the work?", a check-in or the last question. */
-    fun answer(context: Context, yes: Boolean): Boolean = transition(context) { s, now -> FocusFlow.onAnswer(s, yes, now) }
+    /**
+     * The yes or no to "Did you do the work?", a check-in or the last question. True only when this answer was the
+     * one that moved the flow: a tap the flow ignored, or one that only a timeout reacted to, is not a success.
+     */
+    fun answer(context: Context, yes: Boolean): Boolean =
+        transitionOutcome(context) { s, now -> FocusFlow.onAnswer(s, yes, now) } == Outcome.ACTED
 
     /** "Are you ready now?" at the end of the reset. */
-    fun ready(context: Context, ready: Boolean): Boolean = transition(context) { s, now -> FocusFlow.onReady(s, ready, now) }
+    fun ready(context: Context, ready: Boolean): Boolean =
+        transitionOutcome(context) { s, now -> FocusFlow.onReady(s, ready, now) } == Outcome.ACTED
 
     /** A focus phase of [minutes] just ended in a block with a flow. Called by the Pomodoro alarm's own path. */
     internal fun onFocusPhaseEnded(context: Context, minutes: Int) {
@@ -252,25 +257,33 @@ object FocusRunner {
      * One change to the flow: [step] is computed from the stored state, time is let to catch up, and
      * the result is stored; then, outside the lock, its effects are applied. True if anything changed.
      */
-    private fun transition(context: Context, at: Long? = null, step: (FlowState, Long) -> FlowStep): Boolean {
+    /** What a transition did: [ACTED] when the owner's step itself changed the flow, [TIMED] when only the clock did. */
+    private enum class Outcome { NONE, TIMED, ACTED }
+
+    private fun transition(context: Context, at: Long? = null, step: (FlowState, Long) -> FlowStep): Boolean =
+        transitionOutcome(context, at, step) != Outcome.NONE
+
+    private fun transitionOutcome(context: Context, at: Long? = null, step: (FlowState, Long) -> FlowStep): Outcome {
         val ctx = context.applicationContext
         ensureLoaded(ctx)
         val now = at ?: TrustedClock.now(ctx)
         val before: FlowState
         val result: FlowStep
+        val outcome: Outcome
         synchronized(lock) {
-            before = _flow.value ?: return false
+            before = _flow.value ?: return Outcome.NONE
             // Time catches up first, so an answer given after a timeout lands after that timeout: a
             // late check-in is recorded UNANSWERED, a late prompt choice runs as special (D13/D14).
             val caught = FocusFlow.tick(before, now)
             val stepped = step(caught.state, now)
             val settled = FocusFlow.tick(stepped.state, now)
             result = FlowStep(settled.state, caught.effects + stepped.effects + settled.effects)
-            if (result.state == before && result.effects.isEmpty()) return false
+            if (result.state == before && result.effects.isEmpty()) return Outcome.NONE
+            outcome = if (stepped.state != caught.state || stepped.effects.isNotEmpty()) Outcome.ACTED else Outcome.TIMED
             store(ctx, result.state)
         }
         publishAndApply(ctx, before, result)
-        return true
+        return outcome
     }
 
     /** Keeps [state] in memory and in `app_state`; a finished flow is removed. A store that fails still leaves the memory right. */

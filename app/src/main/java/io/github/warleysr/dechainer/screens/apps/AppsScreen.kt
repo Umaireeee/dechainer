@@ -79,6 +79,7 @@ fun AppsScreen(viewModel: AppsViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val heldMsg = stringResource(R.string.apps_held_by)
+    val notLiftedMsg = stringResource(R.string.apps_not_lifted)
     var limitFor by remember { mutableStateOf<AppItem?>(null) }
     // Back from the Usage access screen (or any time the screen returns): re-read the limits.
     val owner = LocalLifecycleOwner.current
@@ -102,7 +103,14 @@ fun AppsScreen(viewModel: AppsViewModel = viewModel()) {
         else viewModel.requestUnsuspend(
             app.packageName,
             onHeld = { holder -> scope.launch { snackbar.showSnackbar(heldMsg.format(holder)) } },
-            onFree = { gate.run { viewModel.setSuspended(app.packageName, false) } }
+            onFree = {
+                gate.run {
+                    // A schedule can take the app between the check and the lift: say so, rather than doing nothing.
+                    viewModel.setSuspended(app.packageName, false) { ok ->
+                        if (!ok) scope.launch { snackbar.showSnackbar(notLiftedMsg) }
+                    }
+                }
+            }
         )
     }
 
@@ -266,9 +274,9 @@ private fun LimitDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.limit_custom), modifier = Modifier.weight(1f))
-                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, enabled = minutes > 0) { Text("−") }
-                    Text(if (minutes == 0) "–" else minutes.toString(), style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(720) }) { Text("+") }
+                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, enabled = minutes > 0) { Text(stringResource(R.string.limit_step_less)) }
+                    Text(if (minutes == 0) stringResource(R.string.limit_step_zero) else minutes.toString(), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(720) }) { Text(stringResource(R.string.limit_step_more)) }
                 }
                 if (!usageAccess) {
                     Spacer(Modifier.height(12.dp))

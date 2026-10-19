@@ -210,7 +210,17 @@ object Pomodoro {
     /** The phases end and the block runs on to its end as one stretch (the plain timer). */
     fun dropPhases(context: Context) = change(context) { PomodoroCore.dropPhasesInBlock(it) }
 
-    fun pause(context: Context) = change(context) { PomodoroCore.pause(it, now()) }
+    fun pause(context: Context) {
+        ensureLoaded(context)
+        val current = state.value
+        // A phase whose end has passed (its alarm not delivered yet) ends now, with its chime and log entry, rather
+        // than being paused with a second left over that would then ring late.
+        if (current.isRunning && !current.inBlock && current.endsAt <= now()) {
+            onPhaseAlarm(context.applicationContext)
+            return
+        }
+        change(context) { PomodoroCore.pause(it, now()) }
+    }
 
     /** Ends the timer. Never a focus block: once committed, only its end time ends it. */
     fun stop(context: Context) = change(context) { if (it.inBlock) it else PomodoroCore.stop(it) }
@@ -290,7 +300,8 @@ object Pomodoro {
     fun answer(context: Context, id: Long, done: Boolean) {
         ensureLoaded(context)
         val ctx = context.applicationContext
-        recordAnswer(ctx, id, done)
+        // A session that already has its answer keeps the first one: a double tap or a late notification adds nothing.
+        if (session(id)?.done == null) recordAnswer(ctx, id, done)
         synchronized(lock) {
             if (_pending.value == id) _pending.value = null
             prefs(ctx).edit(commit = true) {

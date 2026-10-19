@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 data class UrgeUiState(val entry: UrgeEntry? = null) {
     /** The flow owns the screen while this is true. */
@@ -30,6 +31,9 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UrgeUiState())
     val state: StateFlow<UrgeUiState> = _state.asStateFlow()
 
+    /** A start asked for while another was in flight; run once that one ends. */
+    private val pendingStart = AtomicReference<UrgeSource?>(null)
+
     /** True from the moment a start is accepted until its entry is on screen, so two taps never make two starts. */
     private val starting = AtomicBoolean(false)
 
@@ -38,7 +42,8 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The Urge button, the tile, the shortcut and the locked screen all come here. */
     fun startUrge(source: UrgeSource) {
-        if (!starting.compareAndSet(false, true)) return
+        // A tap that lands while a start or a resume is in flight is kept and run when that one ends, not dropped.
+        if (!starting.compareAndSet(false, true)) { pendingStart.set(source); return }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val entry = flow.startUrge(source)
@@ -47,6 +52,7 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
                 Timber.e(e, "Urge start failed")
             } finally {
                 starting.set(false)
+                pendingStart.getAndSet(null)?.let { startUrge(it) }
             }
         }
     }
@@ -72,6 +78,7 @@ class UrgeViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = UrgeUiState(entry = entry)
             } finally {
                 starting.set(false)
+                pendingStart.getAndSet(null)?.let { startUrge(it) }
             }
         }
     }

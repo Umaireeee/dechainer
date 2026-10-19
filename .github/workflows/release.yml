@@ -43,6 +43,19 @@ jobs:
         run: |
           ./gradlew :app:assembleDebug :app:assembleRelease -PversionCode="$RUN" -PversionNameSuffix="-sched.$RUN"
 
+      # Blueprint 14A: the debug-only controls (abort, short blocks) must not exist in a release build. build.yml checks
+      # this on every push; a release can also start from a ref with no push run, so the check runs here too.
+      - name: Release manifest has no debug controls
+        run: |
+          set -eu
+          manifest=$(find app/build/intermediates -path '*merged_manifests/release*' -name AndroidManifest.xml | head -1)
+          echo "Checking $manifest"
+          test -n "$manifest"
+          if grep -q -e DEBUG_ -e DebugControlReceiver "$manifest"; then
+            echo "::error::A debug control is present in the release manifest"
+            exit 1
+          fi
+
       - name: Sign release APK with your permanent key
         env:
           SIGNING_KEY_B64: ${{ secrets.SIGNING_KEY_B64 }}
@@ -52,6 +65,8 @@ jobs:
             echo "Signing secrets are missing. Run 'Make signing key (run once)' and add both secrets first."
             exit 1
           fi
+          # The key is removed on every exit, including a failed signature, so it never stays on the runner.
+          trap 'rm -f /tmp/key.p12 /tmp/aligned.apk' EXIT
           echo "$SIGNING_KEY_B64" | tr -d '\r\n ' | base64 -d > /tmp/key.p12
           BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
           "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
@@ -405,6 +420,11 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          # A tag is a plain version name: a leading dash would be read by gh as one of its flags.
+          if ! [[ "$TAG" =~ ^v[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::The release tag must look like v2.3.0 (letters, digits, dots, dashes and underscores)."
+            exit 1
+          fi
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \

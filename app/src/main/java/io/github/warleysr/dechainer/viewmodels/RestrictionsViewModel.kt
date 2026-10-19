@@ -39,6 +39,7 @@ class RestrictionsViewModel : ViewModel() {
         .filter { field ->
             java.lang.reflect.Modifier.isStatic(field.modifiers) &&
                     java.lang.reflect.Modifier.isFinal(field.modifiers) &&
+                    field.type == String::class.java &&
                     (field.name.startsWith("DISALLOW_") || field.name.startsWith("ALLOW_"))
         }
         .associate { (it.get(null) as String) to it.name.lowercase() }

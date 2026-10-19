@@ -18,18 +18,34 @@ object LockStateStore {
 
     @Volatile private var lastUrge = UrgeInput()
 
-    fun urge(context: Context): UrgeInput = try {
-        val raw = Store.appState(context).get(AppStateKeys.URGE_LOCK_ENDS)
-        when {
-            raw == null -> UrgeInput().also { lastUrge = it }
-            // A value that does not parse is not "no lock": keep the last known one instead of releasing it.
-            else -> raw.toLongOrNull()?.let { UrgeInput(it).also { input -> lastUrge = input } }
-                ?: run { Timber.w("Urge lock end is not a number; using the last known"); lastUrge }
+    /** True once this process has read or written the urge lock, so [lastUrge] is a real value and not the default. */
+    @Volatile private var knownThisProcess = false
+
+    /**
+     * The urge lock as stored. A value that cannot be read or parsed is never "no lock": the last value known
+     * in this process is used instead. Null only when nothing is known yet and the store cannot be read.
+     */
+    fun urgeOrNull(context: Context): UrgeInput? {
+        val input = try {
+            when (val raw = Store.appState(context).get(AppStateKeys.URGE_LOCK_ENDS)) {
+                null -> UrgeInput()
+                else -> raw.toLongOrNull()?.let { UrgeInput(it) }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Urge lock not readable; using the last known")
+            null
         }
-    } catch (e: Exception) {
-        Timber.w(e, "Urge lock not readable; using the last known")
-        lastUrge
+        if (input == null) {
+            Timber.w("Urge lock not readable; using the last known")
+            return if (knownThisProcess) lastUrge else null
+        }
+        lastUrge = input
+        knownThisProcess = true
+        return input
     }
+
+    /** The urge lock as stored; a read that fails with nothing known yet reads as no lock. */
+    fun urge(context: Context): UrgeInput = urgeOrNull(context) ?: UrgeInput()
 
     fun startedAt(context: Context): Long = try {
         Store.appState(context).getLong(AppStateKeys.URGE_LOCK_STARTED) ?: 0L
@@ -44,6 +60,7 @@ object LockStateStore {
      */
     fun setUrge(context: Context, startedAt: Long, endsAt: Long) {
         lastUrge = UrgeInput(endsAt)
+        knownThisProcess = true
         try {
             Store.appState(context).setAll(
                 mapOf(AppStateKeys.URGE_LOCK_STARTED to startedAt.toString(), AppStateKeys.URGE_LOCK_ENDS to endsAt.toString())
@@ -55,12 +72,11 @@ object LockStateStore {
 
     fun clearUrge(context: Context) {
         // Forget it in this process first: the escape (the crash-loop breaker) must not fail closed
-        // if the store cannot be written. The two removes mirror setUrge's one transaction.
+        // if the store cannot be written. Both keys go in one transaction, as setUrge writes them.
         lastUrge = UrgeInput()
+        knownThisProcess = true
         try {
-            val state = Store.appState(context)
-            state.remove(AppStateKeys.URGE_LOCK_STARTED)
-            state.remove(AppStateKeys.URGE_LOCK_ENDS)
+            Store.appState(context).removeAll(listOf(AppStateKeys.URGE_LOCK_STARTED, AppStateKeys.URGE_LOCK_ENDS))
         } catch (e: Exception) {
             Timber.w(e, "Urge lock not cleared on disk; it is cleared in memory")
         }
@@ -79,5 +95,6 @@ object LockStateStore {
     /** For tests: forget what was last seen in this process. */
     internal fun resetForTests() {
         lastUrge = UrgeInput()
+        knownThisProcess = false
     }
 }

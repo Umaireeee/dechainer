@@ -96,8 +96,9 @@ private val ALPHABET = ('A'..'Z').toList()
  */
 private fun buildGrid(): List<Char> = ALPHABET.shuffled()
 
-private const val GRID_COLUMNS = 6
-private const val GRID_ROWS = 5
+// Five columns keeps every key at least 48 dp wide on a 360 dp phone (blueprint 12, touch targets); 30 cells hold the alphabet.
+private const val GRID_COLUMNS = 5
+private const val GRID_ROWS = 6
 
 /**
  * Recovery dialog that presents a shuffle keyboard.

@@ -310,6 +310,11 @@
     <string name="focus_log_unanswered">No answer</string>
     <string name="apps_show_system">System apps</string>
     <string name="apps_held_by">Held by %1$s until it ends</string>
+    <string name="limit_step_less">−</string>
+    <string name="limit_step_more">+</string>
+    <string name="limit_step_zero">–</string>
+    <string name="data_no_purpose">-</string>
+    <string name="apps_not_lifted">The app is still held, so it stays suspended</string>
     <string name="protections">System rules</string>
     <string name="protections_desc">Like blocking factory reset or safe mode</string>
     <string name="schedule_duplicate">Duplicate</string>

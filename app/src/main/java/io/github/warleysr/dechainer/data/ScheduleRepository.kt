@@ -26,6 +26,13 @@ object ScheduleRepository {
     fun getSchedules(context: Context): List<BlockSchedule> =
         parseSchedules(prefs(context).getString(KEY_SCHEDULES, null)).schedules
 
+    /**
+     * The schedules for deciding what is locked. Null when the stored list cannot be read at all: a lock decided on an
+     * empty list would release what the schedules hold, so the caller must not plan with it.
+     */
+    fun readableSchedules(context: Context): List<BlockSchedule>? =
+        parseSchedules(prefs(context).getString(KEY_SCHEDULES, null)).let { if (it.rootOk) it.schedules else null }
+
     fun getSchedule(context: Context, id: String): BlockSchedule? =
         getSchedules(context).firstOrNull { it.id == id }
 

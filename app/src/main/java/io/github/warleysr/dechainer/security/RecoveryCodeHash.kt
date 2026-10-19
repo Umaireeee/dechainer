@@ -13,7 +13,9 @@ import javax.crypto.spec.PBEKeySpec
  */
 internal object RecoveryCodeHash {
     private const val PREFIX = "v1"
-    private const val ITERATIONS = 120_000
+    // Codes made from now on use the current OWASP guidance. Each stored hash names its own count, so codes made
+    // earlier still verify at the count they were made with.
+    private const val ITERATIONS = 600_000
     private const val SALT_BYTES = 16
     private const val KEY_BITS = 256
 

@@ -44,6 +44,12 @@ class AppStateRepository(private val database: DechainerDatabase) {
         inTransaction { it.delete(TABLE, "$COL_KEY = ?", arrayOf(key)) }
     }
 
+    /** Removes every key in one transaction, so a kill cannot leave some of a group removed and not the rest. */
+    fun removeAll(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        inTransaction { db -> keys.forEach { db.delete(TABLE, "$COL_KEY = ?", arrayOf(it)) } }
+    }
+
     /**
      * Runs [work] once ever, keyed by [name]. [work] returns whether it succeeded; only a success is
      * remembered, so a failed one-off migration tries again on the next start.

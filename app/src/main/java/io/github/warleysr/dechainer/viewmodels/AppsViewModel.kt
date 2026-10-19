@@ -67,11 +67,18 @@ class AppsViewModel : ViewModel() {
         refreshLimits()
     }
 
+    /** Hand toggles, numbered as they finish: a load that started before one must not show the old state. */
+    private var changeSeq = 0L
+    private val changes = HashMap<String, Pair<Long, Boolean>>()
+
     fun load(force: Boolean = false) {
         viewModelScope.launch {
             isLoading = apps.isEmpty()
+            val startSeq = changeSeq
             apps = withContext(Dispatchers.IO) {
                 AppRepository.getApps(forceRefresh = force).filter { it.packageName !in protectedPackages }
+            }.map { item ->
+                changes[item.packageName]?.takeIf { it.first > startSeq }?.let { item.copy(isSuspended = it.second) } ?: item
             }
             isLoading = false
         }
@@ -100,7 +107,8 @@ class AppsViewModel : ViewModel() {
         }
     }
 
-    fun setSuspended(pkg: String, suspended: Boolean) {
+    /** Reports whether the change was made; [onResult] says so when it was refused (held by a schedule) or failed. */
+    fun setSuspended(pkg: String, suspended: Boolean, onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 // Last check at the moment of lifting it, whatever the screen showed a moment ago.
@@ -114,7 +122,11 @@ class AppsViewModel : ViewModel() {
                     false
                 }
             }
-            if (ok) apps = apps.map { if (it.packageName == pkg) it.copy(isSuspended = suspended) else it }
+            if (ok) {
+                changes[pkg] = (++changeSeq) to suspended
+                apps = apps.map { if (it.packageName == pkg) it.copy(isSuspended = suspended) else it }
+            }
+            onResult(ok)
         }
     }
 }

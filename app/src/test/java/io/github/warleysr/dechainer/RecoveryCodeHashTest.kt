@@ -19,6 +19,15 @@ class RecoveryCodeHashTest {
     }
 
     @Test
+    fun aCodeMadeAtTheOldCountStillVerifies() {
+        // Made by the 120,000-iteration build (the expected value was computed outside the app), so an owner's
+        // existing code keeps working after the count went up for new codes.
+        val oldHash = "v1\$120000\$AAAAAAAAAAAAAAAAAAAAAA\$vjgkGOsp8r+ysPGf0XTSRGZhTXlRcRDC0E+ALGu5HqI"
+        assertTrue(RecoveryCodeHash.verify("ABCDEFGHJKLMNPQR", oldHash))
+        assertFalse(RecoveryCodeHash.verify("ABCDEFGHJKLMNPQS", oldHash))
+    }
+
+    @Test
     fun theStoredTextDoesNotContainTheCode() {
         assertFalse(RecoveryCodeHash.create(code).contains(code))
     }

@@ -39,16 +39,17 @@ class UrgeEntryRepository(private val database: DechainerDatabase) {
 
     /** The newest entry that can be read, or null. */
     fun latest(): UrgeEntry? =
-        database.readableDatabase.query(TABLE, COLUMNS, null, null, null, null, "created_at DESC", "1")
-            .use { if (it.moveToFirst()) read(it) else null }
+        database.readableDatabase.query(TABLE, COLUMNS, null, null, null, null, "created_at DESC").use { c ->
+            var found: UrgeEntry? = null
+            while (found == null && c.moveToNext()) found = read(c)
+            found
+        }
 
-    /** The time of the first entry, or null. */
-    fun firstCreatedAt(): Long? =
-        database.readableDatabase.rawQuery("SELECT MIN(created_at) FROM $TABLE", null).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+    /** The time of the first entry that can be read, or null. */
+    fun firstCreatedAt(): Long? = all().firstOrNull()?.createdAt
 
     /** Every entry that can be read. */
-    fun count(): Int =
-        database.readableDatabase.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    fun count(): Int = all().size
 
     /** Sets the lock window once the engine has decided (the entry is written first, the lock second). */
     fun setLockWindow(id: Long, startedAt: Long, endedAt: Long) {
