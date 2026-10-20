@@ -151,6 +151,8 @@ object LockRestrictions {
      * closes, plus new apps, a second space or cloned apps, and a network reset. Reapplied on every
      * pass, so a phone that ignores one once gets it again.
      */
+    val OPEN_WINDOW_ALLOWS = setOf(INSTALL_APPS)
+
     val DUMB = BRICK + setOf(
         INSTALL_APPS, INSTALL_UNKNOWN_SOURCES, INSTALL_UNKNOWN_SOURCES_GLOBALLY, UNINSTALL_APPS,
         ADD_CLONE_PROFILE, ADD_MANAGED_PROFILE, NETWORK_RESET

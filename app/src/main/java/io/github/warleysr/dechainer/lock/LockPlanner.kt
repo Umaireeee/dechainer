@@ -89,7 +89,12 @@ object LockPlanner {
         // Date, time and time zone are locked all the time, not only during blocks (9.2).
         restrictions += LockRestrictions.DATE_TIME
         if (brick) restrictions += LockRestrictions.BRICK
-        if (state.dumbPhone) restrictions += LockRestrictions.DUMB
+        if (state.dumbPhone) {
+            restrictions += LockRestrictions.DUMB
+            // Installs and updates from the store are allowed in the open window only; an app installed
+            // then is paused at the next lock like every other. Sideloading and uninstalling stay refused.
+            if (activeSchedules.isEmpty()) restrictions -= LockRestrictions.OPEN_WINDOW_ALLOWS
+        }
 
         val holdEnds = holds.map { it.endsAt }.filter { it != Long.MAX_VALUE }
         return LockPlan(

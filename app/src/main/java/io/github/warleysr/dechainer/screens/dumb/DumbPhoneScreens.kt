@@ -113,7 +113,7 @@ private fun StartScreen() {
             val items = listOf(
                 "Open every day from ${DumbPhoneRules.openHoursLabel()}, for banking, Gmail and the rest",
                 "The rest of the day only calls, SMS, camera, Settings and the hotspot work",
-                "Nothing new can be installed, at any hour",
+                "Updates and installs only in the open hours; new apps are paused at the next lock",
                 "Adult sites are blocked on every network"
             )
             items.forEachIndexed { index, text ->
@@ -232,7 +232,9 @@ private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
         Section("PROTECTION") {
             ValueRow("Adult sites", "Blocked, any network")
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            ValueRow("New apps and VPNs", "Refused")
+            ValueRow("Installs", "Open hours only")
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ValueRow("VPNs and other sources", "Refused")
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             ValueRow("Second space, users, safe mode", "Off")
         }

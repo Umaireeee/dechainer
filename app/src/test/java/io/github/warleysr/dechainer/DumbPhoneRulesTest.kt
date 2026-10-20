@@ -66,7 +66,16 @@ class DumbPhoneRulesTest {
     @Test
     fun theRestrictionsStayOnInTheOpenWindow() {
         val restrictions = plan(now = at(20, 21, 30)).desiredRestrictions
-        assertTrue(restrictions.containsAll(LockRestrictions.DUMB))
+        assertTrue(restrictions.containsAll(LockRestrictions.DUMB - LockRestrictions.OPEN_WINDOW_ALLOWS))
+        assertTrue(LockRestrictions.INSTALL_UNKNOWN_SOURCES in restrictions)
+        assertTrue(LockRestrictions.UNINSTALL_APPS in restrictions)
+    }
+
+    @Test
+    fun storeInstallsAreAllowedOnlyInTheOpenWindow() {
+        assertFalse(LockRestrictions.INSTALL_APPS in plan(now = at(20, 21, 30)).desiredRestrictions)
+        assertTrue(LockRestrictions.INSTALL_APPS in plan(now = at(20, 22, 30)).desiredRestrictions)
+        assertTrue(LockRestrictions.INSTALL_APPS in plan(now = at(20, 20, 59)).desiredRestrictions)
     }
 
     @Test
