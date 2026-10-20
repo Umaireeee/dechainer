@@ -57,6 +57,7 @@ object DumbPhone {
         val ctx = context.applicationContext
         prefs(ctx).edit(commit = true) { remove(KEY_STARTED_AT) }
         SecurityManager.cancelForcedRemoval(ctx)
+        Grayscale.set(ctx, false)
         try {
             DnsGuard.clearAll(ctx)
             DeviceOwnerRepository.setPrivateDnsAutomatic()
@@ -70,9 +71,11 @@ object DumbPhone {
      * Run on every lock pass while the lock is on: puts back what a phone may have lost (the DNS
      * filter). Idempotent, and it never raises anything.
      */
-    fun enforce(context: Context) {
+    fun enforce(context: Context, locked: Boolean = true) {
         val ctx = context.applicationContext
         if (!isActive(ctx)) return
         DnsGuard.ensureFiltered(ctx)
+        // Black and white while locked, colour in the open window.
+        Grayscale.set(ctx, locked)
     }
 }
