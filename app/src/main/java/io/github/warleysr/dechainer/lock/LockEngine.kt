@@ -151,7 +151,7 @@ object LockEngine {
             }
             _status.value = plan.brickStatus
             ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
-            DumbPhone.enforce(ctx, locked = plan.holds.isNotEmpty())
+            DumbPhone.enforce(ctx)
             SystemGuard.apply(ctx)
             DnsGuard.enforce(ctx)
             if (plan.brick && !isPinned(ctx)) {

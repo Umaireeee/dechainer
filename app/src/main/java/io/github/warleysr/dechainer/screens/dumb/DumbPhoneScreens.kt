@@ -243,7 +243,7 @@ private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Need your phone back?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Start a $waitName. The lock stays fully on until it ends, and you can cancel any time.",
+                    "Start a $waitName. The lock stays on until it ends, and you can cancel any time.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (undoLeft > 0L) {
@@ -320,7 +320,7 @@ private fun WaitScreen(remainingMs: Long) {
                 )
             ) { Text("Cancel, stay locked", fontWeight = FontWeight.SemiBold) }
             Text(
-                "Until then everything stays locked. Calls, hotspot and camera still work.",
+                "Until then the lock stays as it is. Calls, hotspot and camera always work.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

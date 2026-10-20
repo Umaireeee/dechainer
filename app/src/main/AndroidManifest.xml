@@ -16,8 +16,6 @@
     <!-- Pomodoro: ring when a phase ends, and ask "Did you do the work?" full screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Granted by the app to itself as Device Owner; used only for the black-and-white screen while locked. -->
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <queries>
         <intent>
