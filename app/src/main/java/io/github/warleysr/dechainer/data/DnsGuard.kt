@@ -109,7 +109,8 @@ object DnsGuard {
     @Volatile
     private var watching = false
 
-    private val networkHandler = Handler(Looper.getMainLooper())
+    // Lazy: the pure unit tests load this object on a plain JVM, where Looper does not exist.
+    private val networkHandler by lazy { Handler(Looper.getMainLooper()) }
 
     private fun isFallback(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FALLBACK, false)
 

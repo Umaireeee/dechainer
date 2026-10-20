@@ -115,7 +115,9 @@ class DumbPhoneRulesTest {
     fun theWaitIsSplitIntoDaysAndHours() {
         val hour = 3_600_000L
         assertEquals(7L to 0L, DumbPhoneRules.splitWait(7 * 24 * hour))
-        assertEquals(6L to 23L, DumbPhoneRules.splitWait(7 * 24 * hour - 1))
+        assertEquals(6L to 23L, DumbPhoneRules.splitWait(7 * 24 * hour - hour))
+        // A part of an hour counts as a whole hour, so the screen never shows 0 hours while time is left.
+        assertEquals(7L to 0L, DumbPhoneRules.splitWait(7 * 24 * hour - 1))
         assertEquals(0L to 1L, DumbPhoneRules.splitWait(1))
         assertEquals(0L to 0L, DumbPhoneRules.splitWait(0))
     }
