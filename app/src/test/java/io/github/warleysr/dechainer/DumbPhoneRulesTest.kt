@@ -12,7 +12,7 @@ import org.junit.Test
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-/** Pins the dumb-phone lock: always on, WhatsApp and the essentials only, every way around it closed. */
+/** Pins the dumb-phone lock: locked except 21:00 to 22:30, every way around it closed at all hours. */
 class DumbPhoneRulesTest {
     private val zone = ZoneId.of("UTC")
 
@@ -30,19 +30,43 @@ class DumbPhoneRulesTest {
         LockPlanner.plan(now, zone, LockState(true, if (dumb) listOf(DumbPhoneRules.schedule()) else emptyList(), phone, dumbPhone = dumb))
 
     @Test
-    fun theLockIsOnAtEveryHourOfEveryDay() {
+    fun theLockIsOnExceptInTheOpenWindowEveryDay() {
         val s = DumbPhoneRules.schedule()
-        for (day in 19..25) for (hour in 0..23) for (minute in listOf(0, 1, 30, 59)) {
-            assertTrue("$day $hour:$minute", s.isActiveAt(LocalDateTime.of(2026, 10, day, hour, minute)))
+        for (day in 19..25) for (hour in 0..23) for (minute in listOf(0, 1, 29, 30, 31, 59)) {
+            val open = DumbPhoneRules.isOpenAt(hour * 60 + minute)
+            assertEquals("$day $hour:$minute", !open, s.isActiveAt(LocalDateTime.of(2026, 10, day, hour, minute)))
         }
     }
 
     @Test
-    fun onlyWhatsAppIsLetThrough() {
-        val blocked = plan().desiredApps
-        assertFalse("com.whatsapp" in blocked)
+    fun theOpenWindowIs2100To2230() {
+        assertFalse(DumbPhoneRules.isOpenAt(20 * 60 + 59))
+        assertTrue(DumbPhoneRules.isOpenAt(21 * 60))
+        assertTrue(DumbPhoneRules.isOpenAt(22 * 60 + 29))
+        assertFalse(DumbPhoneRules.isOpenAt(22 * 60 + 30))
+        assertEquals("21:00 to 22:30", DumbPhoneRules.openHoursLabel())
+    }
+
+    @Test
+    fun everyAppIsPausedWhileLocked() {
+        val blocked = plan(now = at(20, 10, 7)).desiredApps
+        assertTrue("com.whatsapp" in blocked)
         assertTrue("com.brave.browser" in blocked)
         assertTrue("com.google.android.youtube" in blocked)
+    }
+
+    @Test
+    fun nothingIsPausedInTheOpenWindow() {
+        for (time in listOf(at(20, 21, 0), at(20, 21, 45), at(20, 22, 29))) {
+            assertTrue(plan(now = time).desiredApps.isEmpty())
+        }
+        assertTrue("com.whatsapp" in plan(now = at(20, 22, 30)).desiredApps)
+    }
+
+    @Test
+    fun theRestrictionsStayOnInTheOpenWindow() {
+        val restrictions = plan(now = at(20, 21, 30)).desiredRestrictions
+        assertTrue(restrictions.containsAll(LockRestrictions.DUMB))
     }
 
     @Test
@@ -102,13 +126,6 @@ class DumbPhoneRulesTest {
     fun undoRemainingCountsDown() {
         val started = at(20, 10, 0)
         assertEquals(DumbPhoneRules.UNDO_MS - 60_000L, DumbPhoneRules.undoRemainingMs(started + 60_000L, started))
-    }
-
-    @Test
-    fun withoutUsageAccessWhatsAppCountsAsUsedUp() {
-        assertEquals(setOf("com.whatsapp"), DumbPhoneRules.limitedApps(emptySet(), usageAccess = false))
-        assertEquals(emptySet<String>(), DumbPhoneRules.limitedApps(emptySet(), usageAccess = true))
-        assertEquals(setOf("com.whatsapp"), DumbPhoneRules.limitedApps(setOf("com.whatsapp"), usageAccess = true))
     }
 
     @Test

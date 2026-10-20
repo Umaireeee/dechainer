@@ -220,9 +220,7 @@ object LockEngine {
 
         // Daily time limits, measured from Android's own usage log (see TimeLimits).
         val limitStatus = TimeLimits.evaluate(ctx, now)
-        // Fail closed: with Usage access off WhatsApp's time cannot be measured, so it counts as used up.
-        val reachedApps = if (dumb) DumbPhoneRules.limitedApps(limitStatus.reached, TimeLimits.hasUsageAccess(ctx)) else limitStatus.reached
-        val limits = LimitInput(reachedApps, TimeLimits.midnightMillis(now))
+        val limits = LimitInput(limitStatus.reached, TimeLimits.midnightMillis(now))
 
         return Gathered(
             LockState(true, schedules, phone, focus, limits, urge, dumbPhone = dumb),

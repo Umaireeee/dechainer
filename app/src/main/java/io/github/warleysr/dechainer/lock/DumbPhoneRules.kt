@@ -6,36 +6,49 @@ import java.time.DayOfWeek
 /**
  * The pure rules of the dumb-phone lock: no Android in here, so plain unit tests cover them.
  *
- * One lock, always on once started: every app with an icon is suspended except the essentials the
- * allow-only window always leaves open (calls, SMS, camera, Settings, the alarm clock) and the apps
- * in [ALLOWED_APPS]. Nothing in the app edits any of it. The only way out is the exit wait.
+ * Once started, the phone is locked every day except one open window ([OPEN_START_MINUTE] to
+ * [OPEN_END_MINUTE]). Locked: every app with an icon is suspended except the essentials the allow-only
+ * window always leaves open (calls, SMS, camera, Settings, the alarm clock). Open: nothing is suspended.
+ * In both, the permanent rules ([LockRestrictions.DUMB]) and the adult-site filter stay on. Nothing in
+ * the app edits any of it; the only way out is the exit wait.
  */
 object DumbPhoneRules {
     /** After starting, the lock can be undone at once for this long. A safety net for the first build. */
     const val UNDO_MS = 10L * 60 * 1000
 
-    const val WHATSAPP = "com.whatsapp"
-    const val WHATSAPP_LIMIT_MINUTES = 45
+    /** The daily open window, in minutes after midnight: 21:00 to 22:30. */
+    const val OPEN_START_MINUTE = 21 * 60
+    const val OPEN_END_MINUTE = 22 * 60 + 30
 
     const val SCHEDULE_ID = "dumb-phone"
 
-    /** The only apps beyond the essentials. Fixed: the app has no screen to change it. */
-    val ALLOWED_APPS: Set<String> = setOf(WHATSAPP)
+    /** Apps allowed while locked, beyond the essentials. None: a dumb phone is a phone. */
+    val ALLOWED_APPS: Set<String> = emptySet()
 
-    /** The system file pickers: closed, so Files cannot be reached through them. */
+    /** The system file pickers: closed while locked, so Files cannot be reached through them. */
     val FILE_PICKERS: Set<String> = setOf("com.android.documentsui", "com.google.android.documentsui")
 
-    /** A full-day window, every day: start equals end, which the schedule reads as 24 hours. */
+    /**
+     * The locked part of the day, every day: from the end of the open window round to its start the
+     * next day. That window crosses midnight, which the schedule reads as belonging to the day it starts.
+     */
     fun schedule(): BlockSchedule = BlockSchedule(
         id = SCHEDULE_ID,
         name = "Dumb phone",
         enabled = true,
         days = DayOfWeek.entries.toSet(),
-        startMinute = 0,
-        endMinute = 0,
+        startMinute = OPEN_END_MINUTE,
+        endMinute = OPEN_START_MINUTE,
         packages = ALLOWED_APPS,
         allowOnly = true
     )
+
+    /** True while the phone is in its open window; [minuteOfDay] is minutes after local midnight. */
+    fun isOpenAt(minuteOfDay: Int): Boolean = minuteOfDay in OPEN_START_MINUTE until OPEN_END_MINUTE
+
+    /** The open window as shown on screen, for example "21:00 to 22:30". */
+    fun openHoursLabel(): String =
+        "${BlockSchedule.formatMinute(OPEN_START_MINUTE)} to ${BlockSchedule.formatMinute(OPEN_END_MINUTE)}"
 
     /** True while the lock was started less than [UNDO_MS] ago. [startedAt] is 0 when it never started. */
     fun undoAvailable(now: Long, startedAt: Long): Boolean =
@@ -44,13 +57,6 @@ object DumbPhoneRules {
     /** How much of the undo window is left, 0 when it is over or the lock never started. */
     fun undoRemainingMs(now: Long, startedAt: Long): Long =
         if (undoAvailable(now, startedAt)) startedAt + UNDO_MS - now else 0L
-
-    /**
-     * Apps whose daily limit has run out. WhatsApp is also counted as out of time when Usage access
-     * is off, because without it the time cannot be measured: switching it off must never lift the limit.
-     */
-    fun limitedApps(reached: Set<String>, usageAccess: Boolean): Set<String> =
-        if (usageAccess) reached else reached + WHATSAPP
 
     /** The days and hours of an exit wait that has [remainingMs] left, for the wait screen. */
     fun splitWait(remainingMs: Long): Pair<Long, Long> {

@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer.screens.dumb
 
-import android.content.Intent
-import android.provider.Settings
+import io.github.warleysr.dechainer.models.BlockSchedule
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -75,18 +74,18 @@ fun DumbPhoneRoot() {
     val ctx = LocalContext.current
     var now by remember { mutableLongStateOf(TrustedClock.now(ctx)) }
     RepeatWhileVisible(1000) { now = TrustedClock.now(ctx) }
-    // Read again every second, so granting Usage access or a wait running out shows at once.
-    val readiness = remember(now) { DumbPhone.readiness(ctx) }
+    // Read again every second, so a wait running out shows at once.
+    val deviceOwner = remember(now) { DumbPhone.isDeviceOwner(ctx) }
     val startedAt = remember(now) { DumbPhone.startedAt(ctx) }
     val waitLeft = remember(now) { if (startedAt > 0L) SecurityManager.getForcedRemovalRemainingTime(ctx) else -1L }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
-            startedAt == 0L && !readiness.deviceOwner -> Box(Modifier.fillMaxSize().systemBarsPadding()) {
+            startedAt == 0L && !deviceOwner -> Box(Modifier.fillMaxSize().systemBarsPadding()) {
                 SetupDeviceOwnerPrivileges()
             }
-            startedAt == 0L -> StartScreen(readiness.usageAccess)
+            startedAt == 0L -> StartScreen()
             waitLeft >= 0L -> WaitScreen(waitLeft)
             showSettings -> SettingsScreen(now = now, startedAt = startedAt, onBack = { showSettings = false })
             else -> HomeScreen(now = now, startedAt = startedAt, onSettings = { showSettings = true })
@@ -95,7 +94,7 @@ fun DumbPhoneRoot() {
 }
 
 @Composable
-private fun StartScreen(usageAccess: Boolean) {
+private fun StartScreen() {
     val ctx = LocalContext.current
     Column(
         modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp, vertical = 32.dp),
@@ -112,9 +111,9 @@ private fun StartScreen(usageAccess: Boolean) {
         }
         Card {
             val items = listOf(
-                "Calls, SMS, camera, Settings and the hotspot stay on",
-                "WhatsApp for ${DumbPhoneRules.WHATSAPP_LIMIT_MINUTES} minutes a day",
-                "Every other app is paused, and nothing new can be installed",
+                "Open every day from ${DumbPhoneRules.openHoursLabel()}, for banking, Gmail and the rest",
+                "The rest of the day only calls, SMS, camera, Settings and the hotspot work",
+                "Nothing new can be installed, at any hour",
                 "Adult sites are blocked on every network"
             )
             items.forEachIndexed { index, text ->
@@ -128,24 +127,9 @@ private fun StartScreen(usageAccess: Boolean) {
                 }
             }
         }
-        if (!usageAccess) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "WhatsApp's daily limit needs Usage access. Allow it for this app, then come back.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(
-                    onClick = {
-                        ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                ) { Text("Allow usage access") }
-            }
-        }
         Spacer(Modifier.weight(1f))
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HoldButton(label = "Hold to start the lock", enabled = usageAccess) { DumbPhone.start(ctx) }
+            HoldButton(label = "Hold to start the lock", enabled = true) { DumbPhone.start(ctx) }
             Text(
                 "For the first 10 minutes you can undo it. After that, only the $waitName.",
                 style = MaterialTheme.typography.bodySmall,
@@ -164,6 +148,12 @@ private fun HomeScreen(now: Long, startedAt: Long, onSettings: () -> Unit) {
     val clock = DateTimeFormatter.ofPattern(if (is24) "HH:mm" else "h:mm").format(zoned)
     val date = DateTimeFormatter.ofPattern("EEEE, d MMMM").format(zoned).uppercase(Locale.getDefault())
     val undoLeft = DumbPhoneRules.undoRemainingMs(now, startedAt)
+    val open = DumbPhoneRules.isOpenAt(zoned.hour * 60 + zoned.minute)
+    val statusText = if (open) {
+        "Open until ${BlockSchedule.formatMinute(DumbPhoneRules.OPEN_END_MINUTE)}"
+    } else {
+        "Locked until ${BlockSchedule.formatMinute(DumbPhoneRules.OPEN_START_MINUTE)}"
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 32.dp, vertical = 32.dp),
@@ -179,7 +169,7 @@ private fun HomeScreen(now: Long, startedAt: Long, onSettings: () -> Unit) {
         )
         Spacer(Modifier.weight(1f))
         Card {
-            StatusRow("Locked, all day", strong = true)
+            StatusRow(statusText, strong = true)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             StatusRow("Hotspot works", strong = false)
         }
@@ -236,8 +226,8 @@ private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Section("ALLOWED APPS") {
-            ValueRow("WhatsApp", "${DumbPhoneRules.WHATSAPP_LIMIT_MINUTES} min a day")
+        Section("OPEN HOURS") {
+            ValueRow("Every day", DumbPhoneRules.openHoursLabel())
         }
         Section("PROTECTION") {
             ValueRow("Adult sites", "Blocked, any network")
