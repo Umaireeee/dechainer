@@ -151,6 +151,7 @@ object LockEngine {
             }
             _status.value = plan.brickStatus
             ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
+            DumbPhone.enforce(ctx)
             SystemGuard.apply(ctx)
             DnsGuard.enforce(ctx)
             if (plan.brick && !isPinned(ctx)) {
@@ -166,7 +167,9 @@ object LockEngine {
     /** Reads everything [LockPlanner] decides from. The only place the plan's inputs come from. */
     private fun gather(ctx: Context, now: Long): Gathered {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-        val schedules = ScheduleRepository.getSchedules(ctx)
+        // Once the dumb-phone lock has started, it is the only schedule: nothing stored before it applies.
+        val dumb = DumbPhone.isActive(ctx)
+        val schedules = if (dumb) listOf(DumbPhoneRules.schedule()) else ScheduleRepository.getSchedules(ctx)
         fun label(mode: LockMode): String = ctx.getString(
             when (mode) {
                 LockMode.SCHEDULE -> R.string.schedules
@@ -202,7 +205,8 @@ object LockEngine {
             launcherApps = ScheduleEnforcer.launcherApps(ctx),
             protectedApps = protectedPkgs,
             alarmApps = ScheduleEnforcer.alarmApps(ctx),
-            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx),
+            // The dumb-phone lock also closes the system file pickers, so Files cannot be reached.
+            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx).let { if (dumb) it - DumbPhoneRules.FILE_PICKERS else it },
             emergencyApps = LockSafety.EMERGENCY_APPS,
             smsApps = setOfNotNull(sms)
         )
@@ -216,10 +220,12 @@ object LockEngine {
 
         // Daily time limits, measured from Android's own usage log (see TimeLimits).
         val limitStatus = TimeLimits.evaluate(ctx, now)
-        val limits = LimitInput(limitStatus.reached, TimeLimits.midnightMillis(now))
+        // Fail closed: with Usage access off WhatsApp's time cannot be measured, so it counts as used up.
+        val reachedApps = if (dumb) DumbPhoneRules.limitedApps(limitStatus.reached, TimeLimits.hasUsageAccess(ctx)) else limitStatus.reached
+        val limits = LimitInput(reachedApps, TimeLimits.midnightMillis(now))
 
         return Gathered(
-            LockState(true, schedules, phone, focus, limits, urge),
+            LockState(true, schedules, phone, focus, limits, urge, dumbPhone = dumb),
             ScheduleEnforcer.ApplyExtras(protectedPkgs, limitStatus.nextCheckDelayMs, ::label)
         )
     }

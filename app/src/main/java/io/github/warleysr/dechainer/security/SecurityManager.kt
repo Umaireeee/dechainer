@@ -17,8 +17,11 @@ class SecurityManager {
     companion object {
         private const val CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-        /** How long forced removal makes you wait, without the recovery code: four days. */
-        const val FORCED_REMOVAL_WAIT_MS = 4L * 24 * 60 * 60 * 1000
+        /** How long the one way out makes you wait: seven days. */
+        const val FORCED_REMOVAL_WAIT_MS = 7L * 24 * 60 * 60 * 1000
+
+        /** The wait the app really uses: a debug build waits five minutes, so the exit can be tested. */
+        val exitWaitMs: Long get() = if (BuildConfig.DEBUG) 5L * 60 * 1000 else FORCED_REMOVAL_WAIT_MS
 
         const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
 
@@ -348,7 +351,7 @@ class SecurityManager {
                 putInt("forced_removal_last_boot", boot)
             }
 
-            (FORCED_REMOVAL_WAIT_MS - accumulated).coerceAtLeast(0L)
+            (exitWaitMs - accumulated).coerceAtLeast(0L)
         }
 
     }

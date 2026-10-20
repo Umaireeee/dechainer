@@ -72,7 +72,9 @@ data class LockState(
     val phone: PhoneFacts,
     val focus: FocusInput = FocusInput(),
     val limits: LimitInput = LimitInput(),
-    val urge: UrgeInput = UrgeInput()
+    val urge: UrgeInput = UrgeInput(),
+    /** The dumb-phone lock is on: the permanent rules in [LockRestrictions.DUMB] hold all the time. */
+    val dumbPhone: Boolean = false
 )
 
 /**
@@ -135,4 +137,22 @@ object LockRestrictions {
      * guest user has no brick).
      */
     val BRICK = setOf(SAFE_BOOT, DEBUGGING, FACTORY_RESET, ADD_USER, USER_SWITCH)
+
+    const val INSTALL_APPS = "no_install_apps"
+    const val INSTALL_UNKNOWN_SOURCES = "no_install_unknown_sources"
+    const val INSTALL_UNKNOWN_SOURCES_GLOBALLY = "no_install_unknown_sources_globally"
+    const val UNINSTALL_APPS = "no_uninstall_apps"
+    const val ADD_CLONE_PROFILE = "no_add_clone_profile"
+    const val ADD_MANAGED_PROFILE = "no_add_managed_profile"
+    const val NETWORK_RESET = "no_network_reset"
+
+    /**
+     * The dumb-phone lock closes every way around itself for as long as it runs: everything a brick
+     * closes, plus new apps, a second space or cloned apps, and a network reset. Reapplied on every
+     * pass, so a phone that ignores one once gets it again.
+     */
+    val DUMB = BRICK + setOf(
+        INSTALL_APPS, INSTALL_UNKNOWN_SOURCES, INSTALL_UNKNOWN_SOURCES_GLOBALLY, UNINSTALL_APPS,
+        ADD_CLONE_PROFILE, ADD_MANAGED_PROFILE, NETWORK_RESET
+    )
 }

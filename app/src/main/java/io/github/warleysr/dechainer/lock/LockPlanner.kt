@@ -89,6 +89,7 @@ object LockPlanner {
         // Date, time and time zone are locked all the time, not only during blocks (9.2).
         restrictions += LockRestrictions.DATE_TIME
         if (brick) restrictions += LockRestrictions.BRICK
+        if (state.dumbPhone) restrictions += LockRestrictions.DUMB
 
         val holdEnds = holds.map { it.endsAt }.filter { it != Long.MAX_VALUE }
         return LockPlan(

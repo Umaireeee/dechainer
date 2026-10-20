@@ -103,6 +103,7 @@ class DechainerApplication : Application() {
             runOneOffMigrations()
             // Instant reactions to the Private DNS setting, to security settings and to suspensions.
             DnsGuard.observe(this@DechainerApplication)
+            DnsGuard.watchNetwork(this@DechainerApplication)
             ScheduleEnforcer.watchForChanges(this@DechainerApplication)
             // Covers process restarts (app update, crash, being killed): the engine recomputes the
             // whole lock from stored data and re-arms its wake-up. Skipped when a receiver already
