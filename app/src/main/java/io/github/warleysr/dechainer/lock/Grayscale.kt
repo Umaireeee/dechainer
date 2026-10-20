@@ -66,7 +66,7 @@ object Grayscale {
         if (!dpm.isDeviceOwnerApp(ctx.packageName)) return false
         val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
         return try {
-            dpm.setPermissionGrant(admin, ctx.packageName, PERMISSION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
+            dpm.setPermissionGrantState(admin, ctx.packageName, PERMISSION, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
         } catch (e: Throwable) {
             Timber.w(e, "WRITE_SECURE_SETTINGS not granted")
             false
