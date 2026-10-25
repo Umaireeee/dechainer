@@ -11,6 +11,12 @@ enum class LockMode(val isBrick: Boolean) {
     SCHEDULE(false),
     DAILY_LIMIT(false),
     FOCUS_SESSION(false),
+
+    /** Study mode: started by hand until an end time; only the essentials and a few allowed apps work. Never pins the phone. */
+    STUDY(false),
+
+    /** Lockdown: the apps the owner picked are paused until an end time. Never pins the phone. */
+    LOCKDOWN(false),
     URGE_LOCK(true),
     FOCUS_BLOCK(true);
 
@@ -65,6 +71,15 @@ data class LimitInput(val reachedApps: Set<String> = emptySet(), val resetsAt: L
 /** A running urge lock: when it ends, or 0 when there is none. */
 data class UrgeInput(val endsAt: Long = 0L)
 
+/** Study mode: when the running session ends, or 0 when there is none. */
+data class StudyInput(val endsAt: Long = 0L)
+
+/**
+ * Lockdown: when the running one ends (0 when there is none) and the apps it pauses. The apps stay
+ * stored after it ends, so the next lockdown starts from the same list.
+ */
+data class LockdownInput(val endsAt: Long = 0L, val apps: Set<String> = emptySet())
+
 /** Everything [LockPlanner.plan] decides from. */
 data class LockState(
     val deviceOwner: Boolean,
@@ -73,8 +88,8 @@ data class LockState(
     val focus: FocusInput = FocusInput(),
     val limits: LimitInput = LimitInput(),
     val urge: UrgeInput = UrgeInput(),
-    /** The dumb-phone lock is on: the permanent rules in [LockRestrictions.DUMB] hold all the time. */
-    val dumbPhone: Boolean = false
+    val study: StudyInput = StudyInput(),
+    val lockdown: LockdownInput = LockdownInput()
 )
 
 /**
@@ -116,7 +131,12 @@ data class LockPlan(
      */
     val expiredFocusBlock: Boolean,
     /** The next moment anything could change on its own, or null when nothing will. */
-    val nextWakeAt: Long?
+    val nextWakeAt: Long?,
+    /**
+     * Apps to be hidden rather than paused (the Google app during study mode). Never overlaps
+     * [desiredApps]: an app is taken away one way or the other, not both.
+     */
+    val desiredHidden: Set<String> = emptySet()
 )
 
 /** For the Apps screen: which hold keeps an app blocked right now (the longest one, if several do). */
@@ -147,14 +167,23 @@ object LockRestrictions {
     const val NETWORK_RESET = "no_network_reset"
 
     /**
-     * The dumb-phone lock closes every way around itself for as long as it runs: everything a brick
-     * closes, plus new apps, a second space or cloned apps, and a network reset. Reapplied on every
-     * pass, so a phone that ignores one once gets it again.
+     * "No app control": apps cannot be uninstalled, disabled, force-stopped or cleared from Settings
+     * or the launcher. It is no longer on all the time: it holds only while study mode or a lockdown
+     * runs, so no paused app can be removed to get around the lock. This app is protected on its own,
+     * all the time, by the uninstall block and the force-stop and clear-data block (see [SystemGuard]).
      */
-    val OPEN_WINDOW_ALLOWS = setOf(INSTALL_APPS)
+    const val APPS_CONTROL = "no_control_apps"
 
-    val DUMB = BRICK + setOf(
+    /**
+     * Study mode closes every way around itself for as long as it runs: everything a brick closes,
+     * plus new apps, a second space or cloned apps, a network reset, and any app control. Reapplied
+     * on every pass, so a phone that ignores one once gets it again.
+     */
+    val STUDY = BRICK + setOf(
         INSTALL_APPS, INSTALL_UNKNOWN_SOURCES, INSTALL_UNKNOWN_SOURCES_GLOBALLY, UNINSTALL_APPS,
-        ADD_CLONE_PROFILE, ADD_MANAGED_PROFILE, NETWORK_RESET
+        ADD_CLONE_PROFILE, ADD_MANAGED_PROFILE, NETWORK_RESET, APPS_CONTROL
     )
+
+    /** A lockdown only has to keep the paused apps from being removed (and put back fresh). */
+    val LOCKDOWN = setOf(UNINSTALL_APPS, APPS_CONTROL)
 }

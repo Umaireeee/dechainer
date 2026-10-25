@@ -21,6 +21,16 @@ object AppStateKeys {
     const val URGE_LOCK_STARTED = "urgeLockStartedAt"
     const val URGE_LOCK_ENDS = "urgeLockEndsAt"
 
+    /** When the running study session ends, in trusted-clock epoch millis. Absent when none runs. */
+    const val STUDY_ENDS = "studyEndsAt"
+
+    /**
+     * When the running lockdown ends, and the apps it pauses (package names joined by newlines). The apps
+     * stay after it ends so the next lockdown starts from the same list.
+     */
+    const val LOCKDOWN_ENDS = "lockdownEndsAt"
+    const val LOCKDOWN_APPS = "lockdownApps"
+
     /**
      * Keys an older build used for the punishment day, which was removed (blueprint 1.2). Kept only
      * so the update can remove them; nothing reads them.

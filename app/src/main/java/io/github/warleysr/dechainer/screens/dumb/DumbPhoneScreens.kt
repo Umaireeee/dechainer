@@ -1,6 +1,6 @@
 package io.github.warleysr.dechainer.screens.dumb
 
-import io.github.warleysr.dechainer.models.BlockSchedule
+import android.content.Context
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -50,13 +52,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.clock.TrustedClock
+import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.lock.DumbPhone
-import io.github.warleysr.dechainer.lock.DumbPhoneRules
+import io.github.warleysr.dechainer.lock.ExitWait
+import io.github.warleysr.dechainer.lock.LockdownInput
+import io.github.warleysr.dechainer.lock.StudyMode
+import io.github.warleysr.dechainer.lock.StudyRules
+import io.github.warleysr.dechainer.models.AppItem
+import io.github.warleysr.dechainer.screens.common.AppPickerDialog
 import io.github.warleysr.dechainer.screens.common.RepeatWhileVisible
 import io.github.warleysr.dechainer.screens.setup.SetupDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -64,96 +74,65 @@ import java.util.Locale
 /** What the exit wait is called on screen: the real one is seven days, a debug build's is five minutes. */
 private val waitName: String get() = if (BuildConfig.DEBUG) "5-minute test wait" else "7-day wait"
 
+private const val HOME = "home"
+private const val SETTINGS = "settings"
+private const val STUDY = "study"
+private const val LOCKDOWN = "lockdown"
+
 /**
- * The whole app: one screen at a time, chosen from what is stored. Not started: the Start screen (or
- * the Device Owner setup while that is missing). Started: Home, and Settings behind a tap on the clock.
- * An exit wait that is running: the wait screen. There is nothing else to open and nothing to edit.
+ * The whole app: one screen at a time, chosen from what is stored. Device Owner missing: its setup.
+ * An exit wait that is running: the wait screen. Otherwise Home, with Study, Lockdown and Settings
+ * (behind a tap on the clock) one tap away. Nothing here can end a running session early.
  */
 @Composable
 fun DumbPhoneRoot() {
     val ctx = LocalContext.current
     var now by remember { mutableLongStateOf(TrustedClock.now(ctx)) }
     RepeatWhileVisible(1000) { now = TrustedClock.now(ctx) }
-    // Read again every second, so a wait running out shows at once.
+    // Read again every second, so a session running out or a wait running out shows at once.
     val deviceOwner = remember(now) { DumbPhone.isDeviceOwner(ctx) }
-    val startedAt = remember(now) { DumbPhone.startedAt(ctx) }
-    val waitLeft = remember(now) { if (startedAt > 0L) SecurityManager.getForcedRemovalRemainingTime(ctx) else -1L }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    val waitLeft = remember(now) { if (deviceOwner) SecurityManager.getForcedRemovalRemainingTime(ctx) else -1L }
+    val studyEnds = remember(now) { StudyMode.studyEndsAt(ctx) }
+    val lockdown = remember(now) { StudyMode.lockdown(ctx) }
+    var screen by rememberSaveable { mutableStateOf(HOME) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
-            startedAt == 0L && !deviceOwner -> Box(Modifier.fillMaxSize().systemBarsPadding()) {
+            !deviceOwner -> Box(Modifier.fillMaxSize().systemBarsPadding()) {
                 SetupDeviceOwnerPrivileges()
             }
-            startedAt == 0L -> StartScreen()
             waitLeft >= 0L -> WaitScreen(waitLeft)
-            showSettings -> SettingsScreen(now = now, startedAt = startedAt, onBack = { showSettings = false })
-            else -> HomeScreen(now = now, startedAt = startedAt, onSettings = { showSettings = true })
-        }
-    }
-}
-
-@Composable
-private fun StartScreen() {
-    val ctx = LocalContext.current
-    Column(
-        modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
-    ) {
-        Spacer(Modifier.height(40.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ready to lock your phone", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Medium)
-            Text(
-                "Once it starts, the only way out is a $waitName.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Card {
-            val items = listOf(
-                "Open every day from ${DumbPhoneRules.openHoursLabel()}, for banking, Gmail and the rest",
-                "The rest of the day only calls, SMS, camera, Settings and the hotspot work",
-                "Updates and installs only in the open hours; new apps are paused at the next lock",
-                "Adult sites are blocked on every network"
-            )
-            items.forEachIndexed { index, text ->
-                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Row(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("•", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 12.dp))
-                    Text(text, style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            HoldButton(label = "Hold to start the lock", enabled = true) { DumbPhone.start(ctx) }
-            Text(
-                "For the first 10 minutes you can undo it. After that, only the $waitName.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+            screen == SETTINGS -> SettingsScreen(onBack = { screen = HOME })
+            screen == STUDY -> StudyScreen(now = now, runningEnds = studyEnds, onBack = { screen = HOME })
+            screen == LOCKDOWN -> LockdownScreen(now = now, lockdown = lockdown, onBack = { screen = HOME })
+            else -> HomeScreen(
+                now = now,
+                studyEnds = studyEnds,
+                lockdown = lockdown,
+                onStudy = { screen = STUDY },
+                onLockdown = { screen = LOCKDOWN },
+                onSettings = { screen = SETTINGS }
             )
         }
     }
 }
 
 @Composable
-private fun HomeScreen(now: Long, startedAt: Long, onSettings: () -> Unit) {
+private fun HomeScreen(
+    now: Long,
+    studyEnds: Long,
+    lockdown: LockdownInput,
+    onStudy: () -> Unit,
+    onLockdown: () -> Unit,
+    onSettings: () -> Unit
+) {
     val ctx = LocalContext.current
     val zoned = Instant.ofEpochMilli(now).atZone(TrustedClock.zone())
     val is24 = DateFormat.is24HourFormat(ctx)
     val clock = DateTimeFormatter.ofPattern(if (is24) "HH:mm" else "h:mm").format(zoned)
     val date = DateTimeFormatter.ofPattern("EEEE, d MMMM").format(zoned).uppercase(Locale.getDefault())
-    val undoLeft = DumbPhoneRules.undoRemainingMs(now, startedAt)
-    val open = DumbPhoneRules.isOpenAt(zoned.hour * 60 + zoned.minute)
-    val statusText = if (open) {
-        "Open until ${BlockSchedule.formatMinute(DumbPhoneRules.OPEN_END_MINUTE)}"
-    } else {
-        "Locked until ${BlockSchedule.formatMinute(DumbPhoneRules.OPEN_START_MINUTE)}"
-    }
+    val studying = studyEnds > now
+    val lockedDown = lockdown.endsAt > now && lockdown.apps.isNotEmpty()
 
     Column(
         modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 32.dp, vertical = 32.dp),
@@ -169,25 +148,44 @@ private fun HomeScreen(now: Long, startedAt: Long, onSettings: () -> Unit) {
         )
         Spacer(Modifier.weight(1f))
         Card {
-            StatusRow(statusText, strong = true)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            StatusRow("Hotspot works", strong = false)
-        }
-        if (undoLeft > 0L) {
-            Spacer(Modifier.height(12.dp))
-            val minutes = undoLeft / 60_000
-            val seconds = (undoLeft / 1000) % 60
-            TextButton(onClick = { DumbPhone.undo(ctx) }) {
-                Text("Undo the lock (%d:%02d left)".format(minutes, seconds))
+            if (studying) {
+                StatusRow("Study mode until ${clockText(ctx, studyEnds)}", strong = true)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                StatusRow("${leftText(StudyRules.minutesLeft(now, studyEnds))} left. Hotspot works", strong = false)
             }
-        } else {
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Tap the clock for settings",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (lockedDown) {
+                if (studying) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                StatusRow(
+                    "Lockdown until ${clockText(ctx, lockdown.endsAt)}, ${lockdown.apps.size} app${if (lockdown.apps.size == 1) "" else "s"}",
+                    strong = true
+                )
+            }
+            if (!studying && !lockedDown) StatusRow("Nothing is locked", strong = true)
+            if (DumbPhone.isActive(ctx)) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                StatusRow("Adult sites are blocked on every network", strong = false)
+            }
         }
+        Spacer(Modifier.height(20.dp))
+        Button(
+            onClick = onStudy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        ) { Text(if (studying) "Extend study mode" else "Study", fontWeight = FontWeight.SemiBold) }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onLockdown,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+        ) { Text(if (lockedDown) "Lockdown" else "Lockdown on my distractions") }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Tap the clock for settings",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -206,12 +204,241 @@ private fun StatusRow(text: String, strong: Boolean) {
     }
 }
 
+// ---- Study mode ----
+
 @Composable
-private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
+private fun StudyScreen(now: Long, runningEnds: Long, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    BackHandler(onBack = onBack)
+    val running = runningEnds > now
+    var endsAt by rememberSaveable { mutableStateOf(0L) }
+    var refused by remember { mutableStateOf<String?>(null) }
+    val decision = if (endsAt > 0L) StudyRules.decide(now, runningEnds, endsAt, deviceOwner = true) else null
+    val startable = decision is StudyRules.Start.Started || decision is StudyRules.Start.Extended
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = onBack) { Text("Back") }
+            Text(
+                if (running) "Study mode is on" else "Study mode",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                if (running) "It ends at ${clockText(ctx, runningEnds)}. You can make it longer, never shorter."
+                else "Pick when it ends. Until then the phone is locked, and nothing ends it early.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        BulletCard(
+            listOf(
+                "Only calls, SMS, camera, Settings, the alarm clock and Gemini work",
+                "The Google app is hidden. Every other app is paused",
+                "No installing and no uninstalling while it runs",
+                "When it ends the phone is normal again. The adult-site filter stays"
+            )
+        )
+        EndTimeChooser(now = now, runningEnds = runningEnds, endsAt = endsAt, onChange = { endsAt = it; refused = null })
+        EndSummary(ctx, now, endsAt, decision)
+        refused?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+        HoldButton(label = if (running) "Hold to extend" else "Hold to start study mode", enabled = startable) {
+            when (val result = StudyMode.startStudy(ctx, endsAt)) {
+                is StudyRules.Start.Started, is StudyRules.Start.Extended -> onBack()
+                else -> refused = describe(ctx, now, endsAt, result).first
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+// ---- Lockdown ----
+
+@Composable
+private fun LockdownScreen(now: Long, lockdown: LockdownInput, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    BackHandler(onBack = onBack)
+    val running = lockdown.endsAt > now && lockdown.apps.isNotEmpty()
+    var endsAt by rememberSaveable { mutableStateOf(0L) }
+    // The apps of the last lockdown are the starting point; a running one can only gain apps.
+    var picked by remember { mutableStateOf(lockdown.apps) }
+    var showPicker by remember { mutableStateOf(false) }
+    var refused by remember { mutableStateOf<String?>(null) }
+    var apps by remember { mutableStateOf<List<AppItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.IO) { AppRepository.getApps() }
+        loading = false
+    }
+
+    val requestedEnd = when {
+        endsAt > 0L -> endsAt
+        running -> lockdown.endsAt
+        else -> 0L
+    }
+    val decision = if (requestedEnd > 0L) {
+        StudyRules.decideLockdown(now, lockdown.endsAt, lockdown.apps, requestedEnd, picked, deviceOwner = true)
+    } else null
+    val startable = decision is StudyRules.Start.Started ||
+        decision is StudyRules.Start.Extended ||
+        decision is StudyRules.Start.AppsAdded
+    val names = apps.filter { it.packageName in picked }.map { it.name }.sortedBy { it.lowercase() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = onBack) { Text("Back") }
+            Text(
+                if (running) "Lockdown is on" else "Lockdown",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                if (running) "It ends at ${clockText(ctx, lockdown.endsAt)}. You can add apps and make it longer, never the other way."
+                else "Pick the apps that pull you away and how long to block them. The rest of the phone works as usual, and nothing ends it early.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Section("APPS TO BLOCK") {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    when {
+                        picked.isEmpty() -> "None picked yet"
+                        names.isEmpty() -> "${picked.size} app${if (picked.size == 1) "" else "s"}"
+                        names.size <= 4 -> names.joinToString(", ")
+                        else -> names.take(4).joinToString(", ") + " and ${names.size - 4} more"
+                    },
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                OutlinedButton(
+                    onClick = { showPicker = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) { Text(if (running) "Add apps" else "Choose apps") }
+            }
+        }
+        EndTimeChooser(now = now, runningEnds = if (running) lockdown.endsAt else 0L, endsAt = endsAt, onChange = { endsAt = it; refused = null })
+        EndSummary(ctx, now, requestedEnd, decision)
+        refused?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+        HoldButton(
+            label = when {
+                !running -> "Hold to start lockdown"
+                endsAt > 0L -> "Hold to extend"
+                else -> "Hold to add the apps"
+            },
+            enabled = startable
+        ) {
+            when (val result = StudyMode.startLockdown(ctx, requestedEnd, picked)) {
+                is StudyRules.Start.Started, is StudyRules.Start.Extended, is StudyRules.Start.AppsAdded -> onBack()
+                else -> refused = describe(ctx, now, requestedEnd, result).first
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+
+    if (showPicker) {
+        AppPickerDialog(
+            apps = apps,
+            isLoading = loading,
+            isSelected = { it in picked },
+            onToggle = { pkg ->
+                // While a lockdown runs its list only grows: an app it already holds cannot be unticked.
+                if (!(running && pkg in lockdown.apps)) picked = if (pkg in picked) picked - pkg else picked + pkg
+            },
+            onDismiss = { showPicker = false }
+        )
+    }
+}
+
+// ---- Choosing an end time ----
+
+@Composable
+private fun EndTimeChooser(now: Long, runningEnds: Long, endsAt: Long, onChange: (Long) -> Unit) {
+    val ctx = LocalContext.current
+    val running = runningEnds > now
+    // A running session grows from its own end; a new one from now.
+    val base = if (running) runningEnds else now
+    Section(if (running) "MAKE IT LONGER BY" else "RUN FOR") {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf(1, 2, 3, 5).forEach { hours ->
+                    OutlinedButton(
+                        onClick = { onChange(base + hours * 3_600_000L) },
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                    ) { Text(if (running) "+$hours h" else "$hours h", maxLines = 1) }
+                }
+            }
+            OutlinedButton(
+                onClick = {
+                    val zoned = Instant.ofEpochMilli(TrustedClock.now(ctx)).atZone(TrustedClock.zone())
+                    android.app.TimePickerDialog(
+                        ctx,
+                        { _, hour, minute ->
+                            onChange(StudyRules.nextOccurrence(TrustedClock.now(ctx), TrustedClock.zone(), hour * 60 + minute))
+                        },
+                        zoned.hour,
+                        zoned.minute,
+                        DateFormat.is24HourFormat(ctx)
+                    ).show()
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) { Text("Pick an end time") }
+        }
+    }
+}
+
+@Composable
+private fun EndSummary(ctx: Context, now: Long, endsAt: Long, decision: StudyRules.Start?) {
+    val (text, isError) = if (decision == null) "Choose how long." to false else describe(ctx, now, endsAt, decision)
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyLarge,
+        fontWeight = FontWeight.Medium,
+        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
+    )
+}
+
+/** The words for a decision, and whether it is a refusal. */
+private fun describe(ctx: Context, now: Long, endsAt: Long, decision: StudyRules.Start): Pair<String, Boolean> = when (decision) {
+    is StudyRules.Start.Started, is StudyRules.Start.Extended ->
+        "Until ${clockText(ctx, endsAt)}, ${leftText(StudyRules.minutesLeft(now, endsAt))} from now" to false
+    is StudyRules.Start.AppsAdded -> "The apps are added. It still ends at ${clockText(ctx, decision.endsAt)}" to false
+    StudyRules.Start.TooShort -> "At least 10 minutes." to true
+    StudyRules.Start.TooLong -> "At most 12 hours from now." to true
+    StudyRules.Start.NotLonger -> "A running one can only be made longer, or gain apps." to true
+    StudyRules.Start.NothingPicked -> "Pick at least one app." to true
+    StudyRules.Start.NoDeviceOwner -> "This phone has not given the app Device Owner." to true
+}
+
+/** The time of day as the phone shows it, 24-hour or not. */
+private fun clockText(ctx: Context, millis: Long): String {
+    val pattern = if (DateFormat.is24HourFormat(ctx)) "HH:mm" else "h:mm a"
+    return DateTimeFormatter.ofPattern(pattern, Locale.getDefault()).format(Instant.ofEpochMilli(millis).atZone(TrustedClock.zone()))
+}
+
+private fun leftText(minutes: Long): String =
+    if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
+
+// ---- Settings and the exit ----
+
+@Composable
+private fun SettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     BackHandler(onBack = onBack)
     var confirm by rememberSaveable { mutableStateOf(false) }
-    val undoLeft = DumbPhoneRules.undoRemainingMs(now, startedAt)
 
     Column(
         modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp, vertical = 24.dp),
@@ -221,37 +448,33 @@ private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("Back") }
             Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Medium)
             Text(
-                "Nothing here can be changed. The only way out is the $waitName below.",
+                "Study mode and lockdown cannot be ended early. The only way to take this app off your phone is the $waitName below.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Section("OPEN HOURS") {
-            ValueRow("Every day", DumbPhoneRules.openHoursLabel())
-        }
-        Section("PROTECTION") {
+        Section("ALWAYS ON") {
             ValueRow("Adult sites", "Blocked, any network")
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            ValueRow("Installs", "Open hours only")
+            ValueRow("VPN and Private DNS settings", "Refused")
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            ValueRow("VPNs and other sources", "Refused")
+            ValueRow("Date and time", "Locked")
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            ValueRow("Second space, users, safe mode", "Off")
+            ValueRow("Uninstalling this app", "Refused")
+        }
+        Section("ONLY WHILE STUDYING OR IN LOCKDOWN") {
+            ValueRow("Uninstalling other apps", "Refused")
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ValueRow("Installs, second space, safe mode", "Off (study mode)")
         }
         Spacer(Modifier.weight(1f))
         Card {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Need your phone back?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Start a $waitName. The lock stays on until it ends, and you can cancel any time.",
+                    "Start a $waitName. A session or lockdown that is running keeps going to its end time meanwhile, and you can cancel the wait any time.",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (undoLeft > 0L) {
-                    OutlinedButton(
-                        onClick = { DumbPhone.undo(ctx) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    ) { Text("Undo the lock now") }
-                }
                 OutlinedButton(
                     onClick = { confirm = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -264,7 +487,7 @@ private fun SettingsScreen(now: Long, startedAt: Long, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text("Start the $waitName?") },
-            text = { Text("Your phone stays fully locked until the wait ends. You can cancel it from the wait screen.") },
+            text = { Text("When it ends you can unlock the phone for good. You can cancel it from the wait screen.") },
             confirmButton = {
                 TextButton(onClick = {
                     SecurityManager.startForcedRemoval(ctx)
@@ -286,7 +509,7 @@ private fun WaitScreen(remainingMs: Long) {
         finished -> "The wait is over"
         remainingMs < 3_600_000L -> "${(remainingMs + 59_999L) / 60_000L} min"
         else -> {
-            val (days, hours) = DumbPhoneRules.splitWait(remainingMs)
+            val (days, hours) = ExitWait.splitWait(remainingMs)
             if (days > 0) "$days day${if (days == 1L) "" else "s"}\n$hours hour${if (hours == 1L) "" else "s"}" else "$hours hour${if (hours == 1L) "" else "s"}"
         }
     }
@@ -297,7 +520,7 @@ private fun WaitScreen(remainingMs: Long) {
     ) {
         Spacer(Modifier.weight(1f))
         Text(
-            if (finished) "YOUR PHONE CAN BE UNLOCKED" else "THE LOCK LIFTS IN",
+            if (finished) "YOUR PHONE CAN BE UNLOCKED" else "THIS APP LETS GO OF YOUR PHONE IN",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -318,9 +541,9 @@ private fun WaitScreen(remainingMs: Long) {
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
-            ) { Text("Cancel, stay locked", fontWeight = FontWeight.SemiBold) }
+            ) { Text("Cancel the wait", fontWeight = FontWeight.SemiBold) }
             Text(
-                "Until then the lock stays as it is. Calls, hotspot and camera always work.",
+                "Until then everything stays as it is. A study session or lockdown that is running keeps going to its end time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -336,7 +559,7 @@ private fun WaitScreen(remainingMs: Long) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmUnlock = false
-                    // The lock's own settings go first (limit, DNS): they need Device Owner, which goes next.
+                    // The protection's own settings go first (DNS, sessions): they need Device Owner, which goes next.
                     DumbPhone.release(ctx)
                     viewModel.removeDeviceOwner()
                     (ctx as? android.app.Activity)?.recreate()
@@ -361,6 +584,22 @@ private fun Card(content: @Composable () -> Unit) {
 }
 
 @Composable
+private fun BulletCard(items: List<String>) {
+    Card {
+        items.forEachIndexed { index, text ->
+            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("•", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 12.dp))
+                Text(text, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+@Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -380,7 +619,7 @@ private fun ValueRow(name: String, value: String) {
     }
 }
 
-/** A button that must be held for a moment: an accidental tap cannot start the lock. */
+/** A button that must be held for a moment: an accidental tap cannot start a session. */
 @Composable
 private fun HoldButton(label: String, enabled: Boolean, onDone: () -> Unit) {
     var pressed by remember { mutableStateOf(false) }

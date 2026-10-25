@@ -1,6 +1,6 @@
 # Project handoff (read this first in a new session)
 
-Last updated: 2026-10-07. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
+Last updated: 2026-10-25. Owner: Umaireeee. Repo: `Umaireeee/dechainer`. Default branch: `main-clean`.
 The full history of earlier sessions (the two-app project, every phase report) is in `docs/handoff-history.md`.
 
 ## What this is
@@ -19,6 +19,13 @@ blueprint in places, so where they disagree, report before changing anything.
 - **No daily checklist (removed after 1.2 on the owner's decision):** the Today screen, the `day`/`goal` tables, the
   evening reminders, the rules onboarding, `activatedOn` and the rest-day link are gone. Deleting a finished blackout
   or focus session is always allowed.
+
+## Study mode and lockdown (2026-10-25)
+
+The dumb-phone lock was replaced by hand-started **study mode** and **lockdown** (BLUEPRINT 17D, `docs/DUMB-PHONE.md`).
+Pure rules are in `lock/StudyRules.kt`; `StudyMode` starts them; the planner, engine and `ScheduleEnforcer` apply them.
+The pure tests pass (`tools/pure-tests.sh`); the Android and Compose code is not compiled yet, so CI is the first
+real build. Open on the phone: Gemini working with the Google app hidden, and the BLUEPRINT 14A / 15 checks.
 
 ## State at hand-off
 

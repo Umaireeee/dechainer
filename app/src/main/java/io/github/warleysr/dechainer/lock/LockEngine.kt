@@ -150,9 +150,11 @@ object LockEngine {
                 plan = plan(now, zone, gathered.state)
             }
             _status.value = plan.brickStatus
+            // The always-on rules first: the one-off release of the old permanent app-control rule has
+            // to land before the plan decides whether that rule belongs to a running session.
+            SystemGuard.apply(ctx)
             ScheduleEnforcer.applyPlan(ctx, plan, gathered.extras)
             DumbPhone.enforce(ctx)
-            SystemGuard.apply(ctx)
             DnsGuard.enforce(ctx)
             if (plan.brick && !isPinned(ctx)) {
                 reopenIfBrick(ctx)
@@ -167,9 +169,10 @@ object LockEngine {
     /** Reads everything [LockPlanner] decides from. The only place the plan's inputs come from. */
     private fun gather(ctx: Context, now: Long): Gathered {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-        // Once the dumb-phone lock has started, it is the only schedule: nothing stored before it applies.
-        val dumb = DumbPhone.isActive(ctx)
-        val schedules = if (dumb) listOf(DumbPhoneRules.schedule()) else ScheduleRepository.getSchedules(ctx)
+        // Once the protection is on (the first study session or lockdown has started), study mode and
+        // lockdown are the only locks: nothing stored before them applies.
+        val armed = DumbPhone.isActive(ctx)
+        val schedules = if (armed) emptyList() else ScheduleRepository.getSchedules(ctx)
         fun label(mode: LockMode): String = ctx.getString(
             when (mode) {
                 LockMode.SCHEDULE -> R.string.schedules
@@ -177,6 +180,8 @@ object LockEngine {
                 LockMode.FOCUS_BLOCK -> R.string.focus_brick_source
                 LockMode.FOCUS_SESSION -> R.string.focus_lock_source
                 LockMode.URGE_LOCK -> R.string.urge_lock_source
+                LockMode.STUDY -> R.string.study_source
+                LockMode.LOCKDOWN -> R.string.lockdown_source
             }
         )
         // The urge lock comes from `app_state`; it is known on any phone, so the status never
@@ -199,14 +204,17 @@ object LockEngine {
             )
         }
 
+        val study = LockStateStore.study(ctx)
+        val lockdown = LockStateStore.lockdown(ctx)
+
         val protectedPkgs = ScheduleEnforcer.protectedPackages(ctx)
         val sms = try { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) } catch (_: Exception) { null }
         val phone = PhoneFacts(
             launcherApps = ScheduleEnforcer.launcherApps(ctx),
             protectedApps = protectedPkgs,
             alarmApps = ScheduleEnforcer.alarmApps(ctx),
-            // The dumb-phone lock also closes the system file pickers, so Files cannot be reached.
-            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx).let { if (dumb) it - DumbPhoneRules.FILE_PICKERS else it },
+            // Study mode also closes the system file pickers, so Files cannot be reached through them.
+            alwaysAllowed = ScheduleEnforcer.alwaysAllowed(ctx).let { if (study.endsAt > now) it - StudyRules.FILE_PICKERS else it },
             emergencyApps = LockSafety.EMERGENCY_APPS,
             smsApps = setOfNotNull(sms)
         )
@@ -223,7 +231,7 @@ object LockEngine {
         val limits = LimitInput(limitStatus.reached, TimeLimits.midnightMillis(now))
 
         return Gathered(
-            LockState(true, schedules, phone, focus, limits, urge, dumbPhone = dumb),
+            LockState(true, schedules, phone, focus, limits, urge, study, lockdown),
             ScheduleEnforcer.ApplyExtras(protectedPkgs, limitStatus.nextCheckDelayMs, ::label)
         )
     }

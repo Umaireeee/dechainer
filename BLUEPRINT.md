@@ -566,3 +566,12 @@ Claude Code must list which of these are still unchecked at the end of every pha
 - **Deleting data is simpler.** With no NO_SLIP or FOCUS_MINUTES goals to protect, `DeleteRules` is removed: any finished urge, slip, focus session or deep dive can be deleted at once, and the wipe removes every finished entry and session. The export and import no longer carry `day` or `goal` rows.
 - **Home is the same clock, dressed plainly.** The clock keeps a soft lamp-light behind it, the date sits above it, the Urge button is one filled pill, and a quiet hint names the menu gesture. During a brick the menu is empty (nothing there changes a lock), so it is not offered.
 - **Docs.** Sections 6.4, D6, D9, D17 and D18 describe code that no longer exists; the test-visible behaviour above is what ships. The README and GUIDE were trimmed to match (the Reports references in them predate 17B and are also gone); RELEASE-NOTES and `docs/handoff-history.md` stay as history.
+
+## 17D. Study mode and lockdown (owner's decisions, 2026-10-25)
+The all-day dumb-phone lock (open window 21:00 to 22:30, 10-minute undo) is replaced. Study mode is started by
+hand until an end time (10 minutes to 12 hours) and applies the dumb-phone allow-only rules, with Gemini allowed
+and the Google app hidden (not paused). It can only be extended, never shortened (there is no recovery code).
+Lockdown pauses only the owner's picked apps until an end time. The adult-site DNS filter is armed at the first
+session and stays on. "No app control" and uninstall blocking apply only while study mode or a lockdown runs;
+this app stays protected at all times. The 7-day wait is unchanged. Details: `docs/DUMB-PHONE.md`.
+Defaults chosen by the assistant and open to veto: the 10 minute to 12 hour range, hold-to-start, no undo.

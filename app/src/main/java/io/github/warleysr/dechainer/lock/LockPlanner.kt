@@ -78,6 +78,23 @@ object LockPlanner {
             holds += Hold(LockMode.FOCUS_SESSION, null, focus.sessionLockEndsAt, allowOnlyBlocked(state.phone, focus.allowedApps))
         }
 
+        // Study mode: every app with an icon is paused except the essentials and the allowed apps, and the
+        // apps that are hidden instead are left out of the paused set (an app is taken away one way only).
+        // It pins nothing, so the notification shade and the hotspot stay reachable.
+        val studyOn = state.study.endsAt > now
+        if (studyOn) {
+            holds += Hold(
+                LockMode.STUDY, null, state.study.endsAt,
+                allowOnlyBlocked(state.phone, StudyRules.ALLOWED_APPS) - StudyRules.HIDDEN_APPS
+            )
+        }
+
+        // Lockdown: just the apps the owner picked, minus the essentials.
+        val lockdownOn = state.lockdown.endsAt > now && state.lockdown.apps.isNotEmpty()
+        if (lockdownOn) {
+            holds += Hold(LockMode.LOCKDOWN, null, state.lockdown.endsAt, StudyRules.lockdownBlocked(state.phone, state.lockdown.apps))
+        }
+
         // Daily limits: an app that has used its time stays paused until the day resets.
         if (state.limits.reachedApps.isNotEmpty() && state.limits.resetsAt > now) {
             holds += Hold(LockMode.DAILY_LIMIT, null, state.limits.resetsAt, state.limits.reachedApps)
@@ -89,12 +106,9 @@ object LockPlanner {
         // Date, time and time zone are locked all the time, not only during blocks (9.2).
         restrictions += LockRestrictions.DATE_TIME
         if (brick) restrictions += LockRestrictions.BRICK
-        if (state.dumbPhone) {
-            restrictions += LockRestrictions.DUMB
-            // Installs and updates from the store are allowed in the open window only; an app installed
-            // then is paused at the next lock like every other. Sideloading and uninstalling stay refused.
-            if (activeSchedules.isEmpty()) restrictions -= LockRestrictions.OPEN_WINDOW_ALLOWS
-        }
+        // The ways around a lock are closed for exactly as long as the lock runs, and open again after.
+        if (studyOn) restrictions += LockRestrictions.STUDY
+        if (lockdownOn) restrictions += LockRestrictions.LOCKDOWN
 
         val holdEnds = holds.map { it.endsAt }.filter { it != Long.MAX_VALUE }
         return LockPlan(
@@ -108,7 +122,9 @@ object LockPlanner {
             holdClock = true,
             expiredFocusBlock = expiredFocusBlock,
             nextWakeAt = (schedulesNext + holdEnds + listOf(state.focus.wakeAt))
-                .filter { it > now }.minOrNull()
+                .filter { it > now }.minOrNull(),
+            // Never an app the phone cannot do without (the launcher, the dialer, a keyboard).
+            desiredHidden = if (studyOn) StudyRules.HIDDEN_APPS - state.phone.protectedApps else emptySet()
         )
     }
 

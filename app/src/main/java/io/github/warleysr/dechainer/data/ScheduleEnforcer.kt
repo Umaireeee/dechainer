@@ -33,6 +33,7 @@ import timber.log.Timber
  */
 object ScheduleEnforcer : AppBlockEngine() {
     private const val KEY_OWNED_RESTRICTIONS = "owned_restrictions"
+    private const val KEY_OWNED_HIDDEN = "owned_hidden"
     private const val KEY_ACTIVE_SITES = "active_sites"
 
     const val ACTION_BOUNDARY = "io.github.warleysr.dechainer.SCHEDULE_BOUNDARY"
@@ -139,6 +140,7 @@ object ScheduleEnforcer : AppBlockEngine() {
         }
         stage("brick home") { if (!applyBrickHome(ctx, dpm, admin, plan.brick)) anyFailed = true }
         stage("apps") { applyApps(ctx, dpm, admin, plan.desiredApps) { emptySet() } }
+        stage("hidden apps") { applyHidden(ctx, dpm, admin, plan.desiredHidden) }
         stage("restrictions") { applyRestrictions(ctx, dpm, admin, plan.desiredRestrictions) }
         stage("sites") { applySites(ctx, plan.desiredSites) }
         stage("alarms") {
@@ -156,6 +158,39 @@ object ScheduleEnforcer : AppBlockEngine() {
         val next = armAlarmFor(ctx, nextWake)
         val cap = wallNow + ENGINE_MAX_CACHE_MS
         cacheValidUntil = if (anyFailed) 0L else if (next != null) minOf(next, cap) else cap
+    }
+
+    /**
+     * Hides what the plan wants hidden and shows again what this engine hid and no longer needs hidden.
+     * Same rule as for suspended apps: ownership is written BEFORE the app is hidden, so a process that
+     * dies in between leaves an app on record as ours to show again rather than hidden for good; and
+     * an app that was already hidden by anyone else is never ours, so it is left hidden when we are done.
+     */
+    private fun applyHidden(ctx: Context, dpm: DevicePolicyManager, admin: ComponentName, desired: Set<String>) {
+        val prefs = state(ctx)
+        val initiallyOwned = prefs.getStringSet(KEY_OWNED_HIDDEN, emptySet())?.toSet() ?: emptySet()
+        var owned = initiallyOwned
+
+        // An app that is not installed cannot be hidden (and the Google app may simply be absent).
+        val toHide = desired.filter { pkg -> Blocker.isInstalled(ctx, pkg) && !Blocker.isHidden(dpm, admin, pkg) }
+        if (toHide.isNotEmpty()) {
+            owned = owned + toHide
+            prefs.edit(commit = true) { putStringSet(KEY_OWNED_HIDDEN, owned) }
+            val refused = Blocker.hide(dpm, admin, toHide)
+            if (refused.isNotEmpty()) Timber.w("Schedule: could not hide $refused")
+            owned = owned - refused
+        }
+
+        val toShow = owned - desired
+        if (toShow.isNotEmpty()) {
+            val installed = toShow.filter { Blocker.isInstalled(ctx, it) }
+            val notShown = if (installed.isNotEmpty()) Blocker.unhide(dpm, admin, installed) else emptySet()
+            if (notShown.isNotEmpty()) Timber.w("Schedule: could not show $notShown again")
+            // An app Android refused to show again stays on our list, so the next pass tries again.
+            owned = owned - (toShow - notShown)
+        }
+
+        if (owned != initiallyOwned) prefs.edit(commit = true) { putStringSet(KEY_OWNED_HIDDEN, owned) }
     }
 
     private fun applyRestrictions(
@@ -248,6 +283,7 @@ object ScheduleEnforcer : AppBlockEngine() {
                 val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
                 if (dpm.isDeviceOwnerApp(ctx.packageName)) {
                     applyApps(ctx, dpm, admin, emptySet()) { emptySet() }
+                    applyHidden(ctx, dpm, admin, emptySet())
                     applyRestrictions(ctx, dpm, admin, emptySet())
                 }
                 applySites(ctx, emptySet())

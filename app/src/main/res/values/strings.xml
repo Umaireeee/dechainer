@@ -364,6 +364,8 @@
     <string name="dns_error_unreachable">This network can\'t reach that provider on port 853, which Private DNS needs: the network may be blocking it, or the server is too far away. Pick one with a ✓, or try Wi-Fi.</string>
     <string name="focus_brick_source">Focus block</string>
     <string name="urge_lock_source">Blackout</string>
+    <string name="study_source">Study mode</string>
+    <string name="lockdown_source">Lockdown</string>
     <string name="locked_until">Locked until %1$s</string>
     <string name="focus_block_rules_brick">Your phone is bricked until then, breaks included: only this screen, incoming calls, your alarm clock, the Urge button and Quick Settings (airplane mode, mobile data, hotspot) work. Sessions and breaks run by themselves. The clock is locked. Pause is there for physical work: the phone stays bricked while paused, and the end time never moves.</string>
     <string name="focus_block_start">Start focus block</string>

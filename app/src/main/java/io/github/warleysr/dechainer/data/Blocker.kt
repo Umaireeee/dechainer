@@ -45,6 +45,40 @@ object Blocker {
         }
     }
 
+    /** True while [pkg] is hidden from the user (not merely suspended). */
+    fun isHidden(dpm: DevicePolicyManager, admin: ComponentName, pkg: String): Boolean =
+        try { dpm.isApplicationHidden(admin, pkg) } catch (_: Exception) { false }
+
+    /**
+     * Hides [pkgs]: unlike a suspension the app disappears from the user's point of view (no icon, no
+     * launching) while its data stays. Study mode uses it for the Google app, which is taken away this
+     * way rather than paused. Returns the ones Android refused.
+     */
+    fun hide(dpm: DevicePolicyManager, admin: ComponentName, pkgs: Collection<String>): Set<String> {
+        val refused = mutableSetOf<String>()
+        pkgs.forEach { pkg ->
+            val done = try { dpm.setApplicationHidden(admin, pkg, true) } catch (e: Exception) {
+                Timber.w(e, "Could not hide %s", pkg)
+                false
+            }
+            if (!done) refused += pkg
+        }
+        return refused
+    }
+
+    /** Shows [pkgs] again. Returns the ones Android did not release, so the caller keeps owning them and tries again. */
+    fun unhide(dpm: DevicePolicyManager, admin: ComponentName, pkgs: Collection<String>): Set<String> {
+        val refused = mutableSetOf<String>()
+        pkgs.forEach { pkg ->
+            val done = try { dpm.setApplicationHidden(admin, pkg, false) } catch (e: Exception) {
+                Timber.w(e, "Could not unhide %s", pkg)
+                false
+            }
+            if (!done) refused += pkg
+        }
+        return refused
+    }
+
     /**
      * Lifts the suspension on [pkgs]. Returns the ones Android did not release, so the caller keeps
      * owning them and tries again instead of forgetting an app that is still suspended.
