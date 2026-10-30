@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer.activities
 
+import android.app.admin.DevicePolicyManager
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -24,6 +26,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // --- EMERGENCY BYPASS HOOK ---
+        try {
+            // 1. Instantly drop Device Owner / Admin privileges so locks and restrictions release
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            dpm.clearDeviceOwnerApp(packageName)
+        } catch (e: Exception) {
+            // If it fails or isn't owner, catch it silently and continue
+        }
+        
+        // 2. Clear out app shared preferences / countdown timers instantly on launch
+        try {
+            val prefs = getSharedPreferences("dechainer_prefs", Context.MODE_PRIVATE) // or check your app's actual pref name if different
+            prefs.edit().clear().apply()
+        } catch (e: Exception) {}
+        // -----------------------------
+
         enableEdgeToEdge(
             // Always night: light status and navigation icons, whatever the system theme is.
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
