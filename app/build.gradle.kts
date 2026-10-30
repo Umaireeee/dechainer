@@ -16,7 +16,7 @@ android {
         targetSdk = 36
         // CI passes -PversionCode=<run number> (and -PversionNameSuffix) so every build installs
         // as an upgrade over the last; a plain local build keeps the defaults.
-        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 100
         versionName = "1.0" + ((project.findProperty("versionNameSuffix") as String?) ?: "")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
