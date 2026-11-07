@@ -26,7 +26,7 @@ class RegionRuleRepositoryTest {
     fun `rules survive a save and load round trip`() {
         val rules = listOf(
             RegionRule("a", "com.whatsapp", "com.whatsapp:id/header", null, "header", true, "com.whatsapp.HomeActivity"),
-            RegionRule("b", "com.example", null, "Reels", "Reels", false, null)
+            RegionRule("b", "com.example", null, "Reels", "Reels", false, null, invisible = true)
         )
         RegionRuleRepository.save(context, rules)
         assertEquals(rules, RegionRuleRepository.load(context))
@@ -39,6 +39,7 @@ class RegionRuleRepositoryTest {
         }
         val rule = RegionRuleRepository.load(context).single()
         assertEquals(false, rule.extendDown)
+        assertEquals(false, rule.invisible)
         assertNull(rule.activityClass)
     }
 

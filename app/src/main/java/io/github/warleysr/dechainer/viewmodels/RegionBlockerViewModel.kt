@@ -25,7 +25,7 @@ class RegionBlockerViewModel : ViewModel() {
 
     fun clearCapture() = DechainerAccessibilityService.clearCapture()
 
-    fun addRule(node: DechainerAccessibilityService.Companion.CapturedNode, matchText: Boolean, extendDown: Boolean) {
+    fun addRule(node: DechainerAccessibilityService.Companion.CapturedNode, matchText: Boolean, extendDown: Boolean, invisible: Boolean) {
         val pkg = DechainerAccessibilityService.capturedPackage ?: return
         val text = if (matchText || node.viewId == null) node.text else null
         val rule = RegionRule(
@@ -35,13 +35,21 @@ class RegionBlockerViewModel : ViewModel() {
             text = text,
             label = node.viewId?.substringAfter('/') ?: node.text.orEmpty(),
             extendDown = extendDown,
-            activityClass = DechainerAccessibilityService.capturedActivity
+            activityClass = DechainerAccessibilityService.capturedActivity,
+            invisible = invisible
         )
         if (rules.none { it.packageName == pkg && it.viewId == rule.viewId && it.text == rule.text && it.extendDown == extendDown &&
                 it.activityClass == rule.activityClass }) {
             rules.add(rule)
             RegionRuleRepository.save(context, rules)
         }
+    }
+
+    fun setInvisible(rule: RegionRule, invisible: Boolean) {
+        val index = rules.indexOfFirst { it.id == rule.id }
+        if (index < 0) return
+        rules[index] = rules[index].copy(invisible = invisible)
+        RegionRuleRepository.save(context, rules)
     }
 
     fun removeRule(rule: RegionRule) {

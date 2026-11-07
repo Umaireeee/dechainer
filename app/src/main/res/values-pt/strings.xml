@@ -561,6 +561,8 @@
     <string name="region_match_text">Somente quando o texto for “%1$s”</string>
     <string name="region_blocked_message">Bloqueado pelo Déchaîner</string>
     <string name="region_extend_down">Cobrir também tudo abaixo dele (até o fim da lista)</string>
+    <string name="region_invisible">Invisível: a tela fica normal, mas toques e rolagem nesta área são bloqueados</string>
+    <string name="region_invisible_short">Invisível</string>
 </resources>
 
 

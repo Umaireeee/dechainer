@@ -90,7 +90,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     private var regionStableScans = 0
     // True when every rule on screen is matched by view id, so text-only changes can't affect it.
     private var regionIdBased = false
-    private var regionLastRects: List<Rect> = emptyList()
+    private var regionLastRects: List<RegionOverlay.Cover> = emptyList()
 
     // Where an extend-down target was last seen, so the cover stays up while it is scrolled away.
     private class RegionSeen(val node: Rect, val area: Rect, val containerId: String?, val scrollY: Int)
@@ -752,7 +752,7 @@ class DechainerAccessibilityService : AccessibilityService() {
             return
         }
 
-        val rects = ArrayList<Rect>()
+        val rects = ArrayList<RegionOverlay.Cover>()
         for (rule in rules) {
             val nodes = when {
                 rule.viewId != null -> root.findAccessibilityNodeInfosByViewId(rule.viewId)
@@ -770,7 +770,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                     if (rule.extendDown) {
                         val hit = regionBelow(node, rect)
                         if (hit != null) {
-                            rects.add(hit.cover)
+                            rects.add(RegionOverlay.Cover(hit.cover, rule.invisible))
                             covered = true
                             if (hit.area != null) {
                                 regionSeen[rule.id] =
@@ -778,12 +778,12 @@ class DechainerAccessibilityService : AccessibilityService() {
                             }
                         }
                     } else if (node.isVisibleToUser && !rect.isEmpty) {
-                        rects.add(rect)
+                        rects.add(RegionOverlay.Cover(rect, rule.invisible))
                     }
                 }
                 node.recycle()
             }
-            if (rule.extendDown && !covered) latchedCover(rule, root)?.let { rects.add(it) }
+            if (rule.extendDown && !covered) latchedCover(rule, root)?.let { rects.add(RegionOverlay.Cover(it, rule.invisible)) }
         }
         root.recycle()
         if (rects.isEmpty()) regionOverlay.hide() else regionOverlay.show(rects)

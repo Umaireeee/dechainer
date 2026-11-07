@@ -14,7 +14,9 @@ data class RegionRule(
     /** Also cover everything below the element, down to the end of its scrolling container. */
     val extendDown: Boolean = false,
     /** Activity the rule was captured on; null means any screen of the app. */
-    val activityClass: String? = null
+    val activityClass: String? = null,
+    /** Don't draw anything: just stop touches reaching the area. */
+    val invisible: Boolean = false
 ) {
     /** Whether the rule applies while [activity] is the foreground activity of its app. */
     fun appliesTo(activity: String?) = activityClass == null || activityClass == activity

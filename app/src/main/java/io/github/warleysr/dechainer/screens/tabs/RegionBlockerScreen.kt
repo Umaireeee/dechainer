@@ -123,8 +123,20 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
                     )
                 },
                 trailingContent = {
-                    IconButton(onClick = { recoveryGate.run { viewModel.removeRule(rule) } }) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                            Switch(
+                                checked = rule.invisible,
+                                onCheckedChange = { viewModel.setInvisible(rule, it) }
+                            )
+                            Text(
+                                stringResource(R.string.region_invisible_short),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        IconButton(onClick = { recoveryGate.run { viewModel.removeRule(rule) } }) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                        }
                     }
                 }
             )
@@ -136,6 +148,7 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
     pending?.let { node ->
         var matchText by remember(node) { mutableStateOf(false) }
         var extendDown by remember(node) { mutableStateOf(false) }
+        var invisible by remember(node) { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text(stringResource(R.string.region_block_this)) },
@@ -151,6 +164,18 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
                         Checkbox(checked = extendDown, onCheckedChange = { extendDown = it })
                         Text(
                             stringResource(R.string.region_extend_down),
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { invisible = !invisible }
+                            .padding(top = 4.dp)
+                    ) {
+                        Checkbox(checked = invisible, onCheckedChange = { invisible = it })
+                        Text(
+                            stringResource(R.string.region_invisible),
                             modifier = Modifier.padding(top = 12.dp)
                         )
                     }
@@ -172,7 +197,7 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    recoveryGate.change(loosening = false) { viewModel.addRule(node, matchText, extendDown) }
+                    recoveryGate.change(loosening = false) { viewModel.addRule(node, matchText, extendDown, invisible) }
                     pending = null
                 }) { Text(stringResource(R.string.confirm)) }
             },

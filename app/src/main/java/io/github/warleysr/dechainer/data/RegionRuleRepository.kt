@@ -30,7 +30,8 @@ object RegionRuleRepository {
                     text = text,
                     label = o.optString("label"),
                     extendDown = o.optBoolean("extendDown", false),
-                    activityClass = o.optString("activity").ifBlank { null }
+                    activityClass = o.optString("activity").ifBlank { null },
+                    invisible = o.optBoolean("invisible", false)
                 )
             }
         } catch (_: Exception) {
@@ -51,6 +52,7 @@ object RegionRuleRepository {
                 put("label", it.label)
                 put("extendDown", it.extendDown)
                 put("activity", it.activityClass ?: "")
+                put("invisible", it.invisible)
             })
         }
         prefs(context).edit { putString(KEY_RULES, array.toString()) }

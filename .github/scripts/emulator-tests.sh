@@ -165,7 +165,21 @@ else
   XTEXT=$(printf '%s' "$TEXT" | sed 's/&/\&amp;/g')
   disable_service
   adb shell am force-stop "$PKG"
-  RULES="[{&quot;id&quot;:&quot;e2e2&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;&quot;,&quot;text&quot;:&quot;$XTEXT&quot;,&quot;label&quot;:&quot;e2e2&quot;,&quot;extendDown&quot;:true,&quot;activity&quot;:&quot;$ACTIVITY&quot;}]"
+  top_activity() { adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -1; }
+  # Control: with no cover, a tap in the middle of the Settings list opens a sub-screen.
+  adb shell input keyevent KEYCODE_HOME; sleep 2
+  adb shell am start -a android.settings.SETTINGS >/dev/null; sleep 4
+  before=$(top_activity)
+  adb shell input tap 540 1300; sleep 3
+  after=$(top_activity)
+  adb shell input keyevent KEYCODE_BACK; sleep 1
+  if [ "$before" = "$after" ]; then
+    echo "::warning::Control tap did not navigate; skipping the touch-blocking assertion"
+    CONTROL_OK=false
+  else
+    CONTROL_OK=true
+  fi
+  RULES="[{&quot;id&quot;:&quot;e2e2&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;&quot;,&quot;text&quot;:&quot;$XTEXT&quot;,&quot;label&quot;:&quot;e2e2&quot;,&quot;extendDown&quot;:true,&quot;activity&quot;:&quot;$ACTIVITY&quot;,&quot;invisible&quot;:true}]"
   printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
     | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
   enable_service || exit 1
@@ -175,7 +189,19 @@ else
   shown=false
   for i in $(seq 1 20); do if overlay_showing; then shown=true; break; fi; sleep 1; done
   if [ "$shown" != true ]; then echo "::error::No cover on the target '$TEXT'"; exit 1; fi
-  echo "Cover shown for '$TEXT'; scrolling it out of view"
+  echo "Invisible cover shown for '$TEXT'"
+  if [ "$CONTROL_OK" = true ]; then
+    sleep 2
+    before=$(top_activity)
+    adb shell input tap 540 1300; sleep 3
+    after=$(top_activity)
+    if [ "$before" != "$after" ]; then
+      echo "::error::A tap went through the invisible cover and opened another screen"
+      exit 1
+    fi
+    echo "Tap was absorbed by the invisible cover"
+  fi
+  echo "Scrolling the target out of view"
   for i in 1 2 3; do adb shell input swipe 540 1900 540 500 250; sleep 1; done
   sleep 2
   if ! overlay_showing; then

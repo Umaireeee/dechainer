@@ -560,6 +560,8 @@
     <string name="region_match_text">Only when its text is “%1$s”</string>
     <string name="region_blocked_message">Blocked by Déchaîner</string>
     <string name="region_extend_down">Also cover everything below it (until the end of the list)</string>
+    <string name="region_invisible">Invisible: keep the screen looking normal but block touches and scrolling in this area</string>
+    <string name="region_invisible_short">Invisible</string>
 </resources>
 
 
