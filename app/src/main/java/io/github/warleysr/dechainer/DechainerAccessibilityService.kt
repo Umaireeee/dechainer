@@ -87,6 +87,8 @@ class DechainerAccessibilityService : AccessibilityService() {
     // Armed: the rule's activity is on screen but its target isn't (yet). Engaged: target found.
     private var regionEngaged = false
     private var regionStableScans = 0
+    // True when every rule on screen is matched by view id, so text-only changes can't affect it.
+    private var regionIdBased = false
     private var regionLastRects: List<Rect> = emptyList()
     private val regionScanRunnable = Runnable {
         regionScanPending = false
@@ -336,6 +338,8 @@ class DechainerAccessibilityService : AccessibilityService() {
             private set
 
         // Armed (target not on screen): watch for it cheaply and rarely.
+        private const val TEXT_ONLY_CHANGES = AccessibilityEvent.CONTENT_CHANGE_TYPE_TEXT or
+            AccessibilityEvent.CONTENT_CHANGE_TYPE_CONTENT_DESCRIPTION
         private const val REGION_ARMED_DELAY_MS = 1000L
         private const val REGION_CLICK_DELAY_MS = 150L
         // Engaged (target on screen): follow scrolling closely, back off while nothing moves.
@@ -645,7 +649,9 @@ class DechainerAccessibilityService : AccessibilityService() {
      * ones), so nothing is delivered, scanned or drawn.
      */
     private fun refreshRegionState() {
-        regionActive = activeRegionRules().isNotEmpty()
+        val active = activeRegionRules()
+        regionActive = active.isNotEmpty()
+        regionIdBased = active.all { it.viewId != null }
         regionEngaged = false
         regionStableScans = 0
         regionLastRects = emptyList()
@@ -691,13 +697,17 @@ class DechainerAccessibilityService : AccessibilityService() {
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED,
             AccessibilityEvent.TYPE_VIEW_SELECTED -> REGION_CLICK_DELAY_MS
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
-                if (regionEngaged) {
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> when {
+                // Timestamps, counters and typing indicators change text, never the position of
+                // an element found by id, so those events aren't worth a scan.
+                regionIdBased && event.contentChangeTypes != 0 &&
+                    event.contentChangeTypes and TEXT_ONLY_CHANGES.inv() == 0 -> return
+                regionEngaged -> {
                     (REGION_ENGAGED_BASE_DELAY_MS shl regionStableScans.coerceAtMost(3))
                         .coerceAtMost(REGION_ENGAGED_MAX_DELAY_MS)
-                } else {
-                    REGION_ARMED_DELAY_MS
                 }
+                else -> REGION_ARMED_DELAY_MS
+            }
             else -> return
         }
         scheduleRegionScan(delay)

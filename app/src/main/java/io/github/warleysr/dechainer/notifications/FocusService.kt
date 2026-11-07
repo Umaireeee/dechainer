@@ -88,7 +88,7 @@ class FocusService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        private const val MIN_TICK_MS = 1_000L
+        private const val MIN_TICK_MS = 5_000L
         private const val WAITING_TICK_MS = 60_000L
 
         private const val BAR_STEPS = 300
