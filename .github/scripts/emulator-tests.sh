@@ -8,10 +8,10 @@ set -uo pipefail
 PKG=io.github.warleysr.dechainer
 SERVICE="$PKG/$PKG.DechainerAccessibilityService"
 mkdir -p emulator-logs
-chmod +x gradlew
 
-echo "== Installing debug build"
-./gradlew installDebug --stacktrace || exit 1
+echo "== Installing the prebuilt APKs"
+adb install -r -t apks/app-debug.apk || exit 1
+adb install -r -t apks/app-debug-androidTest.apk || exit 1
 
 echo "== Seeding a region rule for the Settings app (activity-agnostic, id that never matches,"
 echo "   so the armed scan path runs without ever drawing)"
@@ -223,4 +223,10 @@ fi
 
 echo "== Instrumented tests"
 adb shell settings delete secure enabled_accessibility_services
-./gradlew connectedDebugAndroidTest --stacktrace
+out=$(adb shell am instrument -w "$PKG.test/androidx.test.runner.AndroidJUnitRunner")
+echo "$out" | tail -20
+echo "$out" > emulator-logs/instrumentation.txt
+if ! echo "$out" | grep -q "^OK (" || echo "$out" | grep -q "FAILURES!!!"; then
+  echo "::error::Instrumented tests failed"; exit 1
+fi
+echo "Instrumented tests passed"
