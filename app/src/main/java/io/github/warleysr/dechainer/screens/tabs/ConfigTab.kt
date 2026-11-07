@@ -175,40 +175,6 @@ fun ConfigTab(
             }
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.visual_blocking)) },
-                    supportingContent = { Text(stringResource(R.string.visual_blocking_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.ImageSearch, "") },
-                    modifier = Modifier.clickable {
-                        if (!advancedBlocking) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                            }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("visual_blocking")
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.blocked_words_feat)) },
-                    supportingContent = { Text(stringResource(R.string.blocked_words_feat_description)) },
-                    leadingContent = { Icon(Icons.Outlined.NoAdultContent, "") },
-                    modifier = Modifier.clickable {
-                        if (!advancedBlocking) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                            }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("blocked_words")
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
                     headlineContent = { Text(stringResource(R.string.block_torrents)) },
                     supportingContent = { Text(stringResource(R.string.block_torrents_desc)) },
                     leadingContent = { Icon(Icons.Outlined.FileDownload, "") },

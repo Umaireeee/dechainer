@@ -68,22 +68,6 @@
             android:launchMode="singleInstance"
             android:taskAffinity="" />
         <activity
-            android:name=".activities.BlockedWordActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.NsfwContentBlockedActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
             android:name=".activities.OutsideTimeWindowActivity"
             android:showOnLockScreen="true"
             android:theme="@style/Theme.Dechainer"

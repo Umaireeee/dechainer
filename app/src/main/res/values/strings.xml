@@ -254,18 +254,8 @@
     <string name="no_group">None</string>
     <string name="app_reopening">Wait!</string>
     <string name="app_reopening_description">You opened {appName} too quickly since you closed it. Wait {seconds} seconds to open it again.</string>
-    <string name="blocked_word">Forbidden word!</string>
-    <string name="blocked_word_description">A forbidden word was detected. Close the app and go do something else!</string>
-    <string name="blocked_words_feat">Forbidden words</string>
-    <string name="blocked_words_feat_description">Blocks words that may lead to unwanted content in apps</string>
-    <string name="add_word">Add word</string>
-    <string name="word_hint">e.g., pussy</string>
-    <string name="apply_to_apps">Apply to apps</string>
     <string name="select_apps">Select apps</string>
-    <string name="no_words">No blocked words</string>
     <string name="no_apps">No apps selected</string>
-    <string name="blocked_words_list">Blocked words list</string>
-    <string name="one_word_per_line">One word per line</string>
     <string name="manage_app_restrictions">App restrictions</string>
     <string name="no_restrictions_available">No restrictions available for %1$s.</string>
     <string name="show_system_apps">Show system apps</string>
@@ -281,10 +271,6 @@
     <string name="search_restrictions">Search restrictions…</string>
     <string name="list_title">List title</string>
     <string name="sites_lines">Sites (one per line)</string>
-    <string name="active_blocking">Active blocking</string>
-    <string name="passive_blocking">Passive blocking</string>
-    <string name="active_blocking_tooltip">Blocks words while you type them in selected apps.</string>
-    <string name="passive_blocking_tooltip">Blocks the app as soon as a forbidden word appears on the screen.</string>
     <string name="add_app">Add app</string>
 
     <string name="accessibility_request_message">The accessibility service was disabled. The apps with restrictions will remain blocked and new apps can\'t be installed until it\'s enabled again.</string>
@@ -386,35 +372,9 @@
     <string name="biometric_subtitle">Use your biometric credential to access Dechainer</string>
     <string name="biometric_error">Authentication failed</string>
 
-    <string name="nsfw_content_blocked">Content blocked!</string>
-    <string name="nsfw_content_blocked_description">Explicit content was detected on screen and blocked. Close the app and go do something else!</string>
-    <string name="nsfw_content_blocked_suspended">Explicit content was detected on screen once too often, so this app has been suspended for %1$d minutes. Go do something else!</string>
 
-    <string name="visual_blocking">Visual blocking</string>
-    <string name="visual_blocking_desc">Detects inappropriate images, gifs and videos with an on-device ML model</string>
-    <string name="visual_blocking_explanation">This feature scans images, gifs and videos shown on screen in the selected apps using a machine learning model that runs entirely on your device — nothing is uploaded or sent anywhere. When content matching the selected categories is detected above the chosen sensitivity, the app is closed automatically.</string>
-    <string name="visual_blocking_enable">Enable visual blocking</string>
-    <string name="visual_blocking_requires_accessibility">Requires advanced blocking (accessibility service) to be enabled</string>
-    <string name="visual_blocking_apps_section">Monitored apps</string>
     <string name="visual_blocking_apps_selected">%1$d apps selected</string>
-    <string name="visual_blocking_categories_section">Categories to block</string>
-    <string name="visual_blocking_categories_desc">Select which categories detected by the model should trigger blocking</string>
-    <string name="visual_blocking_threshold_section">Sensitivity</string>
-    <string name="visual_blocking_threshold_desc">Minimum combined score of the selected categories needed to trigger blocking</string>
     <string name="visual_blocking_locked">Unlock to edit</string>
-    <string name="visual_blocking_suspend">Suspend app</string>
-    <string name="visual_blocking_suspend_desc">Instead of only closing the app on every detection, suspend it for a while once it is blocked repeatedly</string>
-    <string name="visual_blocking_suspend_count">Number of blocks</string>
-    <string name="visual_blocking_suspend_count_desc">Blocks needed to suspend the app</string>
-    <string name="visual_blocking_suspend_window">Time window (minutes)</string>
-    <string name="visual_blocking_suspend_window_desc">Period the blocks have to happen within</string>
-    <string name="visual_blocking_suspend_duration">Suspension time (minutes)</string>
-    <string name="visual_blocking_suspend_duration_desc">How long the app stays suspended</string>
-    <string name="visual_blocking_suspend_summary">If the app is blocked %1$d times within %2$d minutes, it will be suspended for %3$d minutes and released automatically afterwards.</string>
-    <string name="nsfw_category_drawings">Drawings</string>
-    <string name="nsfw_category_hentai">Hentai</string>
-    <string name="nsfw_category_porn">Porn</string>
-    <string name="nsfw_category_sexy">Sexy / suggestive</string>
 
     <string name="usage_warning_channel_silent">Usage warning (silent)</string>
     <string name="usage_warning_channel_sound">Usage warning (sound)</string>

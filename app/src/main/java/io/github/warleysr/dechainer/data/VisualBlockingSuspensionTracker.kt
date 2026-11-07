@@ -6,7 +6,7 @@ import androidx.core.content.edit
 import java.util.concurrent.TimeUnit
 
 /**
- * Bookkeeping for the "suspend app" escalation of visual blocking (see [VisualBlockingSettings]):
+ * Bookkeeping for the "suspend app" escalation of visual blocking:
  * counts how many times each package has been blocked inside the configured sliding window, and
  * remembers until when a package is currently suspended.
  *

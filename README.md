@@ -34,7 +34,6 @@ built so that your future self can't simply turn it off.
     <td align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6_config.png" width="230"><br><sub><b>All protections</b> in one place</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7_visual_blocking.png" width="230"><br><sub><b>Visual blocking</b> with on-device ML</sub></td>
     <td align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8_impulse_lock.png" width="230"><br><sub><b>Impulse lock</b> and access challenges</sub></td>
     <td align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9_color_modes.png" width="230"><br><sub><b>Color modes</b> on a schedule</sub></td>
   </tr>
@@ -92,8 +91,6 @@ Both are granted once, during setup, through [Shizuku](https://shizuku.rikka.app
 | | |
 |---|---|
 | 🛡️ **Device Owner restrictions** | Block VPNs, private DNS changes, factory reset, app installs, USB debugging and dozens more `UserManager` policies. |
-| 🧠 **On-device visual blocking** | A local TensorFlow Lite model detects explicit images and video on screen and closes the app. Nothing is uploaded. |
-| ⌨️ **Word blocking** | Erases forbidden words as they're typed, or closes the app when they appear anywhere on screen. |
 | 🚨 **Impulse lock** | A panic button on the lock screen that locks Déchaîner (and chosen apps) for 15 minutes to 6 hours, resistant to clock changes. |
 | 🍅 **Focus mode** | Pomodoro sessions that suspend distracting apps during each focus period and give them back on breaks. |
 | ⏱️ **Time limits and windows** | Daily limits per app or group, per weekday, allowed time windows, reopening cooldowns and usage warnings. |
@@ -129,23 +126,6 @@ Both are granted once, during setup, through [Shizuku](https://shizuku.rikka.app
 - A minimum cooldown before an app can be reopened.
 - Automatically suspends apps rated 18+ or flagged with explicit content, checked against the Play Store's content rating page when an app is installed or first opened.
 - Automatically blocks torrent apps (detected by their ability to handle magnet links or `.torrent` files).
-
-</details>
-
-<details>
-<summary><b>Word blocking</b></summary>
-
-- **Active blocking:** erases a forbidden word as it's typed into a selected app and shows a block screen.
-- **Passive blocking:** scans on-screen text (not just typed input) per app, useful for search results and feeds, and closes the app when a configured word appears anywhere on screen.
-
-</details>
-
-<details>
-<summary><b>Visual blocking (on-device machine learning)</b></summary>
-
-- A local TensorFlow Lite model (MobileNetV2) classifies on-screen images and video into drawings, hentai, neutral, porn, and sexy. No data leaves the device.
-- The Accessibility Service scans the screen of selected apps for likely media regions, captures them, and runs the classifier; the app is closed when the combined score for the selected categories crosses a configurable threshold.
-- Optional escalation: after a set number of blocks within a time window, the app is suspended for a configurable duration instead of just being closed.
 
 </details>
 
@@ -209,7 +189,7 @@ Becoming Device Owner requires a bridge between user space and system space. Fol
 2. **Enable Wireless Debugging** in Developer Options and pair it with Shizuku.
 3. **Download and open Déchaîner** from the [latest release](https://github.com/warleysr/dechainer/releases/latest), and grant it access to Shizuku.
 4. **Become Device Owner.** In the Config tab, follow the prompts to register the app as Device Owner. Déchaîner automatically bypasses the setup completion check so there is **no need to remove user accounts** from the device.
-5. **Enable the Accessibility Service.** Still in the Config tab, turn on *Advanced blocking* (also applied through Shizuku). It's required for word blocking, visual blocking, activity blocking, torrent blocking, time limits and color modes. App installation is blocked while this service is off, so an unrestricted browser can't be installed in the meantime.
+5. **Enable the Accessibility Service.** Still in the Config tab, turn on *Advanced blocking* (also applied through Shizuku). It's required for activity blocking, torrent blocking, time limits and color modes. App installation is blocked while this service is off, so an unrestricted browser can't be installed in the meantime.
 
 ## Recovery and Safety
 

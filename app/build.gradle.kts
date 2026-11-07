@@ -33,17 +33,7 @@ android {
     }
 
     androidResources {
-        noCompress.add("tflite")
         localeFilters += listOf("en", "pt")
-    }
-
-    packaging {
-        jniLibs {
-            // NsfwContentDetector only uses the classic Interpreter API on the CPU, which loads
-            // just libLiteRt.so. The GPU accelerator (dlopen'd on demand, optional) and the JNI
-            // bridge for the CompiledModel API are never used.
-            excludes += listOf("**/libLiteRtClGlAccelerator.so", "**/liblitert_jni.so")
-        }
     }
 
     dependenciesInfo {
@@ -119,7 +109,6 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.jsoup)
     implementation(libs.json)
-    implementation(libs.litert)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.androidx.test.core.ktx)
