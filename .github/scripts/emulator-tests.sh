@@ -153,6 +153,47 @@ if [ "$gone" != true ]; then
 fi
 echo "Overlay removed after leaving the app; end-to-end test passed"
 
+
+echo "== End to end: an extend-down cover must survive scrolling the target out of view"
+TEXT=""
+for cand in "Network & internet" "Connected devices" "Apps"; do
+  if grep -qF "text=$cand" emulator-logs/capture.txt; then TEXT="$cand"; break; fi
+done
+if [ -z "$TEXT" ]; then
+  echo "::warning::No known Settings entry in the capture; skipping the scroll test"
+else
+  XTEXT=$(printf '%s' "$TEXT" | sed 's/&/\&amp;/g')
+  disable_service
+  adb shell am force-stop "$PKG"
+  RULES="[{&quot;id&quot;:&quot;e2e2&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;&quot;,&quot;text&quot;:&quot;$XTEXT&quot;,&quot;label&quot;:&quot;e2e2&quot;,&quot;extendDown&quot;:true,&quot;activity&quot;:&quot;$ACTIVITY&quot;}]"
+  printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
+    | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
+  enable_service || exit 1
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  adb shell am start -a android.settings.SETTINGS >/dev/null
+  shown=false
+  for i in $(seq 1 20); do if overlay_showing; then shown=true; break; fi; sleep 1; done
+  if [ "$shown" != true ]; then echo "::error::No cover on the target '$TEXT'"; exit 1; fi
+  echo "Cover shown for '$TEXT'; scrolling it out of view"
+  for i in 1 2 3; do adb shell input swipe 540 1900 540 500 250; sleep 1; done
+  sleep 2
+  if ! overlay_showing; then
+    echo "::error::The cover disappeared after the target scrolled out of view"
+    adb shell dumpsys window windows > emulator-logs/windows-scroll.txt
+    adb logcat -d > emulator-logs/logcat-scroll.txt
+    exit 1
+  fi
+  echo "Cover survived scrolling; scrolling back"
+  for i in 1 2 3 4; do adb shell input swipe 540 500 540 1900 250; sleep 1; done
+  sleep 2
+  if ! overlay_showing; then echo "::error::The cover is gone after scrolling back to the target"; exit 1; fi
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
+  if overlay_showing; then echo "::error::Cover left over after leaving the app"; exit 1; fi
+  echo "Scroll test passed"
+fi
+
 echo "== Instrumented tests"
 adb shell settings put secure enabled_accessibility_services ""
 ./gradlew connectedDebugAndroidTest --stacktrace

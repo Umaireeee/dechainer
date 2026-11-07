@@ -91,6 +91,12 @@ class DechainerAccessibilityService : AccessibilityService() {
     // True when every rule on screen is matched by view id, so text-only changes can't affect it.
     private var regionIdBased = false
     private var regionLastRects: List<Rect> = emptyList()
+
+    // Where an extend-down target was last seen, so the cover stays up while it is scrolled away.
+    private class RegionSeen(val node: Rect, val area: Rect, val containerId: String?, val scrollY: Int)
+    private class RegionHit(val cover: Rect, val area: Rect?, val containerId: String?)
+    private val regionSeen = HashMap<String, RegionSeen>()
+    private var regionScrollY = 0
     private val regionScanRunnable = Runnable {
         regionScanPending = false
         scanRegions()
@@ -656,6 +662,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         regionEngaged = false
         regionStableScans = 0
         regionLastRects = emptyList()
+        regionSeen.clear()
+        regionScrollY = 0
         applyRegionServiceInfo()
 
         if (regionActive) {
@@ -679,7 +687,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         val wanted = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or when {
             !regionActive -> 0
             regionEngaged -> AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-                AccessibilityEvent.TYPE_VIEW_SCROLLED
+                AccessibilityEvent.TYPE_VIEW_SCROLLED or AccessibilityEvent.TYPE_VIEW_SELECTED
             else -> AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
                 AccessibilityEvent.TYPE_VIEW_CLICKED or AccessibilityEvent.TYPE_VIEW_SELECTED
         }
@@ -694,10 +702,15 @@ class DechainerAccessibilityService : AccessibilityService() {
         val delay = when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 regionStableScans = 0
+                regionScrollY += event.scrollDeltaY
                 REGION_SCROLL_DELAY_MS
             }
-            AccessibilityEvent.TYPE_VIEW_CLICKED,
-            AccessibilityEvent.TYPE_VIEW_SELECTED -> REGION_CLICK_DELAY_MS
+            AccessibilityEvent.TYPE_VIEW_SELECTED -> {
+                // A tab or page changed: whatever was remembered about the old screen is stale.
+                regionSeen.clear()
+                REGION_CLICK_DELAY_MS
+            }
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> REGION_CLICK_DELAY_MS
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> when {
                 // Timestamps, counters and typing indicators change text, never the position of
                 // an element found by id, so those events aren't worth a scan.
@@ -746,6 +759,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                 rule.text != null -> root.findAccessibilityNodeInfosByText(rule.text)
                 else -> emptyList()
             }
+            var covered = false
             for (node in nodes.orEmpty()) {
                 val matchesText = rule.text == null ||
                     node.text?.toString() == rule.text ||
@@ -754,13 +768,22 @@ class DechainerAccessibilityService : AccessibilityService() {
                     val rect = Rect()
                     node.getBoundsInScreen(rect)
                     if (rule.extendDown) {
-                        regionBelow(node, rect)?.let { rects.add(it) }
+                        val hit = regionBelow(node, rect)
+                        if (hit != null) {
+                            rects.add(hit.cover)
+                            covered = true
+                            if (hit.area != null) {
+                                regionSeen[rule.id] =
+                                    RegionSeen(Rect(rect), hit.area, hit.containerId, regionScrollY)
+                            }
+                        }
                     } else if (node.isVisibleToUser && !rect.isEmpty) {
                         rects.add(rect)
                     }
                 }
                 node.recycle()
             }
+            if (rule.extendDown && !covered) latchedCover(rule, root)?.let { rects.add(it) }
         }
         root.recycle()
         if (rects.isEmpty()) regionOverlay.hide() else regionOverlay.show(rects)
@@ -780,17 +803,47 @@ class DechainerAccessibilityService : AccessibilityService() {
      * when it has none), so the bottom navigation bar stays usable. If the node has scrolled off
      * the top, the whole container is covered, since everything left in it is below the node.
      */
-    private fun regionBelow(node: AccessibilityNodeInfo, nodeBounds: Rect): Rect? {
+    private fun regionBelow(node: AccessibilityNodeInfo, nodeBounds: Rect): RegionHit? {
         var container = node.parent
         while (container != null && !container.isScrollable) container = container.parent
         if (container == null) {
-            return if (node.isVisibleToUser && !nodeBounds.isEmpty) Rect(nodeBounds) else null
+            return if (node.isVisibleToUser && !nodeBounds.isEmpty) RegionHit(Rect(nodeBounds), null, null) else null
         }
         val area = Rect()
         container.getBoundsInScreen(area)
+        val containerId = container.viewIdResourceName
         container.recycle()
+        val cover = RegionGeometry.below(nodeBounds, area) ?: return null
+        return RegionHit(cover, area, containerId)
+    }
 
-        return RegionGeometry.below(nodeBounds, area)
+    /**
+     * A list recycles rows that scroll out of view, so a target scrolled off the top disappears
+     * from the screen tree while everything below it is still showing. If it was last seen
+     * above the list's top edge after accounting for the scrolling since, the whole list stays
+     * covered; if it simply vanished (another tab or screen), the cover is dropped.
+     */
+    private fun latchedCover(rule: RegionRule, root: AccessibilityNodeInfo): Rect? {
+        val seen = regionSeen[rule.id] ?: return null
+        val estimatedBottom = seen.node.bottom - (regionScrollY - seen.scrollY)
+        if (estimatedBottom > seen.area.top) {
+            regionSeen.remove(rule.id)
+            return null
+        }
+        val id = seen.containerId
+        if (id != null) {
+            val containers = root.findAccessibilityNodeInfosByViewId(id).orEmpty()
+            val stillThere = containers.any {
+                val bounds = Rect().also { r -> it.getBoundsInScreen(r) }
+                bounds == seen.area && it.isVisibleToUser
+            }
+            containers.forEach { it.recycle() }
+            if (!stillThere) {
+                regionSeen.remove(rule.id)
+                return null
+            }
+        }
+        return Rect(seen.area)
     }
 
     private fun captureNow() {
