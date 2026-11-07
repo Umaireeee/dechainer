@@ -1,178 +1,114 @@
 #!/usr/bin/env bash
-# Runs on an emulator (see .github/workflows/ci.yml).
-# 1) Smoke-tests the accessibility service: seeds a region rule, enables the service, drives the
-#    UI, and fails on any crash in the app or if the service stops being bound.
-# 2) Runs the instrumented (androidTest) suite.
+# Runs on an emulator (see .github/workflows/ci.yml). Everything happens with the accessibility
+# service staying enabled: region rules are changed inside the running app through a debug-only
+# broadcast, exactly as the service sees a rule added in the real app.
+#   1) smoke test: a rule that can never match, drive the UI, nothing may crash or draw
+#   2) capture a real screen and turn a captured element into a rule: overlay must appear/vanish
+#   3) invisible extend-down cover: absorbs taps, survives scrolling its target out of view
+#   4) instrumented (androidTest) suite
 set -uo pipefail
 
 PKG=io.github.warleysr.dechainer
 SERVICE="$PKG/$PKG.DechainerAccessibilityService"
 mkdir -p emulator-logs
 
+fail() {
+  echo "::error::$1"
+  adb logcat -d > emulator-logs/logcat-fail.txt
+  adb shell dumpsys window windows > emulator-logs/windows-fail.txt
+  exit 1
+}
+overlay_showing() { adb shell dumpsys window windows | grep -q "DechainerRegionOverlay"; }
+wait_overlay() { for _ in $(seq 1 "$1"); do overlay_showing && return 0; sleep 1; done; return 1; }
+wait_no_overlay() { for _ in $(seq 1 "$1"); do overlay_showing || return 0; sleep 1; done; return 1; }
+top_activity() { adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -1; }
+set_rules() {
+  adb shell am broadcast -a io.github.warleysr.dechainer.DEBUG_SET_RULES \
+    --es b64 "$(printf '%s' "$1" | base64 -w0)" -p "$PKG" >/dev/null
+  sleep 1
+}
+rule() { # id pkg viewId text extendDown activity invisible
+  printf '[{"id":"%s","pkg":"%s","viewId":"%s","text":"%s","label":"t","extendDown":%s,"activity":"%s","invisible":%s}]' "$@"
+}
+
 echo "== Installing the prebuilt APKs"
 adb install -r -t apks/app-debug.apk || exit 1
 adb install -r -t apks/app-debug-androidTest.apk || exit 1
 
-echo "== Seeding a region rule for the Settings app (activity-agnostic, id that never matches,"
-echo "   so the armed scan path runs without ever drawing)"
-adb shell "run-as $PKG mkdir -p shared_prefs"
-RULES='[{&quot;id&quot;:&quot;t1&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;com.android.settings:id/does_not_exist&quot;,&quot;text&quot;:&quot;&quot;,&quot;label&quot;:&quot;t&quot;,&quot;extendDown&quot;:true,&quot;activity&quot;:&quot;&quot;}]'
-printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
-  | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
-
-adb logcat -c
 echo "== Enabling the accessibility service"
+adb logcat -c
 adb shell settings put secure enabled_accessibility_services "$SERVICE"
 adb shell settings put secure accessibility_enabled 1
-
-bound=false
-for i in $(seq 1 30); do
-  if adb shell dumpsys accessibility | grep -q "$PKG.DechainerAccessibilityService"; then bound=true; break; fi
+connected=false
+for _ in $(seq 1 40); do
+  if adb logcat -d -s RegionCapture:I | grep -q "service connected"; then connected=true; break; fi
   sleep 2
 done
-if [ "$bound" != true ]; then
-  echo "::error::Accessibility service never bound"
-  adb logcat -d > emulator-logs/logcat.txt
-  exit 1
-fi
-echo "Service bound"
+[ "$connected" = true ] || fail "Accessibility service never connected"
+sleep 4
+[ "$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')" = "$SERVICE" ] \
+  || fail "Accessibility service was switched off again"
+echo "Service connected"
 
-echo "== Driving the UI (Settings is the app with the rule, then others)"
-adb shell am start -a android.settings.SETTINGS
+echo "== 1) Smoke test: a rule that can never match (armed path runs, nothing is drawn)"
+set_rules "$(rule t1 com.android.settings com.android.settings:id/does_not_exist "" true "" false)"
+adb shell am start -a android.settings.SETTINGS >/dev/null
 sleep 3
-for i in 1 2 3; do adb shell input swipe 540 1600 540 600 300; sleep 1; done
+for _ in 1 2 3; do adb shell input swipe 540 1600 540 600 300; sleep 1; done
 adb shell input keyevent KEYCODE_BACK
 sleep 1
 adb shell am start -a android.intent.action.VIEW -d "https://example.com" >/dev/null
 sleep 2
 adb shell input keyevent KEYCODE_HOME
 sleep 3
-adb shell am start -a android.settings.SETTINGS
+adb shell am start -a android.settings.SETTINGS >/dev/null
 sleep 3
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-
 adb logcat -d > emulator-logs/logcat.txt
 if grep -E "FATAL EXCEPTION" -A 12 emulator-logs/logcat.txt | grep -q "$PKG"; then
-  echo "::error::The app crashed during the smoke test"
   grep -E "FATAL EXCEPTION" -A 15 emulator-logs/logcat.txt | head -60
-  exit 1
+  fail "The app crashed during the smoke test"
 fi
-if ! adb shell dumpsys accessibility | grep -q "$PKG.DechainerAccessibilityService"; then
-  echo "::error::Accessibility service was unbound during the smoke test"
-  exit 1
-fi
-if adb shell dumpsys window | grep -q "DechainerRegionOverlay"; then
-  echo "::error::An overlay window is showing although the rule can never match"
-  exit 1
-fi
+adb shell dumpsys accessibility | grep -q "$PKG.DechainerAccessibilityService" || fail "Service was unbound during the smoke test"
+overlay_showing && fail "An overlay is showing although the rule can never match"
 echo "Smoke test passed"
 
-
-echo "== End to end: capture a real screen, turn a captured element into a rule, expect the overlay"
-disable_service() { adb shell settings delete secure enabled_accessibility_services; sleep 3; }
-enable_service() {
-  # Android finishes a force-stop's accessibility clean-up a few seconds late and can switch a
-  # freshly enabled service off again, so confirm the setting is still there before moving on.
-  for attempt in 1 2 3; do
-    adb logcat -c
-    adb shell settings put secure enabled_accessibility_services "$SERVICE"
-    adb shell settings put secure accessibility_enabled 1
-    connected=false
-    for i in $(seq 1 40); do
-      if adb logcat -d -s RegionCapture:I | grep -q "service connected"; then connected=true; break; fi
-      sleep 2
-    done
-    if [ "$connected" = true ]; then
-      sleep 4
-      cur=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')
-      if [ "$cur" = "$SERVICE" ]; then return 0; fi
-      echo "Service was switched off again (attempt $attempt); retrying"
-    fi
-  done
-  echo "::error::Accessibility service never stayed connected"; return 1
-}
-# Restart the app process without a force-stop (which triggers the late clean-up above).
-restart_process() {
-  for i in 1 2 3 4 5; do
-    adb shell am kill "$PKG"; sleep 1
-    [ -z "$(adb shell pidof "$PKG" | tr -d '\r')" ] && break
-  done
-}
-overlay_showing() { adb shell dumpsys window windows | grep -q "DechainerRegionOverlay"; }
-
-disable_service
-restart_process
-adb shell "run-as $PKG rm -f shared_prefs/region_rules_prefs.xml"
-enable_service || exit 1
-
-# Capture: the service goes Home, waits 8 s, then reads whatever app is in front.
+echo "== 2) Capture a real screen, turn a captured element into a rule, expect the overlay"
+set_rules '[]'
+adb logcat -c
 adb shell am broadcast -a io.github.warleysr.dechainer.DEBUG_CAPTURE --el delay 8000 -p "$PKG" >/dev/null
-sleep 3
+sleep 3 # the service goes Home first, then waits for the delay before reading the screen
 adb shell am start -a android.settings.SETTINGS >/dev/null
 got=false
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   if adb logcat -d -s RegionCapture:I | grep -q "pkg=com.android.settings"; then got=true; break; fi
   sleep 1
 done
 adb logcat -d -s RegionCapture:I > emulator-logs/capture.txt
-if [ "$got" != true ]; then
-  echo "::error::Capture never produced a result for the Settings app"
-  cat emulator-logs/capture.txt; exit 1
-fi
-cat emulator-logs/capture.txt | head -40
+[ "$got" = true ] || { cat emulator-logs/capture.txt; fail "Capture never produced a result for the Settings app"; }
+head -40 emulator-logs/capture.txt
+grep -q "node id=[a-zA-Z]" emulator-logs/capture.txt || fail "Capture found no view ids (is flagReportViewIds set?)"
 
-nodes_with_id=$(grep -c "node id=[a-zA-Z]" emulator-logs/capture.txt || true)
-if [ "$nodes_with_id" -eq 0 ]; then
-  echo "::error::Capture found no view ids (is flagReportViewIds set?)"; exit 1
-fi
-
-# Pick a reasonably large element that has a view id, plus the activity the capture ran on.
 ID=$(sed -n 's/.*node id=\([^ ]*\) size=\([0-9]*\)x\([0-9]*\) .*/\1 \2 \3/p' emulator-logs/capture.txt \
      | awk '$1 != "null" && $2 >= 200 && $3 >= 50 { print $1; exit }')
 ACTIVITY=$(sed -n 's/.*pkg=com.android.settings activity=\([^ ]*\) .*/\1/p' emulator-logs/capture.txt | head -1)
 [ "$ACTIVITY" = "null" ] && ACTIVITY=""
-if [ -z "$ID" ]; then echo "::error::No suitable element in the capture"; exit 1; fi
+[ -n "$ID" ] || fail "No suitable element in the capture"
 echo "Rule: id=$ID activity=${ACTIVITY:-<any>}"
 
-disable_service
-restart_process
-RULES="[{&quot;id&quot;:&quot;e2e&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;$ID&quot;,&quot;text&quot;:&quot;&quot;,&quot;label&quot;:&quot;e2e&quot;,&quot;extendDown&quot;:false,&quot;activity&quot;:&quot;$ACTIVITY&quot;}]"
-printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
-  | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
-enable_service || exit 1
-
+set_rules "$(rule e2e com.android.settings "$ID" "" false "$ACTIVITY" false)"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
-if overlay_showing; then echo "::error::Overlay visible on the launcher"; exit 1; fi
+overlay_showing && fail "Overlay visible on the launcher"
 adb shell am start -a android.settings.SETTINGS >/dev/null
-shown=false
-for i in $(seq 1 20); do
-  if overlay_showing; then shown=true; break; fi
-  sleep 1
-done
-adb logcat -d > emulator-logs/logcat-e2e.txt
-adb shell dumpsys window windows > emulator-logs/windows-e2e.txt
-if [ "$shown" != true ]; then
-  echo "::error::The overlay never appeared on the captured element"
-  exit 1
-fi
+wait_overlay 20 || fail "The overlay never appeared on the captured element"
 echo "Overlay appeared on the captured element"
-
 adb shell input keyevent KEYCODE_HOME
-gone=false
-for i in $(seq 1 10); do
-  if ! overlay_showing; then gone=true; break; fi
-  sleep 1
-done
-if [ "$gone" != true ]; then
-  echo "::error::Overlay stayed on screen after leaving the app"
-  exit 1
-fi
-echo "Overlay removed after leaving the app; end-to-end test passed"
+wait_no_overlay 10 || fail "Overlay stayed on screen after leaving the app"
+echo "Overlay removed after leaving the app"
 
-
-echo "== End to end: an extend-down cover must survive scrolling the target out of view"
+echo "== 3) Invisible extend-down cover: absorbs taps and survives scrolling"
 TEXT=""
 for cand in "Network & internet" "Connected devices" "Apps"; do
   if grep -qF "text=$cand" emulator-logs/capture.txt; then TEXT="$cand"; break; fi
@@ -180,70 +116,53 @@ done
 if [ -z "$TEXT" ]; then
   echo "::warning::No known Settings entry in the capture; skipping the scroll test"
 else
-  XTEXT=$(printf '%s' "$TEXT" | sed 's/&/\&amp;/g')
-  disable_service
-  restart_process
-  top_activity() { adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -1; }
-  # Control: with no cover, a tap in the middle of the Settings list opens a sub-screen.
+  # Control: with no rule, a tap in the middle of the Settings list opens a sub-screen.
+  set_rules '[]'
   adb shell input keyevent KEYCODE_HOME; sleep 2
   adb shell am start -a android.settings.SETTINGS >/dev/null; sleep 4
   before=$(top_activity)
   adb shell input tap 540 1300; sleep 3
   after=$(top_activity)
-  adb shell input keyevent KEYCODE_BACK; sleep 1
+  adb shell input keyevent KEYCODE_BACK; sleep 2
+  CONTROL_OK=true
   if [ "$before" = "$after" ]; then
     echo "::warning::Control tap did not navigate; skipping the touch-blocking assertion"
     CONTROL_OK=false
-  else
-    CONTROL_OK=true
   fi
-  RULES="[{&quot;id&quot;:&quot;e2e2&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;&quot;,&quot;text&quot;:&quot;$XTEXT&quot;,&quot;label&quot;:&quot;e2e2&quot;,&quot;extendDown&quot;:true,&quot;activity&quot;:&quot;$ACTIVITY&quot;,&quot;invisible&quot;:true}]"
-  printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
-    | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
-  enable_service || exit 1
-  adb shell input keyevent KEYCODE_HOME
-  sleep 2
+
+  set_rules "$(rule e2e2 com.android.settings "" "$TEXT" true "$ACTIVITY" true)"
+  adb shell input keyevent KEYCODE_HOME; sleep 2
   adb shell am start -a android.settings.SETTINGS >/dev/null
-  shown=false
-  for i in $(seq 1 20); do if overlay_showing; then shown=true; break; fi; sleep 1; done
-  if [ "$shown" != true ]; then echo "::error::No cover on the target '$TEXT'"; exit 1; fi
+  wait_overlay 20 || fail "No cover on the target '$TEXT'"
   echo "Invisible cover shown for '$TEXT'"
   if [ "$CONTROL_OK" = true ]; then
     sleep 2
     before=$(top_activity)
     adb shell input tap 540 1300; sleep 3
     after=$(top_activity)
-    if [ "$before" != "$after" ]; then
-      echo "::error::A tap went through the invisible cover and opened another screen"
-      exit 1
-    fi
+    [ "$before" = "$after" ] || fail "A tap went through the invisible cover and opened another screen"
     echo "Tap was absorbed by the invisible cover"
   fi
   echo "Scrolling the target out of view"
-  for i in 1 2 3; do adb shell input swipe 540 1900 540 500 250; sleep 1; done
+  for _ in 1 2 3; do adb shell input swipe 540 1900 540 500 250; sleep 1; done
   sleep 2
-  if ! overlay_showing; then
-    echo "::error::The cover disappeared after the target scrolled out of view"
-    adb shell dumpsys window windows > emulator-logs/windows-scroll.txt
-    adb logcat -d > emulator-logs/logcat-scroll.txt
-    exit 1
-  fi
+  overlay_showing || fail "The cover disappeared after the target scrolled out of view"
   echo "Cover survived scrolling; scrolling back"
-  for i in 1 2 3 4; do adb shell input swipe 540 500 540 1900 250; sleep 1; done
+  for _ in 1 2 3 4; do adb shell input swipe 540 500 540 1900 250; sleep 1; done
   sleep 2
-  if ! overlay_showing; then echo "::error::The cover is gone after scrolling back to the target"; exit 1; fi
+  overlay_showing || fail "The cover is gone after scrolling back to the target"
   adb shell input keyevent KEYCODE_HOME
-  sleep 2
-  if overlay_showing; then echo "::error::Cover left over after leaving the app"; exit 1; fi
+  wait_no_overlay 10 || fail "Cover left over after leaving the app"
   echo "Scroll test passed"
 fi
 
-echo "== Instrumented tests"
+echo "== 4) Instrumented tests"
+set_rules '[]'
 adb shell settings delete secure enabled_accessibility_services
 out=$(adb shell am instrument -w "$PKG.test/androidx.test.runner.AndroidJUnitRunner")
 echo "$out" | tail -20
 echo "$out" > emulator-logs/instrumentation.txt
 if ! echo "$out" | grep -q "^OK (" || echo "$out" | grep -q "FAILURES!!!"; then
-  echo "::error::Instrumented tests failed"; exit 1
+  fail "Instrumented tests failed"
 fi
 echo "Instrumented tests passed"

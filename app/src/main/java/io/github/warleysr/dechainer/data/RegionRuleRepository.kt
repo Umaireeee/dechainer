@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 object RegionRuleRepository {
     const val PREFS_NAME = "region_rules_prefs"
-    private const val KEY_RULES = "rules"
+    const val KEY_RULES = "rules"
 
     fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

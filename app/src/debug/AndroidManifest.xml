@@ -7,6 +7,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="io.github.warleysr.dechainer.DEBUG_CAPTURE" />
+                <action android:name="io.github.warleysr.dechainer.DEBUG_SET_RULES" />
             </intent-filter>
         </receiver>
     </application>
