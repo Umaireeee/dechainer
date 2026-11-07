@@ -114,7 +114,14 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
         items(viewModel.rules, key = { it.id }) { rule ->
             ListItem(
                 headlineContent = { Text(rule.label.ifBlank { rule.viewId ?: rule.text.orEmpty() }) },
-                supportingContent = { Text(viewModel.appLabel(rule.packageName)) },
+                supportingContent = {
+                    Text(
+                        listOfNotNull(
+                            viewModel.appLabel(rule.packageName),
+                            rule.activityClass?.substringAfterLast('.')
+                        ).joinToString(" • ")
+                    )
+                },
                 trailingContent = {
                     IconButton(onClick = { recoveryGate.run { viewModel.removeRule(rule) } }) {
                         Icon(Icons.Default.Delete, contentDescription = null)

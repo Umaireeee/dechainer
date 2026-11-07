@@ -29,7 +29,8 @@ object RegionRuleRepository {
                     viewId = viewId,
                     text = text,
                     label = o.optString("label"),
-                    extendDown = o.optBoolean("extendDown", false)
+                    extendDown = o.optBoolean("extendDown", false),
+                    activityClass = o.optString("activity").ifBlank { null }
                 )
             }
         } catch (_: Exception) {
@@ -49,6 +50,7 @@ object RegionRuleRepository {
                 put("text", it.text ?: "")
                 put("label", it.label)
                 put("extendDown", it.extendDown)
+                put("activity", it.activityClass ?: "")
             })
         }
         prefs(context).edit { putString(KEY_RULES, array.toString()) }

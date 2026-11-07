@@ -73,6 +73,8 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var currentPackage: String? = null
+    private var currentActivity: String? = null
+    private var regionActive = false
 
     // Region blocking: rules cached per package, so events from apps without rules cost nothing.
     private lateinit var regionPrefs: SharedPreferences
@@ -196,6 +198,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                     lastForegroundPackage = currentPackage
                     stopTrackingAndSave(screenOff = true)
                     currentPackage = null
+                    refreshRegionState()
                 }
 
                 Intent.ACTION_SCREEN_ON -> {
@@ -205,6 +208,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                         sessionStartTime = SystemClock.elapsedRealtime()
                         checkDateReset()
                         startTracking(it)
+                        refreshRegionState()
                     }
                 }
 
@@ -244,7 +248,6 @@ class DechainerAccessibilityService : AccessibilityService() {
 
             regionPrefs -> {
                 updateRegionRules()
-                if (regionRules.isEmpty()) regionOverlay.hide() else scheduleRegionScan()
             }
 
             colorFilterPrefs -> {
@@ -320,6 +323,8 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         var capturedPackage by mutableStateOf<String?>(null)
             private set
+        var capturedActivity: String? = null
+            private set
         var capturedNodes by mutableStateOf<List<CapturedNode>>(emptyList())
             private set
         var captureCountdown by mutableStateOf(false)
@@ -343,6 +348,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         fun clearCapture() {
             capturedPackage = null
+            capturedActivity = null
             capturedNodes = emptyList()
         }
 
@@ -517,7 +523,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) onColorFilterForegroundChanged(event)
         if (event.packageName == packageName) return
-        if (regionRules.isNotEmpty()) onRegionEvent(event)
+        if (regionActive) onRegionEvent(event)
 
         // App tracking to control time limits and time between re-openings
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -528,14 +534,24 @@ class DechainerAccessibilityService : AccessibilityService() {
                 || className.contains("SoftInputWindow", ignoreCase = true)
             ) return
 
-            if (newPackage != currentPackage) {
+            val packageChanged = newPackage != currentPackage
+            if (packageChanged) {
                 stopTrackingAndSave()
                 pendingLeaves.remove(newPackage)
                 currentPackage = newPackage
+                currentActivity = null
                 sessionStartTime = SystemClock.elapsedRealtime()
                 checkDateReset()
                 startTracking(newPackage)
+                checkAppRating(newPackage)
             }
+
+            // Dialogs, popups and fragment changes aren't activities, so the region rules keep
+            // applying across them; only a real activity change switches them on or off.
+            val activityChanged = className.contains("Activity", ignoreCase = true) &&
+                className != currentActivity
+            if (activityChanged) currentActivity = className
+            if (packageChanged || activityChanged) refreshRegionState()
 
             // Checked on every launcher event, not just on a package change: going from recents to home stays in the launcher.
             if (pendingLeaves.isNotEmpty() && homeScreenDetector.isHomeScreen(event, rootInActiveWindow)) {
@@ -554,48 +570,46 @@ class DechainerAccessibilityService : AccessibilityService() {
                     performGlobalAction(GLOBAL_ACTION_BACK)
             }
         }
+    }
 
-        // Unknown app: look up its Play Store rating / browser status once
-        else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            val pkg = currentPackage ?: return
+    /** Looks up an unknown app's Play Store rating / browser status once, when it first comes to the front. */
+    private fun checkAppRating(pkg: String) {
+        if (!ratingPrefs.contains(pkg) && !checkingRating) {
+            checkingRating = true
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    val info = PlayStoreRatingFetcher.fetch(pkg)
 
-            if (!ratingPrefs.contains(pkg) && !checkingRating) {
-                checkingRating = true
-                serviceScope.launch(Dispatchers.IO) {
-                    try {
-                        val info = PlayStoreRatingFetcher.fetch(pkg)
-
-                        if (info.hasUnrestrictedInternet) {
-                            val manager = BrowserRestrictionsManager(applicationContext)
-                            val supportsRestrictions = manager.supportsRestrictions(pkg)
-                            if (supportsRestrictions) {
-                                manager.applyRestrictions()
-                            } else {
-                                withContext(Dispatchers.Main) {
-                                    suspendPackage(pkg, reason = SuspensionReason.UNSUPPORTED_BROWSER)
-                                }
-                                ratingPrefs.edit { putBoolean(pkg, true) }
-                                return@launch
-                            }
-                        }
-
-                        if (info.hasExplicitContent && info.contentRating == "Rated 18+")
+                    if (info.hasUnrestrictedInternet) {
+                        val manager = BrowserRestrictionsManager(applicationContext)
+                        val supportsRestrictions = manager.supportsRestrictions(pkg)
+                        if (supportsRestrictions) {
+                            manager.applyRestrictions()
+                        } else {
                             withContext(Dispatchers.Main) {
-                                suspendPackage(pkg, reason = SuspensionReason.RATED_18_PLUS)
+                                suspendPackage(pkg, reason = SuspensionReason.UNSUPPORTED_BROWSER)
                             }
-
-                        ratingPrefs.edit { putBoolean(pkg, info.hasExplicitContent) }
-                    } catch (e: HttpStatusException) {
-                        e.printStackTrace()
-                        if (e.statusCode == 404) {
-                            ratingPrefs.edit { putBoolean(pkg, false) }
+                            ratingPrefs.edit { putBoolean(pkg, true) }
+                            return@launch
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        ratingPrefs.edit { putBoolean(pkg, false) }
-                    } finally {
-                        checkingRating = false
                     }
+
+                    if (info.hasExplicitContent && info.contentRating == "Rated 18+")
+                        withContext(Dispatchers.Main) {
+                            suspendPackage(pkg, reason = SuspensionReason.RATED_18_PLUS)
+                        }
+
+                    ratingPrefs.edit { putBoolean(pkg, info.hasExplicitContent) }
+                } catch (e: HttpStatusException) {
+                    e.printStackTrace()
+                    if (e.statusCode == 404) {
+                        ratingPrefs.edit { putBoolean(pkg, false) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    ratingPrefs.edit { putBoolean(pkg, false) }
+                } finally {
+                    checkingRating = false
                 }
             }
         }
@@ -605,17 +619,47 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun updateRegionRules() {
         regionRules = RegionRuleRepository.load(regionPrefs).groupBy { it.packageName }
+        refreshRegionState()
+    }
+
+    private fun activeRegionRules(): List<RegionRule> {
+        val pkg = currentPackage ?: return emptyList()
+        return regionRules[pkg]?.filter { it.activityClass == null || it.activityClass == currentActivity }
+            ?: emptyList()
+    }
+
+    /**
+     * Region blocking only runs while a rule applies to the app and activity on screen. Outside
+     * that the service doesn't even subscribe to content-changed events (by far the most frequent
+     * ones), so nothing is delivered, scanned or drawn.
+     */
+    private fun refreshRegionState() {
+        regionActive = activeRegionRules().isNotEmpty()
+
+        val info = serviceInfo
+        if (info != null) {
+            val wanted = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                if (regionActive) AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED else 0
+            if (info.eventTypes != wanted) {
+                info.eventTypes = wanted
+                serviceInfo = info
+            }
+        }
+
+        if (regionActive) {
+            scheduleRegionScan()
+        } else {
+            handler.removeCallbacks(regionScanRunnable)
+            regionScanPending = false
+            regionOverlay.hide()
+        }
     }
 
     private fun onRegionEvent(event: AccessibilityEvent) {
-        val pkg = event.packageName?.toString() ?: return
-        if (pkg in regionRules) {
-            scheduleRegionScan()
-        } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            pkg != "com.android.systemui"
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            event.packageName?.toString() == currentPackage
         ) {
-            // Another app came to the front (the keyboard and system UI are ignored above).
-            regionOverlay.hide()
+            scheduleRegionScan()
         }
     }
 
@@ -628,8 +672,8 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun scanRegions() {
         val root = rootInActiveWindow
-        val rules = root?.packageName?.toString()?.let { regionRules[it] }
-        if (root == null || rules == null) {
+        val rules = activeRegionRules().takeIf { root?.packageName?.toString() == currentPackage }
+        if (root == null || rules.isNullOrEmpty()) {
             regionOverlay.hide()
             root?.recycle()
             return
@@ -715,6 +759,7 @@ class DechainerAccessibilityService : AccessibilityService() {
             }
             walk(root, 0)
             capturedPackage = pkg
+            capturedActivity = if (pkg == currentPackage) currentActivity else null
             capturedNodes = nodes
         } else {
             clearCapture()

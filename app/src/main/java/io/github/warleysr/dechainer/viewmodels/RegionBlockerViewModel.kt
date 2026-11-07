@@ -34,9 +34,11 @@ class RegionBlockerViewModel : ViewModel() {
             viewId = node.viewId,
             text = text,
             label = node.viewId?.substringAfter('/') ?: node.text.orEmpty(),
-            extendDown = extendDown
+            extendDown = extendDown,
+            activityClass = DechainerAccessibilityService.capturedActivity
         )
-        if (rules.none { it.packageName == pkg && it.viewId == rule.viewId && it.text == rule.text && it.extendDown == extendDown }) {
+        if (rules.none { it.packageName == pkg && it.viewId == rule.viewId && it.text == rule.text && it.extendDown == extendDown &&
+                it.activityClass == rule.activityClass }) {
             rules.add(rule)
             RegionRuleRepository.save(context, rules)
         }

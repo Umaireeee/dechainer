@@ -12,5 +12,7 @@ data class RegionRule(
     val text: String?,
     val label: String,
     /** Also cover everything below the element, down to the end of its scrolling container. */
-    val extendDown: Boolean = false
+    val extendDown: Boolean = false,
+    /** Activity the rule was captured on; null means any screen of the app. */
+    val activityClass: String? = null
 )
