@@ -75,6 +75,7 @@ import kotlin.math.max
 class DechainerAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private var lastPassiveScanElapsedMs = 0L
     private var currentPackage: String? = null
     private var sessionStartTime: Long = 0
     private var lastCheckDate: String = LocalDate.now().toString()
@@ -398,6 +399,8 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val NSFW_SCAN_INTERVAL_MS = 2000L
+        // Full-tree text scans for passive word blocking are costly (many binder calls); coalesce them.
+        private const val PASSIVE_SCAN_INTERVAL_MS = 500L
 
         private const val USAGE_WARNING_TICK_INTERVAL_MS = 2000L
 
@@ -729,6 +732,10 @@ class DechainerAccessibilityService : AccessibilityService() {
             }
 
             val passivePatterns = passiveForbiddenPatterns[pkg] ?: return
+
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastPassiveScanElapsedMs < PASSIVE_SCAN_INTERVAL_MS) return
+            lastPassiveScanElapsedMs = nowMs
 
             val screenText = buildScreenText(event) ?: return
 
