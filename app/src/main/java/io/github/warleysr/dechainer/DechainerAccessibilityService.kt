@@ -42,6 +42,7 @@ import io.github.warleysr.dechainer.data.ColorFilterSettings
 import io.github.warleysr.dechainer.data.FocusMode
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.RegionRule
+import io.github.warleysr.dechainer.utils.RegionGeometry
 import io.github.warleysr.dechainer.utils.RegionOverlay
 import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.models.SuspensionReason
@@ -639,7 +640,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun activeRegionRules(): List<RegionRule> {
         val pkg = currentPackage ?: return emptyList()
-        return regionRules[pkg]?.filter { it.activityClass == null || it.activityClass == currentActivity }
+        return regionRules[pkg]?.filter { it.appliesTo(currentActivity) }
             ?: emptyList()
     }
 
@@ -789,11 +790,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         container.getBoundsInScreen(area)
         container.recycle()
 
-        return when {
-            nodeBounds.bottom <= area.top -> area
-            nodeBounds.top >= area.bottom -> null
-            else -> Rect(area.left, maxOf(nodeBounds.top, area.top), area.right, area.bottom)
-        }.takeIf { it == null || !it.isEmpty }
+        return RegionGeometry.below(nodeBounds, area)
     }
 
     private fun captureNow() {

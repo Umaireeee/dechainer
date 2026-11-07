@@ -15,4 +15,7 @@ data class RegionRule(
     val extendDown: Boolean = false,
     /** Activity the rule was captured on; null means any screen of the app. */
     val activityClass: String? = null
-)
+) {
+    /** Whether the rule applies while [activity] is the foreground activity of its app. */
+    fun appliesTo(activity: String?) = activityClass == null || activityClass == activity
+}
