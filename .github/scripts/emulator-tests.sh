@@ -72,20 +72,37 @@ echo "Smoke test passed"
 echo "== End to end: capture a real screen, turn a captured element into a rule, expect the overlay"
 disable_service() { adb shell settings delete secure enabled_accessibility_services; sleep 3; }
 enable_service() {
-  adb logcat -c
-  adb shell settings put secure enabled_accessibility_services "$SERVICE"
-  adb shell settings put secure accessibility_enabled 1
-  # Wait for the service itself to report that it connected (not just for the setting to be set).
-  for i in $(seq 1 40); do
-    if adb logcat -d -s RegionCapture:I | grep -q "service connected"; then sleep 1; return 0; fi
-    sleep 2
+  # Android finishes a force-stop's accessibility clean-up a few seconds late and can switch a
+  # freshly enabled service off again, so confirm the setting is still there before moving on.
+  for attempt in 1 2 3; do
+    adb logcat -c
+    adb shell settings put secure enabled_accessibility_services "$SERVICE"
+    adb shell settings put secure accessibility_enabled 1
+    connected=false
+    for i in $(seq 1 40); do
+      if adb logcat -d -s RegionCapture:I | grep -q "service connected"; then connected=true; break; fi
+      sleep 2
+    done
+    if [ "$connected" = true ]; then
+      sleep 4
+      cur=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')
+      if [ "$cur" = "$SERVICE" ]; then return 0; fi
+      echo "Service was switched off again (attempt $attempt); retrying"
+    fi
   done
-  echo "::error::Accessibility service never connected"; return 1
+  echo "::error::Accessibility service never stayed connected"; return 1
+}
+# Restart the app process without a force-stop (which triggers the late clean-up above).
+restart_process() {
+  for i in 1 2 3 4 5; do
+    adb shell am kill "$PKG"; sleep 1
+    [ -z "$(adb shell pidof "$PKG" | tr -d '\r')" ] && break
+  done
 }
 overlay_showing() { adb shell dumpsys window windows | grep -q "DechainerRegionOverlay"; }
 
 disable_service
-adb shell am force-stop "$PKG"
+restart_process
 adb shell "run-as $PKG rm -f shared_prefs/region_rules_prefs.xml"
 enable_service || exit 1
 
@@ -119,7 +136,7 @@ if [ -z "$ID" ]; then echo "::error::No suitable element in the capture"; exit 1
 echo "Rule: id=$ID activity=${ACTIVITY:-<any>}"
 
 disable_service
-adb shell am force-stop "$PKG"
+restart_process
 RULES="[{&quot;id&quot;:&quot;e2e&quot;,&quot;pkg&quot;:&quot;com.android.settings&quot;,&quot;viewId&quot;:&quot;$ID&quot;,&quot;text&quot;:&quot;&quot;,&quot;label&quot;:&quot;e2e&quot;,&quot;extendDown&quot;:false,&quot;activity&quot;:&quot;$ACTIVITY&quot;}]"
 printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="rules">%s</string></map>\n' "$RULES" \
   | adb shell "run-as $PKG sh -c 'cat > shared_prefs/region_rules_prefs.xml'"
@@ -165,7 +182,7 @@ if [ -z "$TEXT" ]; then
 else
   XTEXT=$(printf '%s' "$TEXT" | sed 's/&/\&amp;/g')
   disable_service
-  adb shell am force-stop "$PKG"
+  restart_process
   top_activity() { adb shell dumpsys activity activities | grep -E "topResumedActivity|mResumedActivity" | head -1; }
   # Control: with no cover, a tap in the middle of the Settings list opens a sub-screen.
   adb shell input keyevent KEYCODE_HOME; sleep 2
