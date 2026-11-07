@@ -83,6 +83,11 @@ class DechainerAccessibilityService : AccessibilityService() {
         RegionOverlay(this, getString(R.string.region_blocked_message))
     }
     private var regionScanPending = false
+    private var regionScanDueAt = 0L
+    // Armed: the rule's activity is on screen but its target isn't (yet). Engaged: target found.
+    private var regionEngaged = false
+    private var regionStableScans = 0
+    private var regionLastRects: List<Rect> = emptyList()
     private val regionScanRunnable = Runnable {
         regionScanPending = false
         scanRegions()
@@ -330,7 +335,13 @@ class DechainerAccessibilityService : AccessibilityService() {
         var captureCountdown by mutableStateOf(false)
             private set
 
-        private const val REGION_SCAN_DELAY_MS = 100L
+        // Armed (target not on screen): watch for it cheaply and rarely.
+        private const val REGION_ARMED_DELAY_MS = 1000L
+        private const val REGION_CLICK_DELAY_MS = 150L
+        // Engaged (target on screen): follow scrolling closely, back off while nothing moves.
+        private const val REGION_SCROLL_DELAY_MS = 60L
+        private const val REGION_ENGAGED_BASE_DELAY_MS = 100L
+        private const val REGION_ENGAGED_MAX_DELAY_MS = 800L
         private const val CAPTURE_MAX_NODES = 600
 
         /**
@@ -635,19 +646,13 @@ class DechainerAccessibilityService : AccessibilityService() {
      */
     private fun refreshRegionState() {
         regionActive = activeRegionRules().isNotEmpty()
-
-        val info = serviceInfo
-        if (info != null) {
-            val wanted = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                if (regionActive) AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED else 0
-            if (info.eventTypes != wanted) {
-                info.eventTypes = wanted
-                serviceInfo = info
-            }
-        }
+        regionEngaged = false
+        regionStableScans = 0
+        regionLastRects = emptyList()
+        applyRegionServiceInfo()
 
         if (regionActive) {
-            scheduleRegionScan()
+            scheduleRegionScan(REGION_CLICK_DELAY_MS)
         } else {
             handler.removeCallbacks(regionScanRunnable)
             regionScanPending = false
@@ -655,19 +660,59 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun onRegionEvent(event: AccessibilityEvent) {
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
-            event.packageName?.toString() == currentPackage
-        ) {
-            scheduleRegionScan()
+    /**
+     * Which events the system delivers depends on how close we are to the blocked region:
+     * - nothing relevant on screen: only app/activity switches;
+     * - armed (rule's activity open, target not visible): plus content changes and tab taps,
+     *   which is how the target appearing (e.g. switching to the right tab) is noticed;
+     * - engaged (target visible): content changes and scrolling, to keep the panel in place.
+     */
+    private fun applyRegionServiceInfo() {
+        val info = serviceInfo ?: return
+        val wanted = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or when {
+            !regionActive -> 0
+            regionEngaged -> AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_SCROLLED
+            else -> AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_CLICKED or AccessibilityEvent.TYPE_VIEW_SELECTED
+        }
+        if (info.eventTypes != wanted) {
+            info.eventTypes = wanted
+            serviceInfo = info
         }
     }
 
-    /** Coalesces bursts of events into a single tree query. */
-    private fun scheduleRegionScan() {
-        if (regionScanPending) return
+    private fun onRegionEvent(event: AccessibilityEvent) {
+        if (event.packageName?.toString() != currentPackage) return
+        val delay = when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                regionStableScans = 0
+                REGION_SCROLL_DELAY_MS
+            }
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_SELECTED -> REGION_CLICK_DELAY_MS
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
+                if (regionEngaged) {
+                    (REGION_ENGAGED_BASE_DELAY_MS shl regionStableScans.coerceAtMost(3))
+                        .coerceAtMost(REGION_ENGAGED_MAX_DELAY_MS)
+                } else {
+                    REGION_ARMED_DELAY_MS
+                }
+            else -> return
+        }
+        scheduleRegionScan(delay)
+    }
+
+    /** Coalesces bursts of events into a single tree query; a sooner request replaces a later one. */
+    private fun scheduleRegionScan(delayMs: Long) {
+        val dueAt = SystemClock.elapsedRealtime() + delayMs
+        if (regionScanPending) {
+            if (regionScanDueAt <= dueAt) return
+            handler.removeCallbacks(regionScanRunnable)
+        }
         regionScanPending = true
-        handler.postDelayed(regionScanRunnable, REGION_SCAN_DELAY_MS)
+        regionScanDueAt = dueAt
+        handler.postDelayed(regionScanRunnable, delayMs)
     }
 
     private fun scanRegions() {
@@ -676,6 +721,10 @@ class DechainerAccessibilityService : AccessibilityService() {
         if (root == null || rules.isNullOrEmpty()) {
             regionOverlay.hide()
             root?.recycle()
+            if (regionEngaged) {
+                regionEngaged = false
+                applyRegionServiceInfo()
+            }
             return
         }
 
@@ -704,6 +753,15 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
         root.recycle()
         if (rects.isEmpty()) regionOverlay.hide() else regionOverlay.show(rects)
+
+        regionStableScans = if (rects == regionLastRects) regionStableScans + 1 else 0
+        regionLastRects = rects
+        val engaged = rects.isNotEmpty()
+        if (engaged != regionEngaged) {
+            regionEngaged = engaged
+            regionStableScans = 0
+            applyRegionServiceInfo()
+        }
     }
 
     /**
