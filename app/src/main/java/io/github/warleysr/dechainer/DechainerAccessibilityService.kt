@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
@@ -484,8 +485,22 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun isPreinstalledNonBrowser(pkg: String): Boolean = try {
+        val preinstalled = packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
+        preinstalled && !BrowserRestrictionsManager(applicationContext).isBrowser(pkg)
+    } catch (_: Exception) {
+        false
+    }
+
     /** Looks up an unknown app's Play Store rating / browser status once, when it first comes to the front. */
     private fun checkAppRating(pkg: String) {
+        if (!ratingPrefs.contains(pkg) && isPreinstalledNonBrowser(pkg)) {
+            // Pre-installed apps that aren't web browsers can't be what this lookup guards against
+            // (a newly installed 18+ app or unrestricted browser), so skip the download and
+            // remember that, which makes later app switches free.
+            ratingPrefs.edit { putBoolean(pkg, false) }
+            return
+        }
         if (!ratingPrefs.contains(pkg) && !checkingRating) {
             checkingRating = true
             serviceScope.launch(Dispatchers.IO) {
