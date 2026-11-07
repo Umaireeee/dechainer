@@ -5,6 +5,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional: also build a signed APK and publish a GitHub release with this tag (e.g. v1.12.0)"
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -67,3 +72,49 @@ jobs:
           path: |
             app/build/reports/androidTests/
             emulator-logs/
+
+  release:
+    name: Signed release
+    # Only when CI is started by hand with a release tag, after both test jobs pass.
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: [unit, emulator]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; exit 1; fi
+          done
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "dechainer.storeFile=$RUNNER_TEMP/release.jks"
+            echo "dechainer.storePassword=$KEYSTORE_PASSWORD"
+            echo "dechainer.keyAlias=$KEY_ALIAS"
+            echo "dechainer.keyPassword=$KEY_PASSWORD"
+          } > local.properties
+      - name: Signed release build
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "dechainer-${TAG}.apk"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          files: dechainer-${{ env.TAG }}.apk
+          generate_release_notes: true
