@@ -175,23 +175,6 @@ fun ConfigTab(
             }
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.region_blocker)) },
-                    supportingContent = { Text(stringResource(R.string.region_blocker_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.Block, "") },
-                    modifier = Modifier.clickable {
-                        if (!advancedBlocking) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                            }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("region_blocker")
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
                     headlineContent = { Text(stringResource(R.string.block_torrents)) },
                     supportingContent = { Text(stringResource(R.string.block_torrents_desc)) },
                     leadingContent = { Icon(Icons.Outlined.FileDownload, "") },

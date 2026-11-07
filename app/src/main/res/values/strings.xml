@@ -545,23 +545,6 @@
     <string name="disallow_config_wifi_private">Disallow configuring private Wi-Fi</string>
     <string name="disallow_config_wifi_shared">Disallow configuring shared Wi-Fi</string>
     <string name="disallow_non_market_app_by_knox">Disallow non-market apps (Knox)</string>
-    <string name="region_blocker">Screen regions</string>
-    <string name="region_blocker_desc">Block one part of a screen while the rest stays usable</string>
-    <string name="region_blocker_explanation">Cover a single element of an app, such as a tab or a feed, with a panel while the rest of the same screen keeps working. Tap Capture, then open the screen you want within 8 seconds; Déchaîner will list the elements it found so you can pick one.</string>
-    <string name="region_capture">Capture a screen</string>
-    <string name="region_capturing">Capturing… open the target screen</string>
-    <string name="region_service_off">Advanced blocking (accessibility service) must be enabled.</string>
-    <string name="region_pick_element">Pick the element to block in %1$s</string>
-    <string name="region_discard_capture">Discard</string>
-    <string name="region_nothing_found">No identifiable elements were found on that screen.</string>
-    <string name="region_rules">Blocked regions</string>
-    <string name="region_no_rules">No regions blocked yet.</string>
-    <string name="region_block_this">Block this element?</string>
-    <string name="region_match_text">Only when its text is “%1$s”</string>
-    <string name="region_blocked_message">Blocked by Déchaîner</string>
-    <string name="region_extend_down">Also cover everything below it (until the end of the list)</string>
-    <string name="region_invisible">Invisible: keep the screen looking normal but block touches and scrolling in this area</string>
-    <string name="region_invisible_short">Invisible</string>
 </resources>
 
 
