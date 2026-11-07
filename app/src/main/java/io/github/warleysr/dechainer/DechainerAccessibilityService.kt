@@ -406,6 +406,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isRunning = true
         instance = this
+        if (BuildConfig.DEBUG) android.util.Log.i("RegionCapture", "service connected")
         disablingService = false
 
         limitPrefs = getSharedPreferences(AppTimeLimits.PREFS_NAME, MODE_PRIVATE)

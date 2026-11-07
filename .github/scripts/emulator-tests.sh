@@ -70,15 +70,17 @@ echo "Smoke test passed"
 
 
 echo "== End to end: capture a real screen, turn a captured element into a rule, expect the overlay"
-disable_service() { adb shell settings put secure enabled_accessibility_services ""; sleep 2; }
+disable_service() { adb shell settings delete secure enabled_accessibility_services; sleep 3; }
 enable_service() {
+  adb logcat -c
   adb shell settings put secure enabled_accessibility_services "$SERVICE"
   adb shell settings put secure accessibility_enabled 1
-  for i in $(seq 1 30); do
-    if adb shell dumpsys accessibility | grep -q "$PKG.DechainerAccessibilityService"; then return 0; fi
+  # Wait for the service itself to report that it connected (not just for the setting to be set).
+  for i in $(seq 1 40); do
+    if adb logcat -d -s RegionCapture:I | grep -q "service connected"; then sleep 1; return 0; fi
     sleep 2
   done
-  echo "::error::Accessibility service never bound"; return 1
+  echo "::error::Accessibility service never connected"; return 1
 }
 overlay_showing() { adb shell dumpsys window windows | grep -q "DechainerRegionOverlay"; }
 
@@ -86,7 +88,6 @@ disable_service
 adb shell am force-stop "$PKG"
 adb shell "run-as $PKG rm -f shared_prefs/region_rules_prefs.xml"
 enable_service || exit 1
-adb logcat -c
 
 # Capture: the service goes Home, waits 8 s, then reads whatever app is in front.
 adb shell am broadcast -a io.github.warleysr.dechainer.DEBUG_CAPTURE --el delay 8000 -p "$PKG" >/dev/null
@@ -221,5 +222,5 @@ else
 fi
 
 echo "== Instrumented tests"
-adb shell settings put secure enabled_accessibility_services ""
+adb shell settings delete secure enabled_accessibility_services
 ./gradlew connectedDebugAndroidTest --stacktrace
