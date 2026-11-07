@@ -1,0 +1,51 @@
+package io.github.warleysr.dechainer.viewmodels
+
+import androidx.compose.runtime.mutableStateListOf
+import androidx.lifecycle.ViewModel
+import io.github.warleysr.dechainer.DechainerAccessibilityService
+import io.github.warleysr.dechainer.DechainerApplication
+import io.github.warleysr.dechainer.data.RegionRuleRepository
+import io.github.warleysr.dechainer.models.RegionRule
+import java.util.UUID
+
+class RegionBlockerViewModel : ViewModel() {
+    private val context = DechainerApplication.getInstance()
+    private val packageManager = context.packageManager
+
+    val rules = mutableStateListOf<RegionRule>().apply { addAll(RegionRuleRepository.load(context)) }
+
+    fun appLabel(packageName: String): String = try {
+        packageManager.getApplicationInfo(packageName, 0).loadLabel(packageManager).toString()
+    } catch (_: Exception) {
+        packageName
+    }
+
+    /** Returns false when the accessibility service isn't running, so nothing can be captured. */
+    fun startCapture(): Boolean = DechainerAccessibilityService.scheduleCapture(CAPTURE_DELAY_MS)
+
+    fun clearCapture() = DechainerAccessibilityService.clearCapture()
+
+    fun addRule(node: DechainerAccessibilityService.Companion.CapturedNode, matchText: Boolean) {
+        val pkg = DechainerAccessibilityService.capturedPackage ?: return
+        val text = if (matchText || node.viewId == null) node.text else null
+        val rule = RegionRule(
+            id = UUID.randomUUID().toString(),
+            packageName = pkg,
+            viewId = node.viewId,
+            text = text,
+            label = node.viewId?.substringAfter('/') ?: node.text.orEmpty()
+        )
+        if (rules.none { it.packageName == pkg && it.viewId == rule.viewId && it.text == rule.text }) {
+            rules.add(rule)
+            RegionRuleRepository.save(context, rules)
+        }
+    }
+
+    fun removeRule(rule: RegionRule) {
+        if (rules.remove(rule)) RegionRuleRepository.save(context, rules)
+    }
+
+    companion object {
+        const val CAPTURE_DELAY_MS = 8_000L
+    }
+}

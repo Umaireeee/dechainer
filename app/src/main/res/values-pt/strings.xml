@@ -546,6 +546,20 @@
     <string name="disallow_config_wifi_private">Desativar configuração de Wi-Fi privado</string>
     <string name="disallow_config_wifi_shared">Desativar configuração de Wi-Fi compartilhado</string>
     <string name="disallow_non_market_app_by_knox">Desativar apps fora da loja (Knox)</string>
+    <string name="region_blocker">Regiões da tela</string>
+    <string name="region_blocker_desc">Bloqueia uma parte da tela e mantém o resto utilizável</string>
+    <string name="region_blocker_explanation">Cobre um único elemento de um app, como uma aba ou um feed, com um painel enquanto o resto da mesma tela continua funcionando. Toque em Capturar e abra a tela desejada em até 8 segundos; o Déchaîner listará os elementos encontrados para você escolher um.</string>
+    <string name="region_capture">Capturar uma tela</string>
+    <string name="region_capturing">Capturando… abra a tela desejada</string>
+    <string name="region_service_off">O bloqueio avançado (serviço de acessibilidade) precisa estar ativado.</string>
+    <string name="region_pick_element">Escolha o elemento a bloquear em %1$s</string>
+    <string name="region_discard_capture">Descartar</string>
+    <string name="region_nothing_found">Nenhum elemento identificável foi encontrado nessa tela.</string>
+    <string name="region_rules">Regiões bloqueadas</string>
+    <string name="region_no_rules">Nenhuma região bloqueada ainda.</string>
+    <string name="region_block_this">Bloquear este elemento?</string>
+    <string name="region_match_text">Somente quando o texto for “%1$s”</string>
+    <string name="region_blocked_message">Bloqueado pelo Déchaîner</string>
 </resources>
 
 

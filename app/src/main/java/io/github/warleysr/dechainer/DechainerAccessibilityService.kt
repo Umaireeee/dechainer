@@ -11,12 +11,14 @@ import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.database.ContentObserver
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.os.UserManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,8 +41,13 @@ import io.github.warleysr.dechainer.data.ColorFilterController
 import io.github.warleysr.dechainer.data.ColorFilterSettings
 import io.github.warleysr.dechainer.data.FocusMode
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
+import io.github.warleysr.dechainer.models.RegionRule
+import io.github.warleysr.dechainer.utils.RegionOverlay
+import io.github.warleysr.dechainer.activities.MainActivity
 import io.github.warleysr.dechainer.models.SuspensionReason
 import io.github.warleysr.dechainer.data.PlayStoreRatingFetcher
+import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.RegionRuleRepository
 import io.github.warleysr.dechainer.data.UsageWarningSettings
 import io.github.warleysr.dechainer.data.VisualBlockingSuspensionTracker
 import io.github.warleysr.dechainer.models.AppGroup
@@ -66,6 +73,18 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var currentPackage: String? = null
+
+    // Region blocking: rules cached per package, so events from apps without rules cost nothing.
+    private lateinit var regionPrefs: SharedPreferences
+    private var regionRules: Map<String, List<RegionRule>> = emptyMap()
+    private val regionOverlay by lazy {
+        RegionOverlay(this, getString(R.string.region_blocked_message))
+    }
+    private var regionScanPending = false
+    private val regionScanRunnable = Runnable {
+        regionScanPending = false
+        scanRegions()
+    }
     private var sessionStartTime: Long = 0
     private var lastCheckDate: String = LocalDate.now().toString()
     private val lastClosedTimes = HashMap<String, Long>();
@@ -223,6 +242,11 @@ class DechainerAccessibilityService : AccessibilityService() {
                 currentPackage?.let { startTracking(it) }
             }
 
+            regionPrefs -> {
+                updateRegionRules()
+                if (regionRules.isEmpty()) regionOverlay.hide() else scheduleRegionScan()
+            }
+
             colorFilterPrefs -> {
                 syncColorFilters()
             }
@@ -281,6 +305,47 @@ class DechainerAccessibilityService : AccessibilityService() {
     companion object {
         private const val USAGE_WARNING_TICK_INTERVAL_MS = 2000L
 
+        @Volatile
+        private var instance: DechainerAccessibilityService? = null
+
+        /** A node of the screen last captured for the region picker. */
+        data class CapturedNode(
+            val viewId: String?,
+            val text: String?,
+            val className: String,
+            val width: Int,
+            val height: Int,
+            val depth: Int
+        )
+
+        var capturedPackage by mutableStateOf<String?>(null)
+            private set
+        var capturedNodes by mutableStateOf<List<CapturedNode>>(emptyList())
+            private set
+        var captureCountdown by mutableStateOf(false)
+            private set
+
+        private const val REGION_SCAN_DELAY_MS = 100L
+        private const val CAPTURE_MAX_NODES = 600
+
+        /**
+         * Sends the user home and, after [delayMs], snapshots whatever app is then on screen
+         * for the region picker, then brings Déchaîner back. Returns false if the service is off.
+         */
+        fun scheduleCapture(delayMs: Long): Boolean {
+            val service = instance ?: return false
+            service.handler.removeCallbacks(service.captureRunnable)
+            captureCountdown = true
+            service.performGlobalAction(GLOBAL_ACTION_HOME)
+            service.handler.postDelayed(service.captureRunnable, delayMs)
+            return true
+        }
+
+        fun clearCapture() {
+            capturedPackage = null
+            capturedNodes = emptyList()
+        }
+
         var isRunning by mutableStateOf(false)
             private set
 
@@ -312,6 +377,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         isRunning = true
+        instance = this
         disablingService = false
 
         limitPrefs = getSharedPreferences(AppTimeLimits.PREFS_NAME, MODE_PRIVATE)
@@ -325,6 +391,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         ratingPrefs = getSharedPreferences("app_ratings", MODE_PRIVATE)
         usageWarningPrefs = getSharedPreferences(UsageWarningSettings.PREFS_NAME, MODE_PRIVATE)
         colorFilterPrefs = getSharedPreferences(ColorFilterSettings.PREFS_NAME, MODE_PRIVATE)
+        regionPrefs = RegionRuleRepository.prefs(this)
         ColorFilterSettings.migrate(colorFilterPrefs)
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -333,9 +400,11 @@ class DechainerAccessibilityService : AccessibilityService() {
         groupsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         usageWarningPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         colorFilterPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        regionPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         updateUsageWarningSettings()
+        updateRegionRules()
 
         ColorFilterController.observedUris.forEach {
             contentResolver.registerContentObserver(it, false, colorFilterObserver)
@@ -404,6 +473,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         usageWarningPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         colorFilterPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        regionPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         contentResolver.unregisterContentObserver(colorFilterObserver)
         handler.removeCallbacks(colorFilterSyncRunnable)
@@ -412,6 +482,10 @@ class DechainerAccessibilityService : AccessibilityService() {
         nightLightOverlay.hide()
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
+        handler.removeCallbacks(regionScanRunnable)
+        handler.removeCallbacks(captureRunnable)
+        regionOverlay.hide()
+        instance = null
         stopTrackingAndSave()
         isRunning = false
 
@@ -443,6 +517,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) onColorFilterForegroundChanged(event)
         if (event.packageName == packageName) return
+        if (regionRules.isNotEmpty()) onRegionEvent(event)
 
         // App tracking to control time limits and time between re-openings
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -524,6 +599,105 @@ class DechainerAccessibilityService : AccessibilityService() {
                 }
             }
         }
+    }
+
+    private val captureRunnable = Runnable { captureNow() }
+
+    private fun updateRegionRules() {
+        regionRules = RegionRuleRepository.load(regionPrefs).groupBy { it.packageName }
+    }
+
+    private fun onRegionEvent(event: AccessibilityEvent) {
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg in regionRules) {
+            scheduleRegionScan()
+        } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            pkg != "com.android.systemui"
+        ) {
+            // Another app came to the front (the keyboard and system UI are ignored above).
+            regionOverlay.hide()
+        }
+    }
+
+    /** Coalesces bursts of events into a single tree query. */
+    private fun scheduleRegionScan() {
+        if (regionScanPending) return
+        regionScanPending = true
+        handler.postDelayed(regionScanRunnable, REGION_SCAN_DELAY_MS)
+    }
+
+    private fun scanRegions() {
+        val root = rootInActiveWindow
+        val rules = root?.packageName?.toString()?.let { regionRules[it] }
+        if (root == null || rules == null) {
+            regionOverlay.hide()
+            root?.recycle()
+            return
+        }
+
+        val rects = ArrayList<Rect>()
+        for (rule in rules) {
+            val nodes = when {
+                rule.viewId != null -> root.findAccessibilityNodeInfosByViewId(rule.viewId)
+                rule.text != null -> root.findAccessibilityNodeInfosByText(rule.text)
+                else -> emptyList()
+            }
+            for (node in nodes.orEmpty()) {
+                val matchesText = rule.text == null ||
+                    node.text?.toString() == rule.text ||
+                    node.contentDescription?.toString() == rule.text
+                if (matchesText && node.isVisibleToUser) {
+                    val rect = Rect()
+                    node.getBoundsInScreen(rect)
+                    if (!rect.isEmpty) rects.add(rect)
+                }
+                node.recycle()
+            }
+        }
+        root.recycle()
+        if (rects.isEmpty()) regionOverlay.hide() else regionOverlay.show(rects)
+    }
+
+    private fun captureNow() {
+        captureCountdown = false
+        val root = rootInActiveWindow
+        val pkg = root?.packageName?.toString()
+        if (root != null && pkg != null && pkg != packageName) {
+            val nodes = ArrayList<CapturedNode>()
+            fun walk(node: AccessibilityNodeInfo?, depth: Int) {
+                node ?: return
+                if (nodes.size >= CAPTURE_MAX_NODES) return
+                if (node.isVisibleToUser) {
+                    val id = node.viewIdResourceName
+                    val label = node.text?.toString()?.takeIf { it.isNotBlank() }
+                        ?: node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
+                    val rect = Rect().also { node.getBoundsInScreen(it) }
+                    if ((id != null || label != null) && !rect.isEmpty) {
+                        nodes.add(
+                            CapturedNode(
+                                id, label, node.className?.toString().orEmpty(),
+                                rect.width(), rect.height(), depth
+                            )
+                        )
+                    }
+                }
+                for (i in 0 until node.childCount) {
+                    val child = node.getChild(i)
+                    walk(child, depth + 1)
+                    child?.recycle()
+                }
+            }
+            walk(root, 0)
+            capturedPackage = pkg
+            capturedNodes = nodes
+        } else {
+            clearCapture()
+        }
+        root?.recycle()
+
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            flags = FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        })
     }
 
     /** Visual blocking was removed: lift any timed suspension it left persisted by an older version. */
