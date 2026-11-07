@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: lets the emulator tests trigger a screen capture. -->
+        <receiver
+            android:name="io.github.warleysr.dechainer.debug.DebugCaptureReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.warleysr.dechainer.DEBUG_CAPTURE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

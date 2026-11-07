@@ -51,6 +51,11 @@ class RegionOverlay(private val service: AccessibilityService, private val messa
         current = emptyList()
     }
 
+    companion object {
+        /** Visible in `dumpsys window`, which the emulator tests rely on. */
+        const val WINDOW_TITLE = "DechainerRegionOverlay"
+    }
+
     private fun paramsFor(rect: Rect) = LayoutParams(
         rect.width(),
         rect.height(),
@@ -65,5 +70,6 @@ class RegionOverlay(private val service: AccessibilityService, private val messa
         y = rect.top
         layoutInDisplayCutoutMode = LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         fitInsetsTypes = 0
+        title = WINDOW_TITLE
     }
 }

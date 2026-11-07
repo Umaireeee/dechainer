@@ -823,6 +823,12 @@ class DechainerAccessibilityService : AccessibilityService() {
                 }
             }
             walk(root, 0)
+            if (BuildConfig.DEBUG) {
+                android.util.Log.i("RegionCapture", "pkg=$pkg activity=${if (pkg == currentPackage) currentActivity else null} count=${nodes.size}")
+                nodes.forEach {
+                    android.util.Log.i("RegionCapture", "node id=${it.viewId} size=${it.width}x${it.height} text=${it.text}")
+                }
+            }
             capturedPackage = pkg
             capturedActivity = if (pkg == currentPackage) currentActivity else null
             capturedNodes = nodes
