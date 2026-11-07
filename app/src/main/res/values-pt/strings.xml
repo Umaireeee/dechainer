@@ -560,6 +560,7 @@
     <string name="region_block_this">Bloquear este elemento?</string>
     <string name="region_match_text">Somente quando o texto for “%1$s”</string>
     <string name="region_blocked_message">Bloqueado pelo Déchaîner</string>
+    <string name="region_extend_down">Cobrir também tudo abaixo dele (até o fim da lista)</string>
 </resources>
 
 

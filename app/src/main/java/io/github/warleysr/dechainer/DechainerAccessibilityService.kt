@@ -646,16 +646,42 @@ class DechainerAccessibilityService : AccessibilityService() {
                 val matchesText = rule.text == null ||
                     node.text?.toString() == rule.text ||
                     node.contentDescription?.toString() == rule.text
-                if (matchesText && node.isVisibleToUser) {
+                if (matchesText) {
                     val rect = Rect()
                     node.getBoundsInScreen(rect)
-                    if (!rect.isEmpty) rects.add(rect)
+                    if (rule.extendDown) {
+                        regionBelow(node, rect)?.let { rects.add(it) }
+                    } else if (node.isVisibleToUser && !rect.isEmpty) {
+                        rects.add(rect)
+                    }
                 }
                 node.recycle()
             }
         }
         root.recycle()
         if (rects.isEmpty()) regionOverlay.hide() else regionOverlay.show(rects)
+    }
+
+    /**
+     * The area from [nodeBounds] down to the end of the node's scrolling container (or the window
+     * when it has none), so the bottom navigation bar stays usable. If the node has scrolled off
+     * the top, the whole container is covered, since everything left in it is below the node.
+     */
+    private fun regionBelow(node: AccessibilityNodeInfo, nodeBounds: Rect): Rect? {
+        var container = node.parent
+        while (container != null && !container.isScrollable) container = container.parent
+        if (container == null) {
+            return if (node.isVisibleToUser && !nodeBounds.isEmpty) Rect(nodeBounds) else null
+        }
+        val area = Rect()
+        container.getBoundsInScreen(area)
+        container.recycle()
+
+        return when {
+            nodeBounds.bottom <= area.top -> area
+            nodeBounds.top >= area.bottom -> null
+            else -> Rect(area.left, maxOf(nodeBounds.top, area.top), area.right, area.bottom)
+        }.takeIf { it == null || !it.isEmpty }
     }
 
     private fun captureNow() {

@@ -128,12 +128,25 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
 
     pending?.let { node ->
         var matchText by remember(node) { mutableStateOf(false) }
+        var extendDown by remember(node) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text(stringResource(R.string.region_block_this)) },
             text = {
                 Column {
                     Text(node.viewId ?: node.text.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { extendDown = !extendDown }
+                            .padding(top = 12.dp)
+                    ) {
+                        Checkbox(checked = extendDown, onCheckedChange = { extendDown = it })
+                        Text(
+                            stringResource(R.string.region_extend_down),
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                    }
                     if (node.viewId != null && node.text != null) {
                         Row(
                             modifier = Modifier
@@ -152,7 +165,7 @@ fun RegionBlockerScreen(viewModel: RegionBlockerViewModel = viewModel()) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    recoveryGate.change(loosening = false) { viewModel.addRule(node, matchText) }
+                    recoveryGate.change(loosening = false) { viewModel.addRule(node, matchText, extendDown) }
                     pending = null
                 }) { Text(stringResource(R.string.confirm)) }
             },

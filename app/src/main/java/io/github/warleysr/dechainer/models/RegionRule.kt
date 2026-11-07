@@ -10,5 +10,7 @@ data class RegionRule(
     val packageName: String,
     val viewId: String?,
     val text: String?,
-    val label: String
+    val label: String,
+    /** Also cover everything below the element, down to the end of its scrolling container. */
+    val extendDown: Boolean = false
 )

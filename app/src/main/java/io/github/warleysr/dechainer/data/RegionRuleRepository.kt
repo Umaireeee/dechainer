@@ -28,7 +28,8 @@ object RegionRuleRepository {
                     packageName = o.getString("pkg"),
                     viewId = viewId,
                     text = text,
-                    label = o.optString("label")
+                    label = o.optString("label"),
+                    extendDown = o.optBoolean("extendDown", false)
                 )
             }
         } catch (_: Exception) {
@@ -47,6 +48,7 @@ object RegionRuleRepository {
                 put("viewId", it.viewId ?: "")
                 put("text", it.text ?: "")
                 put("label", it.label)
+                put("extendDown", it.extendDown)
             })
         }
         prefs(context).edit { putString(KEY_RULES, array.toString()) }
