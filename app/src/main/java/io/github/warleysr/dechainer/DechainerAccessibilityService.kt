@@ -140,7 +140,18 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val windowEndRunnable = Runnable { executeBlocking(outsideWindow = true) }
 
+    // Saves the running session every few minutes so a killed service loses at most that much usage.
+    // Only scheduled while a limited app is open, so it adds no wake-ups the rest of the time.
+    private val checkpointRunnable = object : Runnable {
+        override fun run() {
+            saveSessionUsage()
+            if (currentPackage != null) handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
+        }
+    }
+
     companion object {
+        private val CHECKPOINT_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
+
         var isRunning by mutableStateOf(false)
             private set
 
@@ -264,6 +275,7 @@ class DechainerAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         handler.removeCallbacks(blockRunnable)
         handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(checkpointRunnable)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -466,6 +478,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         val remainingMillis = listOfNotNull(appRemaining, groupRemaining).minOrNull()
         if (remainingMillis != null) {
             handler.postDelayed(blockRunnable, remainingMillis)
+            handler.postDelayed(checkpointRunnable, CHECKPOINT_INTERVAL_MS)
         }
 
         if (remainingSecondsReopening > 0)
@@ -481,14 +494,23 @@ class DechainerAccessibilityService : AccessibilityService() {
     private fun stopTrackingAndSave(screenOff: Boolean = false) {
         handler.removeCallbacks(blockRunnable)
         handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(checkpointRunnable)
         val pkg = currentPackage ?: return
         if (!screenOff && reopenPrefs.getInt(pkg, 0) > 0 && getRemainingSecondsToReopen(pkg) == 0)
             pendingLeaves[pkg] = SystemClock.elapsedRealtime()
 
+        saveSessionUsage()
+        sessionStartTime = 0
+    }
+
+    /** Adds the time since the session (or the last checkpoint) started to the app's and its group's usage. */
+    private fun saveSessionUsage() {
+        val pkg = currentPackage ?: return
         if (sessionStartTime == 0L) return
 
         val config = trackingConfigFor(pkg)
-        val currentSessionMillis = SystemClock.elapsedRealtime() - sessionStartTime
+        val now = SystemClock.elapsedRealtime()
+        val currentSessionMillis = now - sessionStartTime
 
         if (config.appLimitMinutes > 0) {
             usagePrefs.edit { putLong(pkg, usagePrefs.getLong(pkg, 0L) + currentSessionMillis) }
@@ -498,7 +520,7 @@ class DechainerAccessibilityService : AccessibilityService() {
             groupUsagePrefs.edit { putLong(groupId, groupUsagePrefs.getLong(groupId, 0L) + currentSessionMillis) }
         }
 
-        sessionStartTime = 0
+        sessionStartTime = now
     }
 
     private fun executeBlocking(reopening: Boolean = false, remainingSeconds: Int = 0, outsideWindow: Boolean = false) {
