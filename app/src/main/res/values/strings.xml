@@ -360,6 +360,26 @@
     <string name="disallow_config_wifi_private">Disallow configuring private Wi-Fi</string>
     <string name="disallow_config_wifi_shared">Disallow configuring shared Wi-Fi</string>
     <string name="disallow_non_market_app_by_knox">Disallow non-market apps (Knox)</string>
+    <string name="outside_time_window_not_today">Not allowed at all today.</string>
+    <string name="schedule_title">Schedule</string>
+    <string name="schedule_empty_title">No schedules yet</string>
+    <string name="schedule_empty_desc">Choose when an app or group can be used. Outside those times it is blocked.</string>
+    <string name="schedule_add">Add schedule</string>
+    <string name="schedule_pick_target">Which app or group?</string>
+    <string name="schedule_group_apps">%d apps</string>
+    <string name="schedule_every_day">Every day</string>
+    <string name="schedule_weekdays">Mon–Fri</string>
+    <string name="schedule_weekends">Sat–Sun</string>
+    <string name="schedule_no_days">No days selected</string>
+    <string name="schedule_editor_hint">The app can only be used inside these times, on the days selected.</string>
+    <string name="schedule_presets">Quick presets</string>
+    <string name="schedule_preset_evenings">Evenings</string>
+    <string name="schedule_preset_after_work">After work</string>
+    <string name="schedule_preset_weekends">Weekends</string>
+    <string name="schedule_add_slot">Add time slot</string>
+    <string name="schedule_remove_all_hint">No time slots: this app has no schedule and can be used any time.</string>
+    <string name="schedule_until_next_day">Ends the next day</string>
+    <string name="schedule_error_no_days">Pick at least one day.</string>
 </resources>
 
 

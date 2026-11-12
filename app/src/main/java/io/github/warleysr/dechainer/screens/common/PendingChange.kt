@@ -40,11 +40,11 @@ private fun cap(minutes: Int) = if (minutes == 0) Int.MAX_VALUE else minutes
 fun isLooserLimit(old: TimeLimit, new: TimeLimit) =
     DayOfWeek.entries.any { cap(new.minutesFor(it)) > cap(old.minutesFor(it)) }
 
-/** Windows are the *allowed* periods and an empty list means always allowed: loosening is allowing a minute that wasn't. */
-fun isLooserWindows(old: List<TimeWindow>, new: List<TimeWindow>): Boolean {
-    fun allowed(windows: List<TimeWindow>, minute: Int) = windows.isEmpty() || windows.any { it.contains(minute) }
-    return (0 until 1440).any { allowed(new, it) && !allowed(old, it) }
-}
+/** Windows are the *allowed* periods and an empty list means always allowed: loosening is allowing a minute of a day that wasn't. */
+fun isLooserWindows(old: List<TimeWindow>, new: List<TimeWindow>): Boolean =
+    (1..7).any { day ->
+        (0 until 1440).any { TimeWindow.isAllowed(new, day, it) && !TimeWindow.isAllowed(old, day, it) }
+    }
 
 fun isLooserRestrictions(current: android.os.Bundle, new: android.os.Bundle): Boolean {
     for (key in current.keySet()) {

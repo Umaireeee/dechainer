@@ -429,8 +429,10 @@ fun AppRow(app: AppItem, viewModel: AppsViewModel, onClick: () -> Unit) {
                     )
                 }
 
-                val effectiveWindows = if (group != null) TimeWindow.intersect(group.timeWindows, app.timeWindows)
-                                       else app.timeWindows
+                val effectiveWindows = TimeWindow.allowedSpans(
+                    listOf(group?.timeWindows.orEmpty(), app.timeWindows),
+                    java.time.LocalDate.now().dayOfWeek.value
+                ).orEmpty()
                 if (effectiveWindows.isNotEmpty()) {
                     Text(
                         stringResource(

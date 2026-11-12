@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.AppBlocking
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.Logout
@@ -64,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 val currentScreen = navViewModel.selectedTab()
-                val isRoot = currentScreen in listOf("restrictions", "apps", "config")
+                val isRoot = currentScreen in listOf("restrictions", "apps", "schedule", "config")
 
                 BackHandler(enabled = !isRoot) {
                     navViewModel.goBack()
@@ -139,12 +140,14 @@ class MainActivity : ComponentActivity() {
                         val tabs = listOf(
                             Pair("restrictions", stringResource(R.string.restrictions)),
                             Pair("apps", stringResource(R.string.apps)),
+                            Pair("schedule", stringResource(R.string.schedule_title)),
                             Pair("config", stringResource(R.string.config))
                         )
 
                         val selectedBaseTab = when (currentScreen) {
                             "restrictions" -> "restrictions"
                             "apps" -> "apps"
+                            "schedule" -> "schedule"
                             "config", "setup_device_owner", "activity_blocker", "impulse_lock", "suspension_logs" -> "config"
                             else -> "restrictions"
                         }
@@ -160,6 +163,7 @@ class MainActivity : ComponentActivity() {
                                             when (pair.first) {
                                                 "restrictions" -> Icons.Outlined.Block
                                                 "apps" -> Icons.Default.AppBlocking
+                                                "schedule" -> Icons.Default.Schedule
                                                 else -> Icons.Outlined.Settings
                                             }, contentDescription = null
                                         )
@@ -186,6 +190,7 @@ class MainActivity : ComponentActivity() {
                                 when (currentScreen) {
                                     "restrictions" -> RestrictionsTab()
                                     "apps" -> AppsTab()
+                                    "schedule" -> ScheduleScreen()
                                     "config" -> ConfigTab()
                                     "setup_device_owner" -> SetupDeviceOwnerPrivileges()
                                     "activity_blocker" -> ActivityBlockerScreen()

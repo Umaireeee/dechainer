@@ -360,6 +360,26 @@
     <string name="disallow_config_wifi_private">Desativar configuração de Wi-Fi privado</string>
     <string name="disallow_config_wifi_shared">Desativar configuração de Wi-Fi compartilhado</string>
     <string name="disallow_non_market_app_by_knox">Desativar apps fora da loja (Knox)</string>
+    <string name="outside_time_window_not_today">Não permitido hoje.</string>
+    <string name="schedule_title">Horários</string>
+    <string name="schedule_empty_title">Nenhum horário ainda</string>
+    <string name="schedule_empty_desc">Escolha quando um app ou grupo pode ser usado. Fora desses horários ele fica bloqueado.</string>
+    <string name="schedule_add">Adicionar horário</string>
+    <string name="schedule_pick_target">Qual app ou grupo?</string>
+    <string name="schedule_group_apps">%d apps</string>
+    <string name="schedule_every_day">Todos os dias</string>
+    <string name="schedule_weekdays">Seg–Sex</string>
+    <string name="schedule_weekends">Sáb–Dom</string>
+    <string name="schedule_no_days">Nenhum dia selecionado</string>
+    <string name="schedule_editor_hint">O app só pode ser usado dentro destes horários, nos dias selecionados.</string>
+    <string name="schedule_presets">Atalhos</string>
+    <string name="schedule_preset_evenings">Noites</string>
+    <string name="schedule_preset_after_work">Depois do trabalho</string>
+    <string name="schedule_preset_weekends">Fins de semana</string>
+    <string name="schedule_add_slot">Adicionar horário</string>
+    <string name="schedule_remove_all_hint">Sem horários: este app não tem restrição e pode ser usado a qualquer hora.</string>
+    <string name="schedule_until_next_day">Termina no dia seguinte</string>
+    <string name="schedule_error_no_days">Escolha pelo menos um dia.</string>
 </resources>
 
 

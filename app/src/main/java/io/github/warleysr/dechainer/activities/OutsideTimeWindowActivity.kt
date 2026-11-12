@@ -64,6 +64,14 @@ fun OutsideTimeWindowScreen(appName: String, windows: List<String>, onClose: () 
                 style = MaterialTheme.typography.bodyLarge
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (windows.isEmpty()) {
+                Text(
+                    stringResource(R.string.outside_time_window_not_today),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             windows.forEach { window ->
                 Text(
                     window,

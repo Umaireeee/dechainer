@@ -10,7 +10,7 @@ class NavigationViewModel : ViewModel() {
     fun selectedTab() = stack.lastOrNull() ?: "restrictions"
 
     fun navigateTo(screen: String) {
-        if (screen in listOf("restrictions", "apps", "config")) {
+        if (screen in listOf("restrictions", "apps", "schedule", "config")) {
             stack.clear()
         }
         stack.add(screen)

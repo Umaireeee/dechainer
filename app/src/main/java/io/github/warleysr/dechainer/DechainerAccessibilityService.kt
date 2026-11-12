@@ -32,6 +32,7 @@ import io.github.warleysr.dechainer.data.AppTimeLimits
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.AppGroup
+import io.github.warleysr.dechainer.models.Span
 import io.github.warleysr.dechainer.models.SuspensionReason
 import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.security.SecurityManager
@@ -138,7 +139,9 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val blockRunnable = Runnable { executeBlocking() }
 
-    private val windowEndRunnable = Runnable { executeBlocking(outsideWindow = true) }
+    // The allowed span ending doesn't always mean "blocked": the next one may start right away
+    // (midnight, or two windows that touch), so the whole check runs again.
+    private val windowEndRunnable = Runnable { recheckWindows() }
 
     // Saves the running session every few minutes so a killed service loses at most that much usage.
     // Only scheduled while a limited app is open, so it adds no wake-ups the rest of the time.
@@ -417,38 +420,40 @@ class DechainerAccessibilityService : AccessibilityService() {
         val group: AppGroup?,
         val appLimitMinutes: Int,
         val groupLimitMinutes: Int,
-        val windows: List<TimeWindow>
+        /** What is allowed today, or null when neither the app nor its group has windows. */
+        val allowed: List<Span>?
     )
 
     private fun trackingConfigFor(pkg: String): TrackingConfig {
         val group = AppGroupRepository.getGroupForPackage(pkg)
         val appWindows = AppTimeWindows.decode(timeWindowPrefs.getString(pkg, null))
+        val today = LocalDate.now().dayOfWeek.value
         val appLimitMinutes = AppTimeLimits.read(limitPrefs, weeklyLimitPrefs, pkg).todayMinutes()
         return if (group != null) {
             TrackingConfig(
                 group = group,
                 appLimitMinutes = appLimitMinutes,
                 groupLimitMinutes = group.timeLimit.todayMinutes(),
-                windows = TimeWindow.intersect(group.timeWindows, appWindows)
+                allowed = TimeWindow.allowedSpans(listOf(group.timeWindows, appWindows), today)
             )
         } else {
-            TrackingConfig(null, appLimitMinutes, 0, appWindows)
+            TrackingConfig(null, appLimitMinutes, 0, TimeWindow.allowedSpans(listOf(appWindows), today))
         }
     }
 
     private fun startTracking(pkg: String) {
         val config = trackingConfigFor(pkg)
 
-        if (config.windows.isNotEmpty()) {
-            val nowMinute = currentMinuteOfDay()
-            val activeWindow = config.windows.firstOrNull { it.contains(nowMinute) }
-            if (activeWindow == null) {
+        if (config.allowed != null) {
+            val nowSecond = currentSecondOfDay()
+            val activeSpan = config.allowed.firstOrNull { nowSecond in it.start * 60 until it.end * 60 }
+            if (activeSpan == null) {
                 executeBlocking(outsideWindow = true)
                 return
             }
             handler.postDelayed(
                 windowEndRunnable,
-                TimeUnit.MINUTES.toMillis(activeWindow.minutesUntilEnd(nowMinute).toLong())
+                ((activeSpan.end * 60 - nowSecond) * 1000L).coerceAtLeast(1000L)
             )
         }
 
@@ -559,7 +564,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
 
         if (outsideWindow) {
-            intent.putStringArrayListExtra("windows", ArrayList(config.windows.map { it.formatted() }))
+            // Empty when nothing is allowed today.
+            intent.putStringArrayListExtra("windows", ArrayList(config.allowed.orEmpty().map { it.formatted() }))
         } else {
             intent.putExtra("limit", if (reopening) remainingSeconds else displayLimit)
         }
@@ -567,9 +573,15 @@ class DechainerAccessibilityService : AccessibilityService() {
         startActivity(intent)
     }
 
-    private fun currentMinuteOfDay(): Int {
-        val now = LocalTime.now()
-        return now.hour * 60 + now.minute
+    private fun currentSecondOfDay(): Int = LocalTime.now().toSecondOfDay()
+
+    private fun recheckWindows() {
+        val pkg = currentPackage ?: return
+        handler.removeCallbacks(blockRunnable)
+        handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(checkpointRunnable)
+        saveSessionUsage()
+        startTracking(pkg)
     }
 
     private fun checkDateReset() {
