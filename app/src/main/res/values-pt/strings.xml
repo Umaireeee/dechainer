@@ -117,7 +117,7 @@
     <string name="used">Usado: %1$s</string>
     <string name="reopen_time">Tempo entre aberturas do mesmo app</string>
     <string name="seconds">Segundos</string>
-    <string name="time_windows">Janelas de horário</string>
+    <string name="time_windows">Horário</string>
     <string name="time_windows_dialog_title">Janelas de horário para %1$s</string>
     <string name="time_windows_summary">Permitido: %1$s</string>
     <string name="no_time_windows">Nenhuma janela definida. O app pode ser usado a qualquer momento, respeitando o limite diário.</string>
@@ -380,6 +380,35 @@
     <string name="schedule_remove_all_hint">Sem horários: este app não tem restrição e pode ser usado a qualquer hora.</string>
     <string name="schedule_until_next_day">Termina no dia seguinte</string>
     <string name="schedule_error_no_days">Escolha pelo menos um dia.</string>
+    <string name="apps_selected">%d selecionados</string>
+    <string name="apps_filter_all">Todos</string>
+    <string name="apps_filter_limited">Com limite</string>
+    <string name="apps_filter_suspended">Suspensos</string>
+    <string name="apps_filter_system">Sistema</string>
+    <string name="apps_section_controlled">Com regras</string>
+    <string name="apps_section_most_used">Mais usados na semana</string>
+    <string name="apps_section_rarely_used">Pouco usados</string>
+    <string name="apps_section_never_used">Não usados na semana</string>
+    <string name="apps_section_system_tools">Outras ferramentas do sistema</string>
+    <string name="apps_section_all">Todos os apps</string>
+    <string name="apps_usage_access_title">Ordenar apps por uso</string>
+    <string name="apps_usage_access_desc">Permita o acesso ao uso para que os apps mais usados apareçam primeiro.</string>
+    <string name="apps_usage_access_action">Permitir acesso ao uso</string>
+    <string name="apps_none_found">Nenhum app encontrado.</string>
+    <string name="apps_week_usage">%s na semana</string>
+    <string name="apps_no_use">Não usado na semana</string>
+    <string name="apps_limit_used">Limite %1$s · usado %2$s</string>
+    <string name="apps_schedule_today">Hoje: %s</string>
+    <string name="apps_closed_today">Fechado hoje</string>
+    <string name="apps_tag_system">Sistema</string>
+    <string name="apps_bulk_group_title">Grupo para %d apps</string>
+    <string name="group_schedule_count">%d horários</string>
+    <string name="protection_title">Proteção</string>
+    <string name="log_title">Registro</string>
+    <string name="config_section_protection">Proteção</string>
+    <string name="config_section_security">Segurança</string>
+    <string name="config_section_general">Geral</string>
+    <string name="system_restrictions_desc">Bloqueie VPN, redefinição de fábrica, instalação de apps e mais</string>
 </resources>
 
 

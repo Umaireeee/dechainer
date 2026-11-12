@@ -20,12 +20,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.AppBlocking
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 val currentScreen = navViewModel.selectedTab()
-                val isRoot = currentScreen in listOf("restrictions", "apps", "schedule", "config")
+                val isRoot = currentScreen in listOf("apps", "schedule", "config", "suspension_logs")
 
                 BackHandler(enabled = !isRoot) {
                     navViewModel.goBack()
@@ -138,18 +138,17 @@ class MainActivity : ComponentActivity() {
                         if (!SecurityManager.isRecoveryCodeSet(this) || !authenticated.value) return@Scaffold
 
                         val tabs = listOf(
-                            Pair("restrictions", stringResource(R.string.restrictions)),
                             Pair("apps", stringResource(R.string.apps)),
                             Pair("schedule", stringResource(R.string.schedule_title)),
-                            Pair("config", stringResource(R.string.config))
+                            Pair("config", stringResource(R.string.protection_title)),
+                            Pair("suspension_logs", stringResource(R.string.log_title))
                         )
 
                         val selectedBaseTab = when (currentScreen) {
-                            "restrictions" -> "restrictions"
-                            "apps" -> "apps"
-                            "schedule" -> "schedule"
-                            "config", "setup_device_owner", "activity_blocker", "impulse_lock", "suspension_logs" -> "config"
-                            else -> "restrictions"
+                            "apps", "schedule", "suspension_logs" -> currentScreen
+                            // Everything else (system restrictions, activity blocker, impulse lock,
+                            // device owner setup) is reached from the Protection tab.
+                            else -> "config"
                         }
 
                         NavigationBar {
@@ -161,10 +160,10 @@ class MainActivity : ComponentActivity() {
                                     icon = {
                                         Icon(
                                             when (pair.first) {
-                                                "restrictions" -> Icons.Outlined.Block
                                                 "apps" -> Icons.Default.AppBlocking
                                                 "schedule" -> Icons.Default.Schedule
-                                                else -> Icons.Outlined.Settings
+                                                "suspension_logs" -> Icons.Default.History
+                                                else -> Icons.Outlined.Shield
                                             }, contentDescription = null
                                         )
                                     }

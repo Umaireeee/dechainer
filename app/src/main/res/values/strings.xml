@@ -117,7 +117,7 @@
     <string name="used">Used: %1$s</string>
     <string name="reopen_time">Time between app openings</string>
     <string name="seconds">Seconds</string>
-    <string name="time_windows">Time windows</string>
+    <string name="time_windows">Schedule</string>
     <string name="time_windows_dialog_title">Time windows for %1$s</string>
     <string name="time_windows_summary">Allowed: %1$s</string>
     <string name="no_time_windows">No time window set. The app can be used anytime, subject to the daily limit.</string>
@@ -380,6 +380,35 @@
     <string name="schedule_remove_all_hint">No time slots: this app has no schedule and can be used any time.</string>
     <string name="schedule_until_next_day">Ends the next day</string>
     <string name="schedule_error_no_days">Pick at least one day.</string>
+    <string name="apps_selected">%d selected</string>
+    <string name="apps_filter_all">All</string>
+    <string name="apps_filter_limited">Limited</string>
+    <string name="apps_filter_suspended">Suspended</string>
+    <string name="apps_filter_system">System</string>
+    <string name="apps_section_controlled">With rules</string>
+    <string name="apps_section_most_used">Most used this week</string>
+    <string name="apps_section_rarely_used">Rarely used</string>
+    <string name="apps_section_never_used">Not used this week</string>
+    <string name="apps_section_system_tools">Other system tools</string>
+    <string name="apps_section_all">All apps</string>
+    <string name="apps_usage_access_title">Rank apps by use</string>
+    <string name="apps_usage_access_desc">Allow usage access so the apps you use most appear first.</string>
+    <string name="apps_usage_access_action">Allow usage access</string>
+    <string name="apps_none_found">No apps found.</string>
+    <string name="apps_week_usage">%s this week</string>
+    <string name="apps_no_use">Not used this week</string>
+    <string name="apps_limit_used">Limit %1$s · used %2$s</string>
+    <string name="apps_schedule_today">Today: %s</string>
+    <string name="apps_closed_today">Closed today</string>
+    <string name="apps_tag_system">System</string>
+    <string name="apps_bulk_group_title">Group for %d apps</string>
+    <string name="group_schedule_count">%d time slots</string>
+    <string name="protection_title">Protection</string>
+    <string name="log_title">Log</string>
+    <string name="config_section_protection">Protection</string>
+    <string name="config_section_security">Security</string>
+    <string name="config_section_general">General</string>
+    <string name="system_restrictions_desc">Block VPN, factory reset, app installs and more</string>
 </resources>
 
 

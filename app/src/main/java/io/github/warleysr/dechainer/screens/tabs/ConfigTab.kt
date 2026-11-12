@@ -87,6 +87,24 @@ fun ConfigTab(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
+                Text(
+                    stringResource(R.string.config_section_protection),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.restrictions)) },
+                    supportingContent = { Text(stringResource(R.string.system_restrictions_desc)) },
+                    leadingContent = { Icon(Icons.Outlined.Block, "") },
+                    modifier = Modifier.clickable { navViewModel.navigateTo("restrictions") }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.activity_blocker)) },
                     supportingContent = { Text(stringResource(R.string.activity_blocker_description)) },
@@ -127,15 +145,6 @@ fun ConfigTab(
             }
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.language_settings)) },
-                    supportingContent = { Text(stringResource(R.string.language_description)) },
-                    leadingContent = { Icon(Icons.Outlined.Language, "") },
-                    modifier = Modifier.clickable { showLanguageDialog = true }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
                     headlineContent = { Text(stringResource(R.string.impulse_lock)) },
                     supportingContent = { Text(stringResource(R.string.impulse_lock_desc)) },
                     leadingContent = { Icon(Icons.Outlined.LockClock, "") },
@@ -144,13 +153,13 @@ fun ConfigTab(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.suspension_logs)) },
-                    supportingContent = { Text(stringResource(R.string.suspension_logs_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.History, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("suspension_logs") }
+                Text(
+                    stringResource(R.string.config_section_security),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
                 val keyboardLabel = if (shuffleKeyboard)
@@ -196,6 +205,24 @@ fun ConfigTab(
                         else if (forcedRemovalRemaining == 0L) showFinishForcedRemovalDialog = true
                         else showCancelForcedRemovalDialog = true
                     }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+                    item {
+                Text(
+                    stringResource(R.string.config_section_general),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.language_settings)) },
+                    supportingContent = { Text(stringResource(R.string.language_description)) },
+                    leadingContent = { Icon(Icons.Outlined.Language, "") },
+                    modifier = Modifier.clickable { showLanguageDialog = true }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }

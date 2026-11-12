@@ -37,6 +37,7 @@ import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.isLooserWindows
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
+import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
@@ -55,10 +56,17 @@ private sealed interface ScheduleTarget {
 }
 
 @Composable
-fun ScheduleScreen(viewModel: AppsViewModel = viewModel()) {
+fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: NavigationViewModel = viewModel()) {
     val recoveryGate = rememberRecoveryGate()
     var picking by remember { mutableStateOf(false) }
     var editingKey by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(navViewModel.pendingScheduleKey) {
+        navViewModel.pendingScheduleKey?.let {
+            editingKey = it
+            navViewModel.pendingScheduleKey = null
+        }
+    }
 
     // Re-resolved from the view model on every change, so the editor and the list never go stale.
     fun targetFor(key: String): ScheduleTarget? = when {

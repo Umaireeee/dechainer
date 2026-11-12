@@ -176,14 +176,15 @@ fun EditGroupDialog(
     allApps: List<AppItem>,
     onDismiss: () -> Unit,
     onSave: (name: String, limit: TimeLimit, windows: List<TimeWindow>, packageNames: Set<String>) -> Unit,
+    onOpenSchedule: () -> Unit,
     onDelete: () -> Unit
 ) {
     var name by remember { mutableStateOf(group.name) }
     var limit by remember { mutableStateOf(group.timeLimit) }
-    var windows by remember { mutableStateOf(group.timeWindows) }
+    // Schedules are edited in the Schedule tab; the group keeps whatever it has.
+    val windows = group.timeWindows
     val selectedPackages = remember { mutableStateListOf(*group.packageNames.toTypedArray()) }
     var showTimeLimitDialog by remember { mutableStateOf(false) }
-    var showTimeWindowsDialog by remember { mutableStateOf(false) }
     var showAppPickerDialog by remember { mutableStateOf(false) }
 
     val memberApps = remember(allApps, selectedPackages.toList()) {
@@ -211,11 +212,11 @@ fun EditGroupDialog(
                         else stringResource(R.string.group_time_limit)
                     )
                 }
-                TextButton(onClick = { showTimeWindowsDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onOpenSchedule, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Schedule, null)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (windows.isNotEmpty()) windows.joinToString(", ") { it.formatted() }
+                        if (windows.isNotEmpty()) stringResource(R.string.group_schedule_count, windows.size)
                         else stringResource(R.string.group_time_windows)
                     )
                 }
@@ -287,18 +288,6 @@ fun EditGroupDialog(
             onConfirm = {
                 limit = it
                 showTimeLimitDialog = false
-            }
-        )
-    }
-
-    if (showTimeWindowsDialog) {
-        TimeWindowsDialog(
-            title = stringResource(R.string.group_time_windows_dialog_title, name.ifBlank { group.name }),
-            initialWindows = windows,
-            onDismiss = { showTimeWindowsDialog = false },
-            onConfirm = {
-                windows = it
-                showTimeWindowsDialog = false
             }
         )
     }

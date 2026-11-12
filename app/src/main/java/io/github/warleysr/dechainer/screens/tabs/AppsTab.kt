@@ -54,6 +54,24 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import io.github.warleysr.dechainer.data.UsageStatsRepository
+import io.github.warleysr.dechainer.models.AppSection
+import io.github.warleysr.dechainer.models.AppSections
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.content.RestrictionEntry
 import android.os.Bundle
 import androidx.compose.runtime.mutableStateMapOf
@@ -88,16 +106,50 @@ fun AppsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<AppItem?>(null) }
     var showTimeLimitDialog by remember { mutableStateOf<AppItem?>(null) }
-    var showTimeWindowsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showRestrictionsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showGroupPickerDialog by remember { mutableStateOf<AppItem?>(null) }
     var showGroupsManagementDialog by remember { mutableStateOf(false) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var showEditGroupDialog by remember { mutableStateOf<AppGroup?>(null) }
-    var selectedGroupFilter by remember { mutableStateOf<String?>(null) }
+    var showBulkGroupDialog by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(AppFilter.ALL) }
+    val selection = remember { mutableStateListOf<String>() }
+    val collapsed = remember {
+        mutableStateMapOf(
+            AppSection.RARELY_USED to true,
+            AppSection.NEVER_USED to true,
+            AppSection.SYSTEM_TOOLS to true
+        )
+    }
     val recoveryGate = rememberRecoveryGate()
-    var showSystemApps by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    val selecting = selection.isNotEmpty()
+
+    BackHandler(enabled = selecting) { selection.clear() }
+
+    // Weekly usage ranks the list. null = usage access not granted (yet). Re-read whenever the
+    // screen comes back to the front, so granting access in Settings shows up right away.
+    val context = LocalContext.current
+    var weeklyUsage by remember { mutableStateOf<Map<String, Long>?>(null) }
+    val activity = context as? ComponentActivity
+    DisposableEffect(activity) {
+        val scope = CoroutineScope(Dispatchers.Main)
+        fun refresh() {
+            scope.launch {
+                weeklyUsage = withContext(Dispatchers.IO) {
+                    UsageStatsRepository.tryGrantViaShizuku(context)
+                    UsageStatsRepository.weeklyForegroundMillis(context)
+                }
+            }
+        }
+        refresh()
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh() }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose {
+            activity?.lifecycle?.removeObserver(observer)
+            scope.cancel()
+        }
+    }
 
     val restrictedGroupPackages = remember(viewModel.groups) {
         viewModel.groups.filter { it.timeLimit.isSet || it.timeWindows.isNotEmpty() }
@@ -105,95 +157,93 @@ fun AppsScreen(
             .toSet()
     }
 
-    val filteredApps = remember(viewModel.apps, viewModel.groups, searchQuery, showSystemApps, selectedGroupFilter) {
-        viewModel.apps.filter {
-            (showSystemApps || !it.isSystem || it.isHidden || it.isUninstallBlocked ||
-                it.timeLimit.isSet || it.timeWindows.isNotEmpty() ||
-                it.packageName in restrictedGroupPackages) &&
-            (it.name.contains(searchQuery, ignoreCase = true) ||
-            it.packageName.contains(searchQuery, ignoreCase = true)) &&
-            (selectedGroupFilter == null ||
-                viewModel.groups.firstOrNull { g -> g.id == selectedGroupFilter }?.packageNames?.contains(it.packageName) == true)
+    val searching = searchQuery.isNotBlank()
+    val sections = remember(viewModel.apps, viewModel.groups, searchQuery, filter, weeklyUsage) {
+        val matching = viewModel.apps.filter { app ->
+            (app.name.contains(searchQuery, ignoreCase = true) ||
+                app.packageName.contains(searchQuery, ignoreCase = true)) &&
+                when (filter) {
+                    AppFilter.ALL -> true
+                    AppFilter.LIMITED -> app.timeLimit.isSet || app.timeWindows.any { it.enabled } ||
+                        app.packageName in restrictedGroupPackages
+                    AppFilter.SUSPENDED -> app.isSuspended
+                    AppFilter.SYSTEM -> app.isSystem
+                }
         }
-        .sortedBy {
-            !it.timeLimit.isSet && it.timeWindows.isEmpty() && it.packageName !in restrictedGroupPackages
-        }
+        AppSections.build(matching, weeklyUsage, restrictedGroupPackages)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(tonalElevation = 3.dp) {
             Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 8.dp),
-                        placeholder = { Text(stringResource(R.string.search_apps)) },
-                        leadingIcon = { Icon(Icons.Default.Search, null) },
-                        singleLine = true
-                    )
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, null)
+                if (selecting) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        IconButton(onClick = { selection.clear() }) {
+                            Icon(Icons.Default.Close, stringResource(R.string.cancel))
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.show_system_apps)) },
-                                onClick = {
-                                    showSystemApps = !showSystemApps
-                                    showMenu = false
-                                },
-                                trailingIcon = {
-                                    Checkbox(checked = showSystemApps, onCheckedChange = null)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.manage_groups)) },
-                                leadingIcon = { Icon(Icons.Default.Group, null) },
-                                onClick = {
-                                    showGroupsManagementDialog = true
-                                    showMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.suspension_logs)) },
-                                leadingIcon = { Icon(Icons.Default.History, null) },
-                                onClick = {
-                                    showMenu = false
-                                    navViewModel.navigateTo("suspension_logs")
-                                }
-                            )
+                        Text(
+                            stringResource(R.string.apps_selected, selection.size),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = {
+                            val packages = selection.toList()
+                            recoveryGate.change(loosening = false) {
+                                packages.forEach { viewModel.suspendApp(it, true) }
+                            }
+                            selection.clear()
+                        }) { Icon(Icons.Default.Pause, stringResource(R.string.suspend)) }
+                        IconButton(onClick = { showBulkGroupDialog = true }) {
+                            Icon(Icons.Default.Group, stringResource(R.string.app_group))
                         }
                     }
-                }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 8.dp),
+                            placeholder = { Text(stringResource(R.string.search_apps)) },
+                            leadingIcon = { Icon(Icons.Default.Search, null) },
+                            singleLine = true
+                        )
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, null)
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.manage_groups)) },
+                                    leadingIcon = { Icon(Icons.Default.Group, null) },
+                                    onClick = {
+                                        showGroupsManagementDialog = true
+                                        showMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
 
-                if (viewModel.groups.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        item {
+                        items(AppFilter.entries) { option ->
                             FilterChip(
-                                selected = selectedGroupFilter == null,
-                                onClick = { selectedGroupFilter = null },
-                                label = { Text(stringResource(R.string.all_apps_filter)) }
-                            )
-                        }
-                        items(viewModel.groups, key = { it.id }) { group ->
-                            FilterChip(
-                                selected = selectedGroupFilter == group.id,
-                                onClick = {
-                                    selectedGroupFilter = if (selectedGroupFilter == group.id) null else group.id
-                                },
-                                label = { Text(group.name) }
+                                selected = filter == option,
+                                onClick = { filter = option },
+                                label = { Text(stringResource(option.labelRes)) }
                             )
                         }
                     }
@@ -207,8 +257,58 @@ fun AppsScreen(
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(filteredApps, key = { it.packageName }) { app ->
-                    AppRow(app, viewModel) { selectedApp = app }
+                if (weeklyUsage == null) {
+                    item(key = "usage_banner") {
+                        UsageAccessBanner(onOpenSettings = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        })
+                    }
+                }
+                if (sections.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            stringResource(R.string.apps_none_found),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(32.dp)
+                        )
+                    }
+                }
+                sections.forEach { (section, apps) ->
+                    // A search should find an app wherever it is, so it opens every section.
+                    val isCollapsed = collapsed[section] == true && !searching
+                    item(key = "header_${section.name}") {
+                        SectionHeader(
+                            section = section,
+                            count = apps.size,
+                            collapsible = section in COLLAPSIBLE_SECTIONS,
+                            collapsed = isCollapsed,
+                            onToggle = { collapsed[section] = !isCollapsed }
+                        )
+                    }
+                    if (!isCollapsed) {
+                        items(apps, key = { "${section.name}:${it.packageName}" }) { app ->
+                            AppRow(
+                                app = app,
+                                viewModel = viewModel,
+                                weeklyMillis = weeklyUsage?.get(app.packageName),
+                                selecting = selecting,
+                                selected = app.packageName in selection,
+                                onClick = {
+                                    if (selecting) toggleSelection(selection, app.packageName)
+                                    else selectedApp = app
+                                },
+                                onLongClick = { if (!selecting) selection.add(app.packageName) },
+                                onToggleSuspend = {
+                                    recoveryGate.change(loosening = app.isSuspended) {
+                                        viewModel.suspendApp(app.packageName, !app.isSuspended)
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -234,7 +334,9 @@ fun AppsScreen(
                 showTimeLimitDialog = app
             },
             onSetTimeWindows = {
-                showTimeWindowsDialog = app
+                navViewModel.pendingScheduleKey = "app:${app.packageName}"
+                selectedApp = null
+                navViewModel.navigateTo("schedule")
             },
             onSetGroup = {
                 showGroupPickerDialog = app
@@ -256,20 +358,6 @@ fun AppsScreen(
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
                 }
                 showTimeLimitDialog = null
-            }
-        )
-    }
-
-    showTimeWindowsDialog?.let { app ->
-        TimeWindowsDialog(
-            title = stringResource(R.string.time_windows_dialog_title, app.name),
-            initialWindows = app.timeWindows,
-            onDismiss = { showTimeWindowsDialog = null },
-            onConfirm = { windows ->
-                recoveryGate.change(isLooserWindows(app.timeWindows, windows)) {
-                    viewModel.setAppTimeWindows(app.packageName, windows)
-                }
-                showTimeWindowsDialog = null
             }
         )
     }
@@ -351,9 +439,36 @@ fun AppsScreen(
                 }
                 showEditGroupDialog = null
             },
+            onOpenSchedule = {
+                navViewModel.pendingScheduleKey = "group:${group.id}"
+                showEditGroupDialog = null
+                navViewModel.navigateTo("schedule")
+            },
             onDelete = {
                 recoveryGate.run { viewModel.deleteGroup(group.id) }
                 showEditGroupDialog = null
+            }
+        )
+    }
+
+    if (showBulkGroupDialog) {
+        BulkGroupDialog(
+            count = selection.size,
+            groups = viewModel.groups,
+            onDismiss = { showBulkGroupDialog = false },
+            onSelect = { groupId ->
+                val packages = selection.toList()
+                // Moving an app out of its current group takes that group's rules away.
+                val leaving = packages.any { pkg ->
+                    viewModel.groupFor(pkg)?.id.let { it != null && it != groupId }
+                }
+                recoveryGate.change(leaving) { packages.forEach { viewModel.setPackageGroup(it, groupId) } }
+                showBulkGroupDialog = false
+                selection.clear()
+            },
+            onCreateNew = {
+                showBulkGroupDialog = false
+                showCreateGroupDialog = true
             }
         )
     }
@@ -362,142 +477,222 @@ fun AppsScreen(
 }
 
 
+private enum class AppFilter(val labelRes: Int) {
+    ALL(R.string.apps_filter_all),
+    LIMITED(R.string.apps_filter_limited),
+    SUSPENDED(R.string.apps_filter_suspended),
+    SYSTEM(R.string.apps_filter_system)
+}
+
+private val COLLAPSIBLE_SECTIONS = setOf(AppSection.RARELY_USED, AppSection.NEVER_USED, AppSection.SYSTEM_TOOLS)
+
+private fun toggleSelection(selection: MutableList<String>, packageName: String) {
+    if (!selection.remove(packageName)) selection.add(packageName)
+}
+
 @Composable
-fun LimitUsageRow(
-    limit: TimeLimit,
-    usedMinutes: Long,
-    @androidx.annotation.StringRes limitLabelRes: Int,
-    @androidx.annotation.StringRes usedLabelRes: Int
-) {
-    val fmtLimit = timeLimitSummary(limit, compact = true)
-
-    val usedH = usedMinutes / 60
-    val usedM = usedMinutes % 60
-    val fmtUsed = "${if (usedH > 0) "${usedH}h " else ""}${if (usedM > 0) "${usedM}min" else ""}"
-
-    Row {
-        Text(
-            stringResource(limitLabelRes, fmtLimit),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary
-        )
-        if (usedMinutes > 0) {
-            Spacer(Modifier.width(4.dp))
+private fun UsageAccessBanner(onOpenSettings: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                stringResource(usedLabelRes, fmtUsed),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary
+                stringResource(R.string.apps_usage_access_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
             )
+            Text(stringResource(R.string.apps_usage_access_desc), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.apps_usage_access_action)) }
         }
     }
 }
 
 @Composable
-fun AppRow(app: AppItem, viewModel: AppsViewModel, onClick: () -> Unit) {
+private fun SectionHeader(
+    section: AppSection,
+    count: Int,
+    collapsible: Boolean,
+    collapsed: Boolean,
+    onToggle: () -> Unit
+) {
+    val title = when (section) {
+        AppSection.CONTROLLED -> R.string.apps_section_controlled
+        AppSection.MOST_USED -> R.string.apps_section_most_used
+        AppSection.RARELY_USED -> R.string.apps_section_rarely_used
+        AppSection.NEVER_USED -> R.string.apps_section_never_used
+        AppSection.SYSTEM_TOOLS -> R.string.apps_section_system_tools
+        AppSection.ALL_APPS -> R.string.apps_section_all
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (collapsible) Modifier.clickable(onClick = onToggle) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "${stringResource(title)} · $count",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f)
+        )
+        if (collapsible) {
+            Icon(
+                if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+private fun formatDuration(millis: Long): String {
+    val minutes = millis / 60_000
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h > 0 && m > 0 -> "${h}h ${m}m"
+        h > 0 -> "${h}h"
+        else -> "${m}m"
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AppRow(
+    app: AppItem,
+    viewModel: AppsViewModel,
+    weeklyMillis: Long?,
+    selecting: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleSuspend: () -> Unit
+) {
     val group = remember(app.packageName, viewModel.groups) { viewModel.groupFor(app.packageName) }
 
+    // One line of usage, one line of rules: enough to see what is going on without opening the app.
+    val usageLine = weeklyMillis?.let {
+        if (it >= 60_000) stringResource(R.string.apps_week_usage, formatDuration(it))
+        else stringResource(R.string.apps_no_use)
+    }
+    val rules = buildList {
+        group?.let { add(stringResource(R.string.group_label, it.name)) }
+        if (app.timeLimit.isSet) {
+            add(
+                stringResource(
+                    R.string.apps_limit_used,
+                    timeLimitSummary(app.timeLimit, compact = true),
+                    formatDuration(viewModel.getAppUsage(app.packageName, inMinutes = true) * 60_000)
+                )
+            )
+        }
+        if (group != null && group.timeLimit.isSet) {
+            add(
+                stringResource(
+                    R.string.apps_limit_used,
+                    timeLimitSummary(group.timeLimit, compact = true),
+                    formatDuration(viewModel.getGroupUsage(group.id, inMinutes = true) * 60_000)
+                )
+            )
+        }
+        val today = TimeWindow.allowedSpans(
+            listOf(group?.timeWindows.orEmpty(), app.timeWindows),
+            java.time.LocalDate.now().dayOfWeek.value
+        )
+        if (today != null) {
+            add(
+                if (today.isEmpty()) stringResource(R.string.apps_closed_today)
+                else stringResource(R.string.apps_schedule_today, today.joinToString(", ") { it.formatted() })
+            )
+        }
+        if (app.isHidden) add(stringResource(R.string.blocked))
+        if (app.isUninstallBlocked) add(stringResource(R.string.protected_label))
+        if (app.hasExplicitContent) add(stringResource(R.string.explicit_content))
+    }
+
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(app.name) },
-        supportingContent = {
-            Column {
-                Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-
-                if (group != null) {
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surface
+        ),
+        headlineContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(app.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (app.isSystem) {
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        stringResource(R.string.group_label, group.name),
+                        stringResource(R.string.apps_tag_system),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                if (app.timeLimit.isSet) {
-                    LimitUsageRow(
-                        limit = app.timeLimit,
-                        usedMinutes = viewModel.getAppUsage(app.packageName, inMinutes = true),
-                        limitLabelRes = R.string.limit,
-                        usedLabelRes = R.string.used
-                    )
-                }
-
-                if (group != null && group.timeLimit.isSet) {
-                    LimitUsageRow(
-                        limit = group.timeLimit,
-                        usedMinutes = viewModel.getGroupUsage(group.id, inMinutes = true),
-                        limitLabelRes = R.string.group_limit,
-                        usedLabelRes = R.string.group_used
-                    )
-                }
-
-                val effectiveWindows = TimeWindow.allowedSpans(
-                    listOf(group?.timeWindows.orEmpty(), app.timeWindows),
-                    java.time.LocalDate.now().dayOfWeek.value
-                ).orEmpty()
-                if (effectiveWindows.isNotEmpty()) {
-                    Text(
-                        stringResource(
-                            R.string.time_windows_summary,
-                            effectiveWindows.joinToString(", ") { it.formatted() }
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-
-                if (app.hasExplicitContent) {
-                    Text(
-                        stringResource(R.string.explicit_content),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
             }
         },
+        supportingContent = if (usageLine != null || rules.isNotEmpty()) {
+            {
+                Column {
+                    if (usageLine != null) Text(usageLine, style = MaterialTheme.typography.bodySmall)
+                    if (rules.isNotEmpty()) {
+                        Text(
+                            rules.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            }
+        } else null,
         leadingContent = {
             val iconBitmap = remember(app.packageName) { app.icon.toBitmap().asImageBitmap() }
-            Image(
-                bitmap = iconBitmap,
-                contentDescription = null,
-                modifier = Modifier.size(40.dp)
-            )
+            Image(bitmap = iconBitmap, contentDescription = null, modifier = Modifier.size(40.dp))
         },
         trailingContent = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (app.isHidden) {
-                    StatusBadge(
-                        text = stringResource(R.string.blocked),
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-                if (app.isUninstallBlocked) {
-                    StatusBadge(
-                        text = stringResource(R.string.protected_label),
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                if (app.isSuspended) {
-                    StatusBadge(
-                        text = stringResource(R.string.suspended),
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
+            if (selecting) {
+                Checkbox(checked = selected, onCheckedChange = null)
+            } else {
+                // One tap to block a distraction (or let it go).
+                Switch(checked = app.isSuspended, onCheckedChange = { onToggleSuspend() })
             }
         }
     )
 }
 
 @Composable
-private fun StatusBadge(text: String, containerColor: androidx.compose.ui.graphics.Color, contentColor: androidx.compose.ui.graphics.Color) {
-    SuggestionChip(
-        onClick = { },
-        label = { Text(text, style = MaterialTheme.typography.labelSmall) },
-        colors = SuggestionChipDefaults.suggestionChipColors(
-            containerColor = containerColor,
-            labelColor = contentColor
-        )
+private fun BulkGroupDialog(
+    count: Int,
+    groups: List<AppGroup>,
+    onSelect: (groupId: String?) -> Unit,
+    onCreateNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.apps_bulk_group_title, count)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(R.string.no_group),
+                    modifier = Modifier.fillMaxWidth().clickable { onSelect(null) }.padding(vertical = 12.dp)
+                )
+                groups.forEach { group ->
+                    Text(
+                        group.name,
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(group.id) }.padding(vertical = 12.dp)
+                    )
+                }
+                TextButton(onClick = onCreateNew) {
+                    Icon(Icons.Default.Add, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.new_group))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 
@@ -642,140 +837,6 @@ fun TimeLimitDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(limitState.toTimeLimit(), reopeningSeconds) }) {
-                Text(stringResource(R.string.confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
-@Composable
-fun TimeWindowsDialog(
-    title: String,
-    initialWindows: List<TimeWindow>,
-    onDismiss: () -> Unit,
-    lockedWindows: Set<TimeWindow> = emptySet(),
-    emptyMessage: String = stringResource(R.string.no_time_windows),
-    onConfirm: (List<TimeWindow>) -> Unit
-) {
-    val windows = remember { mutableStateListOf(*initialWindows.toTypedArray()) }
-    var showAddForm by remember { mutableStateOf(false) }
-    var showError by remember { mutableStateOf(false) }
-    // Bumped whenever the form restarts so its wheels scroll back to the defaults.
-    var formKey by remember { mutableIntStateOf(0) }
-    var startHour by remember { mutableIntStateOf(18) }
-    var startMinute by remember { mutableIntStateOf(0) }
-    var endHour by remember { mutableIntStateOf(22) }
-    var endMinute by remember { mutableIntStateOf(0) }
-
-    fun resetForm() {
-        startHour = 18; startMinute = 0; endHour = 22; endMinute = 0
-        showError = false
-        formKey++
-    }
-
-    /**
-     * The window being edited is part of the list the dialog saves — there's no separate
-     * confirmation for it. Returns false (and flags the error) when it can't be added.
-     */
-    fun commitPendingWindow(): Boolean {
-        if (!showAddForm) return true
-        val start = startHour * 60 + startMinute
-        val end = endHour * 60 + endMinute
-        if (start == end) {
-            showError = true
-            return false
-        }
-        val window = TimeWindow(start, end)
-        if (window !in windows) windows.add(window)
-        showAddForm = false
-        resetForm()
-        return true
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                if (windows.isEmpty() && !showAddForm) {
-                    Text(emptyMessage, style = MaterialTheme.typography.bodySmall)
-                }
-                windows.forEachIndexed { index, window ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(window.formatted(), modifier = Modifier.weight(1f))
-                        IconButton(onClick = { windows.removeAt(index) }, enabled = window !in lockedWindows) {
-                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                if (showAddForm) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    stringResource(
-                                        R.string.new_time_window,
-                                        TimeWindow(startHour * 60 + startMinute, endHour * 60 + endMinute).formatted()
-                                    ),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { showAddForm = false; resetForm() }) {
-                                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cancel))
-                                }
-                            }
-                            key(formKey) {
-                                TimeOfDayWheels(
-                                    label = stringResource(R.string.start_time),
-                                    hour = startHour,
-                                    minute = startMinute,
-                                    onHourChange = { startHour = it; showError = false },
-                                    onMinuteChange = { startMinute = it; showError = false }
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                TimeOfDayWheels(
-                                    label = stringResource(R.string.end_time),
-                                    hour = endHour,
-                                    minute = endMinute,
-                                    onHourChange = { endHour = it; showError = false },
-                                    onMinuteChange = { endMinute = it; showError = false }
-                                )
-                            }
-                            if (showError) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    stringResource(R.string.invalid_time_window),
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-                TextButton(onClick = { if (commitPendingWindow()) showAddForm = true }) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(if (showAddForm) R.string.add_another_time_window else R.string.add_time_window))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { if (commitPendingWindow()) onConfirm(windows.toList()) }) {
                 Text(stringResource(R.string.confirm))
             }
         },
