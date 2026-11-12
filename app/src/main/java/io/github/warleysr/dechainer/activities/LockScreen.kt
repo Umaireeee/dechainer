@@ -37,11 +37,9 @@ import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
-import io.github.warleysr.dechainer.data.FocusMode
 import io.github.warleysr.dechainer.screens.common.ApkUpdateDialog
 import io.github.warleysr.dechainer.screens.common.ApkUpdateIntroDialog
 import io.github.warleysr.dechainer.screens.common.UsageLimitsOverview
-import io.github.warleysr.dechainer.screens.common.FocusSessionCard
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
@@ -61,7 +59,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
     var showingLimits by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-    var focusStatus by remember { mutableStateOf(FocusMode.getStatus(context)) }
     val recoveryGate = rememberRecoveryGate()
 
     // Updating apps needs no authentication: only APKs of apps that are already installed go through.
@@ -128,8 +125,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-            FocusMode.syncIfDue(context)
-            focusStatus = FocusMode.getStatus(context)
             delay(1.seconds)
         }
     }
@@ -176,16 +171,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
             }
         }
 
-        // Works before authentication, like the panic button.
-        val focusSection: @Composable () -> Unit = {
-            FocusSessionCard(
-                status = focusStatus,
-                gate = recoveryGate,
-                onChanged = { focusStatus = FocusMode.getStatus(context) },
-                compact = true
-            )
-        }
-
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -198,8 +183,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         ) {
             if (impulseRemaining > 0) {
                 ImpulseCountdown(impulseRemaining)
-                Spacer(modifier = Modifier.height(16.dp))
-                focusSection()
                 Spacer(modifier = Modifier.height(16.dp))
                 secondaryButtons(false)
             } else {
@@ -220,8 +203,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                focusSection()
-                Spacer(modifier = Modifier.height(16.dp))
                 secondaryButtons(true)
 
                 if (authError != null) {

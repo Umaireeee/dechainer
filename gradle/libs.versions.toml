@@ -1,7 +1,6 @@
 [versions]
 agp = "8.13.2"
 json = "20260814"
-jsoup = "1.23.1"
 kotlin = "2.4.10"
 coreKtx = "1.17.0"
 junit = "4.13.2"
@@ -12,7 +11,6 @@ activityCompose = "1.12.2"
 appcompat = "1.7.0"
 biometric = "1.4.0-alpha07"
 composeBom = "2025.12.01"
-litert = "2.2.0"
 hiddenapibypass = "4.3"
 materialIconsExtended = "1.7.8"
 shizuku = "13.1.5"
@@ -31,7 +29,6 @@ androidx-compose-material-icons-extended = { module = "androidx.compose.material
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
 json = { module = "org.json:json", version.ref = "json" }
-jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -45,7 +42,6 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-litert = { module = "com.google.ai.edge.litert:litert", version.ref = "litert" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapibypass" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }

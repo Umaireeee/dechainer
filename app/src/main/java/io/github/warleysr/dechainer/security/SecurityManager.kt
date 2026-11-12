@@ -9,17 +9,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.data.DeviceAdmin
-import io.github.warleysr.dechainer.data.ReadingPassage
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import androidx.core.content.edit
 
 class SecurityManager {
-
-    enum class ChallengeType {
-        MATH, WORDS, TETRIS, READING
-    }
 
     /** What the "I'm having impulses" panic button does on top of locking Dechainer itself. */
     enum class ImpulseAction {
@@ -30,24 +25,16 @@ class SecurityManager {
         TIMER_AND_SUSPEND
     }
 
-    /** Where the reading challenge takes its texts from. */
-    enum class ReadingSource {
-        BIBLE, QURAN, QUOTES, CUSTOM
-    }
-
     companion object {
         private const val CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-        const val IMPULSE_MIN_DURATION_MINUTES = 15
-        const val IMPULSE_MAX_DURATION_MINUTES = 360
-        const val IMPULSE_DEFAULT_DURATION_MINUTES = 60
 
         const val TETRIS_MIN_MINUTES = 1
         const val TETRIS_MAX_MINUTES = 15
         const val TETRIS_DEFAULT_MINUTES = 3
 
-        const val READING_MIN_COUNT = 1
-        const val READING_DEFAULT_COUNT = 5
+        const val IMPULSE_MIN_DURATION_MINUTES = 15
+        const val IMPULSE_MAX_DURATION_MINUTES = 360
+        const val IMPULSE_DEFAULT_DURATION_MINUTES = 60
 
         const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
 
@@ -126,35 +113,17 @@ class SecurityManager {
             prefs.edit { putBoolean("shuffle_keyboard", enabled) }
         }
 
-        fun isBlockTorrentsEnabled(context: Context): Boolean {
+        /** Whether starting a recovery session first requires playing Tetris (the unlock delay). */
+        fun isTetrisUnlockEnabled(context: Context): Boolean {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getBoolean("block_torrents", false)
+            if (prefs.contains("tetris_unlock")) return prefs.getBoolean("tetris_unlock", false)
+            // Older versions stored the chosen challenges as a set; keep honouring a Tetris choice.
+            return prefs.getStringSet("access_challenges", null)?.contains("TETRIS") == true
         }
 
-        fun setBlockTorrentsEnabled(context: Context, enabled: Boolean) {
+        fun setTetrisUnlockEnabled(context: Context, enabled: Boolean) {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putBoolean("block_torrents", enabled) }
-        }
-
-        fun getAccessChallenges(context: Context): List<ChallengeType> {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val stored = prefs.getStringSet("access_challenges", null)
-                ?: return when (prefs.getString("impulse_lock_mode", null)) {
-                    "NORMAL" -> listOf(ChallengeType.MATH)
-                    "HARD" -> listOf(ChallengeType.WORDS)
-                    else -> emptyList()
-                }
-            return stored
-                .mapNotNull { runCatching { ChallengeType.valueOf(it) }.getOrNull() }
-                .sortedBy { it.ordinal }
-        }
-
-        fun setAccessChallenges(context: Context, challenges: Set<ChallengeType>) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit {
-                putStringSet("access_challenges", challenges.map { it.name }.toSet())
-                remove("impulse_lock_mode")
-            }
+            prefs.edit { putBoolean("tetris_unlock", enabled) }
         }
 
         fun getTetrisMinutes(context: Context): Int {
@@ -176,51 +145,6 @@ class SecurityManager {
         fun setTetrisSoundEnabled(context: Context, enabled: Boolean) {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             prefs.edit { putBoolean("tetris_sound", enabled) }
-        }
-
-        fun getReadingSource(context: Context): ReadingSource {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val stored = prefs.getString("reading_source", ReadingSource.BIBLE.name)!!
-            return runCatching { ReadingSource.valueOf(stored) }.getOrDefault(ReadingSource.BIBLE)
-        }
-
-        fun setReadingSource(context: Context, source: ReadingSource) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("reading_source", source.name) }
-        }
-
-        /**
-         * How many texts the reading challenge shows. Stored as chosen; callers cap it to what the
-         * selected source actually has, so switching sources doesn't lose the setting.
-         */
-        fun getReadingCount(context: Context): Int {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            return prefs.getInt("reading_count", READING_DEFAULT_COUNT).coerceAtLeast(READING_MIN_COUNT)
-        }
-
-        fun setReadingCount(context: Context, count: Int) {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putInt("reading_count", count.coerceAtLeast(READING_MIN_COUNT)) }
-        }
-
-        /** Phrases the user wrote for the reading challenge, in the order they were added. */
-        fun getCustomReadingPassages(context: Context): List<ReadingPassage> {
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            val json = prefs.getString("reading_custom_passages", null) ?: return emptyList()
-            return runCatching {
-                val array = JSONArray(json)
-                List(array.length()) { i ->
-                    val item = array.getJSONObject(i)
-                    ReadingPassage(item.getString("text"), item.optString("source"))
-                }
-            }.getOrDefault(emptyList())
-        }
-
-        fun setCustomReadingPassages(context: Context, passages: List<ReadingPassage>) {
-            val array = JSONArray()
-            passages.forEach { array.put(JSONObject().put("text", it.text).put("source", it.source)) }
-            val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("reading_custom_passages", array.toString()) }
         }
 
         fun getImpulseAction(context: Context): ImpulseAction {
