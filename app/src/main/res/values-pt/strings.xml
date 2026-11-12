@@ -114,19 +114,14 @@
     <string name="app_limit_reached">Limite atingido!</string>
     <string name="close">Fechar</string>
     <string name="limit">Limite: %1$s</string>
-    <string name="used">Usado: %1$s</string>
     <string name="reopen_time">Tempo entre aberturas do mesmo app</string>
     <string name="seconds">Segundos</string>
     <string name="time_windows">Horário</string>
-    <string name="time_windows_dialog_title">Janelas de horário para %1$s</string>
     <string name="time_windows_summary">Permitido: %1$s</string>
     <string name="no_time_windows">Nenhuma janela definida. O app pode ser usado a qualquer momento, respeitando o limite diário.</string>
-    <string name="add_time_window">Adicionar janela</string>
     <string name="start_time">Início</string>
     <string name="end_time">Fim</string>
     <string name="invalid_time_window">O horário de início e fim não podem ser iguais</string>
-    <string name="new_time_window">Nova janela: %1$s</string>
-    <string name="add_another_time_window">Adicionar outra janela</string>
     <string name="time_limit_per_day">Limite diferente para cada dia da semana</string>
     <string name="time_limit_varies_today">%1$s hoje (varia por dia)</string>
     <string name="time_limit_none_today">nenhum hoje (varia por dia)</string>
@@ -144,16 +139,12 @@
     <string name="group_time_limit">Limite de tempo do grupo</string>
     <string name="group_time_limit_dialog_title">Limite para o grupo %1$s</string>
     <string name="group_time_windows">Janelas de horário do grupo</string>
-    <string name="group_time_windows_dialog_title">Janelas de horário para o grupo %1$s</string>
     <string name="group_members">Apps no grupo</string>
     <string name="no_group_members">Nenhum app adicionado a este grupo ainda</string>
     <string name="add">Adicionar</string>
     <string name="delete_group">Excluir grupo</string>
-    <string name="all_apps_filter">Todos</string>
     <string name="app_group">Grupo</string>
     <string name="group_label">Grupo: %1$s</string>
-    <string name="group_limit">Limite do grupo: %1$s</string>
-    <string name="group_used">Uso do grupo: %1$s</string>
     <string name="select_group_dialog_title">Grupo de %1$s</string>
     <string name="no_group">Nenhum</string>
     <string name="app_reopening">Aguarde!</string>
@@ -190,7 +181,6 @@
     <string name="time_minutes">%1$dmin</string>
     <string name="time_hours_minutes">%1$dh %2$dmin</string>
     <string name="explicit_content">Conteúdo explícito</string>
-    <string name="suspended">Suspenso</string>
     <string name="suspend">Suspender</string>
     <string name="unsuspend">Retirar suspensão</string>
 
@@ -248,8 +238,6 @@
     <string name="restriction_pending">A restrição será aplicada em 5 segundos</string>
     <string name="undo">Desfazer</string>
     <!-- Suspension Logs -->
-    <string name="suspension_logs">Logs de suspensão</string>
-    <string name="suspension_logs_desc">Histórico de aplicativos suspensos automaticamente ou manualmente</string>
     <string name="no_suspension_logs">Nenhum registro de suspensão encontrado</string>
     <string name="clear_suspension_logs">Limpar logs</string>
     <string name="clear_suspension_logs_confirm">Tem certeza de que deseja limpar todos os registros de suspensão?</string>
