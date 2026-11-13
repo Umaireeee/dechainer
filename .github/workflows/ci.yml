@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional: also build a signed APK and publish a GitHub release with this tag (e.g. v1.12.0)"
+        required: false
+        default: ""
+
+concurrency:
+  # Separate groups per trigger so pushing never cancels a manual release run (and vice versa).
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+# Shape of the pipeline (wall time is the longest chain, not the sum):
+#   build ──> emulator ─┐
+#   unit  ──────────────┼──> release (only on a manual run with a tag)
+#   release_build ──────┘
+# The APKs are compiled once in `build` and installed on the emulator, so the emulator job needs no
+# Gradle at all. Every job writes the Gradle cache (also on non-default branches), so repeat runs
+# skip most dependency downloads and dexing.
+
+jobs:
+  build:
+    name: Build APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Assemble the debug and test APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew --build-cache assembleDebug assembleDebugAndroidTest --stacktrace
+          mkdir apks
+          cp app/build/outputs/apk/debug/app-debug.apk apks/
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk apks/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: apks/
+          retention-days: 7
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew --build-cache testDebugUnitTest --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/
+          retention-days: 7
+
+  emulator:
+    name: Emulator tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: apks
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Accessibility end-to-end and instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash .github/scripts/emulator-tests.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-logs
+          path: emulator-logs/
+          retention-days: 7
+
+  # Everything below only runs when CI is started by hand with a release tag.
+  release_build:
+    name: Build signed APK
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; exit 1; fi
+          done
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "dechainer.storeFile=$RUNNER_TEMP/release.jks"
+            echo "dechainer.storePassword=$KEYSTORE_PASSWORD"
+            echo "dechainer.keyAlias=$KEY_ALIAS"
+            echo "dechainer.keyPassword=$KEY_PASSWORD"
+          } > local.properties
+      - name: Signed release build
+        run: |
+          chmod +x gradlew
+          ./gradlew --build-cache assembleRelease --stacktrace
+          mkdir release
+          cp app/build/outputs/apk/release/app-release.apk "release/dechainer-${TAG}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-apk
+          path: release/
+          retention-days: 30
+
+  release:
+    name: Publish release
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: [unit, emulator, release_build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-apk
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          files: release/*.apk
+          generate_release_notes: true
