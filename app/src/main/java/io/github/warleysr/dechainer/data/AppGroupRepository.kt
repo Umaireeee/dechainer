@@ -107,9 +107,7 @@ object AppGroupRepository {
                 put("packages", JSONArray(group.packageNames.toList()))
                 put("limit", group.timeLimit.dailyMinutes)
                 group.timeLimit.weeklyMinutes?.let { put("weeklyLimit", JSONArray(it)) }
-                put("windows", JSONArray(group.timeWindows.map { w ->
-                    JSONObject().apply { put("s", w.startMinute); put("e", w.endMinute) }
-                }))
+                put("windows", AppTimeWindows.toJson(group.timeWindows))
             })
         }
         return array.toString()
@@ -123,11 +121,7 @@ object AppGroupRepository {
                 val obj = array.getJSONObject(i)
                 val packagesArray = obj.getJSONArray("packages")
                 val packages = (0 until packagesArray.length()).map { packagesArray.getString(it) }.toSet()
-                val windowsArray = obj.getJSONArray("windows")
-                val windows = (0 until windowsArray.length()).map { j ->
-                    val w = windowsArray.getJSONObject(j)
-                    TimeWindow(w.getInt("s"), w.getInt("e"))
-                }
+                val windows = AppTimeWindows.fromJson(obj.getJSONArray("windows"))
                 // Groups saved before per-weekday limits existed only have the daily "limit".
                 val weekly = obj.optJSONArray("weeklyLimit")
                     ?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } }

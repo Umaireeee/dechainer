@@ -1,6 +1,7 @@
 package io.github.warleysr.dechainer.data
 
 import android.content.Context
+import android.content.Intent
 import android.content.RestrictionEntry
 import android.content.RestrictionsManager
 import android.content.pm.ApplicationInfo
@@ -59,6 +60,10 @@ object AppRepository {
         val timeWindowsPrefs = context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
 
         val installedApps = packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES)
+        val launchable = packageManager
+            .queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+            .map { it.activityInfo.packageName }
+            .toSet()
 
         return installedApps.asSequence()
             .filter { it.packageName != context.packageName }
@@ -81,7 +86,8 @@ object AppRepository {
                     reopeningSeconds = reopenPrefs.getInt(packageName, 0),
                     timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
                     isSuspended = isSuspended,
-                    hasExplicitContent = ratingsPrefs.getBoolean(packageName, false)
+                    hasExplicitContent = ratingsPrefs.getBoolean(packageName, false),
+                    isLaunchable = packageName in launchable
                 )
             }
             .sortedBy { it.name.lowercase() }

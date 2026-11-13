@@ -4,9 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerAccessibilityService
@@ -28,7 +25,6 @@ import io.github.warleysr.dechainer.viewmodels.ImpulseLockViewModel
 @Composable
 fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
     var showAppSelectionDialog by remember { mutableStateOf(false) }
-    var showAddPassageDialog by remember { mutableStateOf(false) }
     val recoveryGate = rememberRecoveryGate()
 
     val sessionActive = recoveryGate.isSessionActive
@@ -55,44 +51,43 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
             }
         }
 
-        // --- Challenge required to get into Dechainer itself ---
+        // --- Unlock delay: Tetris before a recovery session starts ---
         item {
             SectionHeader(
-                title = stringResource(R.string.impulse_lock_challenge_section),
-                description = stringResource(R.string.impulse_lock_challenge_desc)
+                title = stringResource(R.string.challenge_option_tetris),
+                description = stringResource(R.string.challenge_option_tetris_desc)
             )
-            SecurityManager.ChallengeType.entries.forEach { type ->
-                OptionRow(
-                    selected = type in viewModel.challenges,
-                    enabled = sessionActive,
-                    multiple = true,
-                    title = when (type) {
-                        SecurityManager.ChallengeType.MATH -> stringResource(R.string.challenge_option_math)
-                        SecurityManager.ChallengeType.WORDS -> stringResource(R.string.challenge_option_words)
-                        SecurityManager.ChallengeType.TETRIS -> stringResource(R.string.challenge_option_tetris)
-                        SecurityManager.ChallengeType.READING -> stringResource(R.string.challenge_option_reading)
-                    },
-                    supporting = when (type) {
-                        SecurityManager.ChallengeType.MATH -> stringResource(R.string.challenge_option_math_desc)
-                        SecurityManager.ChallengeType.WORDS -> stringResource(R.string.challenge_option_words_desc)
-                        SecurityManager.ChallengeType.TETRIS -> stringResource(R.string.challenge_option_tetris_desc)
-                        SecurityManager.ChallengeType.READING -> stringResource(R.string.challenge_option_reading_desc)
-                    },
-                    onClick = { viewModel.toggleChallenge(type) }
-                )
-                // Each challenge's own settings sit right under its option, not after the whole list.
-                if (type in viewModel.challenges) {
-                    when (type) {
-                        SecurityManager.ChallengeType.TETRIS ->
-                            TetrisSettings(viewModel = viewModel, enabled = sessionActive)
-                        SecurityManager.ChallengeType.READING -> ReadingSettings(
-                            viewModel = viewModel,
-                            enabled = sessionActive,
-                            onAddPassage = { showAddPassageDialog = true }
-                        )
-                        else -> {}
-                    }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.challenge_option_tetris)) },
+                trailingContent = {
+                    Switch(
+                        checked = viewModel.tetrisUnlock,
+                        enabled = sessionActive,
+                        onCheckedChange = { viewModel.updateTetrisUnlock(it) }
+                    )
                 }
+            )
+            if (viewModel.tetrisUnlock) {
+                Text(
+                    stringResource(R.string.tetris_duration),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                Text(
+                    formatDuration(viewModel.tetrisMinutes),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Slider(
+                    value = viewModel.tetrisMinutes.toFloat(),
+                    enabled = sessionActive,
+                    onValueChange = { viewModel.updateTetrisMinutes(it.toInt()) },
+                    valueRange = SecurityManager.TETRIS_MIN_MINUTES.toFloat()..
+                        SecurityManager.TETRIS_MAX_MINUTES.toFloat(),
+                    steps = SecurityManager.TETRIS_MAX_MINUTES - SecurityManager.TETRIS_MIN_MINUTES - 1,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
@@ -212,166 +207,7 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
         )
     }
 
-    if (showAddPassageDialog) {
-        AddPassageDialog(
-            onConfirm = { text, source ->
-                viewModel.addCustomPassage(text, source)
-                showAddPassageDialog = false
-            },
-            onDismiss = { showAddPassageDialog = false }
-        )
-    }
-
     RecoveryGateDialog(recoveryGate)
-}
-
-@Composable
-private fun TetrisSettings(viewModel: ImpulseLockViewModel, enabled: Boolean) {
-    Text(
-        stringResource(R.string.tetris_duration),
-        style = MaterialTheme.typography.bodyMedium,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-    )
-    Text(
-        formatDuration(viewModel.tetrisMinutes),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 16.dp)
-    )
-    Slider(
-        value = viewModel.tetrisMinutes.toFloat(),
-        enabled = enabled,
-        onValueChange = { viewModel.updateTetrisMinutes(it.toInt()) },
-        valueRange = SecurityManager.TETRIS_MIN_MINUTES.toFloat()..
-            SecurityManager.TETRIS_MAX_MINUTES.toFloat(),
-        steps = SecurityManager.TETRIS_MAX_MINUTES - SecurityManager.TETRIS_MIN_MINUTES - 1,
-        modifier = Modifier.padding(horizontal = 16.dp)
-    )
-}
-
-@Composable
-private fun ReadingSettings(viewModel: ImpulseLockViewModel, enabled: Boolean, onAddPassage: () -> Unit) {
-    Text(
-        stringResource(R.string.reading_source_section),
-        style = MaterialTheme.typography.bodyMedium,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-    )
-    SecurityManager.ReadingSource.entries.forEach { source ->
-        OptionRow(
-            selected = viewModel.readingSource == source,
-            enabled = enabled,
-            title = when (source) {
-                SecurityManager.ReadingSource.BIBLE -> stringResource(R.string.reading_source_bible)
-                SecurityManager.ReadingSource.QURAN -> stringResource(R.string.reading_source_quran)
-                SecurityManager.ReadingSource.QUOTES -> stringResource(R.string.reading_source_quotes)
-                SecurityManager.ReadingSource.CUSTOM -> stringResource(R.string.reading_source_custom)
-            },
-            supporting = when (source) {
-                SecurityManager.ReadingSource.BIBLE -> stringResource(R.string.reading_source_bible_desc)
-                SecurityManager.ReadingSource.QURAN -> stringResource(R.string.reading_source_quran_desc)
-                SecurityManager.ReadingSource.QUOTES -> stringResource(R.string.reading_source_quotes_desc)
-                SecurityManager.ReadingSource.CUSTOM -> stringResource(R.string.reading_source_custom_desc)
-            },
-            onClick = { viewModel.updateReadingSource(source) }
-        )
-    }
-
-    if (viewModel.readingSource == SecurityManager.ReadingSource.CUSTOM) {
-        viewModel.customPassages.forEachIndexed { index, passage ->
-            ListItem(
-                headlineContent = { Text(passage.text, maxLines = 3, overflow = TextOverflow.Ellipsis) },
-                supportingContent = if (passage.source.isNotBlank()) {
-                    { Text(passage.source) }
-                } else null,
-                trailingContent = {
-                    IconButton(enabled = enabled, onClick = { viewModel.removeCustomPassage(index) }) {
-                        Icon(Icons.Outlined.Delete, stringResource(R.string.reading_custom_delete))
-                    }
-                },
-                modifier = Modifier.padding(start = 40.dp)
-            )
-        }
-        if (viewModel.customPassages.isEmpty()) {
-            Text(
-                stringResource(R.string.reading_custom_empty),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-        OutlinedButton(
-            enabled = enabled,
-            onClick = onAddPassage,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            Icon(Icons.Outlined.Add, null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.reading_custom_add))
-        }
-    }
-
-    val available = viewModel.availableReadings
-    if (available > 0) {
-        Text(
-            stringResource(R.string.reading_count),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-        )
-        Text(
-            stringResource(R.string.reading_count_value, viewModel.readingCount, available),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        if (available > SecurityManager.READING_MIN_COUNT) {
-            Slider(
-                value = viewModel.readingCount.toFloat(),
-                enabled = enabled,
-                onValueChange = { viewModel.updateReadingCount(it.toInt()) },
-                valueRange = SecurityManager.READING_MIN_COUNT.toFloat()..available.toFloat(),
-                steps = available - SecurityManager.READING_MIN_COUNT - 1,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun AddPassageDialog(onConfirm: (String, String) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.reading_custom_add)) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text(stringResource(R.string.reading_custom_text)) },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = source,
-                    onValueChange = { source = it },
-                    label = { Text(stringResource(R.string.reading_custom_source)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text, source) }) {
-                Text(stringResource(R.string.add))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        }
-    )
 }
 
 @Composable
@@ -395,8 +231,7 @@ private fun OptionRow(
     enabled: Boolean,
     title: String,
     onClick: () -> Unit,
-    supporting: String? = null,
-    multiple: Boolean = false
+    supporting: String? = null
 ) {
     Row(
         modifier = Modifier
@@ -405,11 +240,7 @@ private fun OptionRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (multiple) {
-            Checkbox(checked = selected, enabled = enabled, onCheckedChange = { onClick() })
-        } else {
-            RadioButton(selected = selected, enabled = enabled, onClick = onClick)
-        }
+        RadioButton(selected = selected, enabled = enabled, onClick = onClick)
         Column(modifier = Modifier.padding(start = 8.dp)) {
             Text(title, fontWeight = FontWeight.Bold)
             if (supporting != null) {

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Window-state events only: the service wakes when an app or screen changes, never while one is in use. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeViewTextChanged|typeWindowStateChanged|typeWindowContentChanged"
-    android:accessibilityFeedbackType="feedbackSpoken"
-    android:accessibilityFlags="flagIncludeNotImportantViews|flagRetrieveInteractiveWindows"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
     android:notificationTimeout="100"
-    android:settingsActivity="io.github.warleysr.dechainer.MainActivity"
+    android:settingsActivity="io.github.warleysr.dechainer.activities.MainActivity"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
-    android:canTakeScreenshot="true"
     />

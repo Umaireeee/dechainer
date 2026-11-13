@@ -20,11 +20,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.AppBlocking
-import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +37,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
-import io.github.warleysr.dechainer.data.UsageWarningSettings
 import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.setup.SetupDeviceOwnerPrivileges
 import io.github.warleysr.dechainer.screens.setup.SetupRecovery
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 val navViewModel: NavigationViewModel = viewModel()
 
                 val currentScreen = navViewModel.selectedTab()
-                val isRoot = currentScreen in listOf("restrictions", "apps", "config")
+                val isRoot = currentScreen in listOf("apps", "schedule", "config", "suspension_logs")
 
                 BackHandler(enabled = !isRoot) {
                     navViewModel.goBack()
@@ -76,28 +76,6 @@ class MainActivity : ComponentActivity() {
                     while (true) {
                         currentTime = System.currentTimeMillis()
                         delay(1000)
-                    }
-                }
-
-                val context = LocalContext.current
-                val notificationPermissionLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) {}
-                LaunchedEffect(authenticated.value) {
-                    if (!authenticated.value) return@LaunchedEffect
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
-
-                    val warningPrefs = context.getSharedPreferences(UsageWarningSettings.PREFS_NAME, Context.MODE_PRIVATE)
-                    val warningEnabled = warningPrefs.getBoolean(
-                        UsageWarningSettings.KEY_ENABLED, UsageWarningSettings.DEFAULT_ENABLED
-                    )
-                    if (!warningEnabled) return@LaunchedEffect
-
-                    val granted = ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.POST_NOTIFICATIONS
-                    ) == PackageManager.PERMISSION_GRANTED
-                    if (!granted) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
 
@@ -160,16 +138,17 @@ class MainActivity : ComponentActivity() {
                         if (!SecurityManager.isRecoveryCodeSet(this) || !authenticated.value) return@Scaffold
 
                         val tabs = listOf(
-                            Pair("restrictions", stringResource(R.string.restrictions)),
                             Pair("apps", stringResource(R.string.apps)),
-                            Pair("config", stringResource(R.string.config))
+                            Pair("schedule", stringResource(R.string.schedule_title)),
+                            Pair("config", stringResource(R.string.protection_title)),
+                            Pair("suspension_logs", stringResource(R.string.log_title))
                         )
 
                         val selectedBaseTab = when (currentScreen) {
-                            "restrictions" -> "restrictions"
-                            "apps" -> "apps"
-                            "config", "setup_device_owner", "activity_blocker", "browser_restrictions", "blocked_words", "visual_blocking", "impulse_lock", "focus_mode", "usage_warning", "color_filters", "suspension_logs" -> "config"
-                            else -> "restrictions"
+                            "apps", "schedule", "suspension_logs" -> currentScreen
+                            // Everything else (system restrictions, activity blocker, impulse lock,
+                            // device owner setup) is reached from the Protection tab.
+                            else -> "config"
                         }
 
                         NavigationBar {
@@ -181,9 +160,10 @@ class MainActivity : ComponentActivity() {
                                     icon = {
                                         Icon(
                                             when (pair.first) {
-                                                "restrictions" -> Icons.Outlined.Block
                                                 "apps" -> Icons.Default.AppBlocking
-                                                else -> Icons.Outlined.Settings
+                                                "schedule" -> Icons.Default.Schedule
+                                                "suspension_logs" -> Icons.Default.History
+                                                else -> Icons.Outlined.Shield
                                             }, contentDescription = null
                                         )
                                     }
@@ -209,16 +189,11 @@ class MainActivity : ComponentActivity() {
                                 when (currentScreen) {
                                     "restrictions" -> RestrictionsTab()
                                     "apps" -> AppsTab()
+                                    "schedule" -> ScheduleScreen()
                                     "config" -> ConfigTab()
                                     "setup_device_owner" -> SetupDeviceOwnerPrivileges()
                                     "activity_blocker" -> ActivityBlockerScreen()
-                                    "browser_restrictions" -> BrowserRestrictionsScreen()
-                                    "blocked_words" -> BlockedWordsScreen()
-                                    "visual_blocking" -> VisualBlockingScreen()
                                     "impulse_lock" -> ImpulseLockScreen()
-                                    "focus_mode" -> FocusModeScreen()
-                                    "usage_warning" -> UsageWarningScreen()
-                                    "color_filters" -> ColorFilterScreen()
                                     "suspension_logs" -> SuspensionLogsScreen()
                                 }
                             }

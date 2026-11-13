@@ -13,16 +13,17 @@ import io.github.warleysr.dechainer.screens.common.isLooserWindows
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
+import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 
 @Composable
 fun AppManagementDialogs(
     selectedApp: AppItem?,
     onDismissSelectedApp: () -> Unit,
     viewModel: AppsViewModel = viewModel(),
-    deviceOwnerViewModel: DeviceOwnerViewModel = viewModel()
+    deviceOwnerViewModel: DeviceOwnerViewModel = viewModel(),
+    navViewModel: NavigationViewModel = viewModel()
 ) {
     var showTimeLimitDialog by remember { mutableStateOf<AppItem?>(null) }
-    var showTimeWindowsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showRestrictionsDialog by remember { mutableStateOf<AppItem?>(null) }
     var showGroupPickerDialog by remember { mutableStateOf<AppItem?>(null) }
     var showGroupsManagementDialog by remember { mutableStateOf(false) }
@@ -50,7 +51,9 @@ fun AppManagementDialogs(
                 showTimeLimitDialog = app
             },
             onSetTimeWindows = {
-                showTimeWindowsDialog = app
+                navViewModel.pendingScheduleKey = "app:${app.packageName}"
+                onDismissSelectedApp()
+                navViewModel.navigateTo("schedule")
             },
             onSetGroup = {
                 showGroupPickerDialog = app
@@ -72,20 +75,6 @@ fun AppManagementDialogs(
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
                 }
                 showTimeLimitDialog = null
-            }
-        )
-    }
-
-    showTimeWindowsDialog?.let { app ->
-        TimeWindowsDialog(
-            title = stringResource(R.string.time_windows_dialog_title, app.name),
-            initialWindows = app.timeWindows,
-            onDismiss = { showTimeWindowsDialog = null },
-            onConfirm = { windows ->
-                recoveryGate.change(isLooserWindows(app.timeWindows, windows)) {
-                    viewModel.setAppTimeWindows(app.packageName, windows)
-                }
-                showTimeWindowsDialog = null
             }
         )
     }
@@ -164,6 +153,11 @@ fun AppManagementDialogs(
                     viewModel.setGroupPackages(group.id, packageNames)
                 }
                 showEditGroupDialog = null
+            },
+            onOpenSchedule = {
+                navViewModel.pendingScheduleKey = "group:${group.id}"
+                showEditGroupDialog = null
+                navViewModel.navigateTo("schedule")
             },
             onDelete = {
                 recoveryGate.run { viewModel.deleteGroup(group.id) }

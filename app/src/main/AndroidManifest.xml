@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="ManifestOrder,PackageVisibilityPolicy,QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
@@ -12,13 +9,6 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Focus mode's phase-end alarm: granted by default up to API 32, install-time from API 33. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <queries>
         <intent>
@@ -68,22 +58,6 @@
             android:launchMode="singleInstance"
             android:taskAffinity="" />
         <activity
-            android:name=".activities.BlockedWordActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.NsfwContentBlockedActivity"
-            android:showOnLockScreen="true"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
             android:name=".activities.OutsideTimeWindowActivity"
             android:showOnLockScreen="true"
             android:theme="@style/Theme.Dechainer"
@@ -93,14 +67,6 @@
             android:taskAffinity="" />
         <activity
             android:name=".activities.AccessibilityRequestActivity"
-            android:theme="@style/Theme.Dechainer"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="" />
-        <activity
-            android:name=".activities.FocusReminderActivity"
-            android:showOnLockScreen="true"
             android:theme="@style/Theme.Dechainer"
             android:excludeFromRecents="true"
             android:noHistory="true"
@@ -130,40 +96,8 @@
         </receiver>
 
         <receiver
-            android:name=".notifications.UsageWarningDismissReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".notifications.FocusReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".notifications.FocusScheduleReceiver"
-            android:exported="false" />
-
-        <receiver
             android:name=".notifications.ApkUpdateResultReceiver"
             android:exported="false" />
-
-        <service
-            android:name=".notifications.FocusService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Pomodoro focus timer: keeps the countdown of the current focus or break period on screen" />
-        </service>
-
-        <receiver
-            android:name=".notifications.FocusSystemReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-            </intent-filter>
-        </receiver>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

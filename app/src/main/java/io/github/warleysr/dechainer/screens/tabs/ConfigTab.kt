@@ -1,6 +1,5 @@
 package io.github.warleysr.dechainer.screens.tabs
 
-import android.app.admin.DevicePolicyManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,18 +7,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.Adb
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.ImageSearch
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LockClock
-import androidx.compose.material.icons.outlined.NoAdultContent
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material.icons.outlined.Web
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,13 +31,8 @@ import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.utils.LocaleUtils
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
-import kotlinx.coroutines.CoroutineScope
 import rikka.shizuku.Shizuku
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
@@ -54,9 +40,6 @@ fun ConfigTab(
     viewModel: DeviceOwnerViewModel = viewModel(),
     navViewModel: NavigationViewModel = viewModel()
 ) {
-    var showDnsDialog by remember { mutableStateOf(false) }
-    var dnsErrorRes by remember { mutableStateOf<Int?>(null) }
-    var isApplyingDns by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showKeyboardDialog by remember { mutableStateOf(false) }
     var showRecoveryDialog by remember { mutableStateOf(false) }
@@ -70,11 +53,9 @@ fun ConfigTab(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val shizukuNotRunningMsg = stringResource(R.string.shizuku_not_running)
-    val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
     val advancedBlockingRequiredMsg = stringResource(R.string.advanced_blocking_required)
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
-    var blockTorrents by remember { mutableStateOf(SecurityManager.isBlockTorrentsEnabled(context)) }
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
 
@@ -106,31 +87,20 @@ fun ConfigTab(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.dns_settings)) },
-                    supportingContent = { 
-                        Text( stringResource(R.string.dns_description))
-                    },
-                    leadingContent = { Icon(Icons.Outlined.Dns, "") },
-                    modifier = Modifier.clickable {
-                        if (!viewModel.isDeviceOwner()) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg)
-                            }
-                            return@clickable
-                        }
-                        dnsErrorRes = null
-                        showDnsDialog = true
-                    }
+                Text(
+                    stringResource(R.string.config_section_protection),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.browser_restrictions)) },
-                    supportingContent = { Text(stringResource(R.string.browser_restrictions_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.Web, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("browser_restrictions") }
+                    headlineContent = { Text(stringResource(R.string.restrictions)) },
+                    supportingContent = { Text(stringResource(R.string.system_restrictions_desc)) },
+                    leadingContent = { Icon(Icons.Outlined.Block, "") },
+                    modifier = Modifier.clickable { navViewModel.navigateTo("restrictions") }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -175,71 +145,6 @@ fun ConfigTab(
             }
             item {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.visual_blocking)) },
-                    supportingContent = { Text(stringResource(R.string.visual_blocking_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.ImageSearch, "") },
-                    modifier = Modifier.clickable {
-                        if (!advancedBlocking) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                            }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("visual_blocking")
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.blocked_words_feat)) },
-                    supportingContent = { Text(stringResource(R.string.blocked_words_feat_description)) },
-                    leadingContent = { Icon(Icons.Outlined.NoAdultContent, "") },
-                    modifier = Modifier.clickable {
-                        if (!advancedBlocking) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                            }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("blocked_words")
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.block_torrents)) },
-                    supportingContent = { Text(stringResource(R.string.block_torrents_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.FileDownload, "") },
-                    trailingContent = {
-                        Switch(blockTorrents, onCheckedChange = { checked ->
-                            if (checked && !advancedBlocking) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(advancedBlockingRequiredMsg)
-                                }
-                                return@Switch
-                            }
-                            recoveryGate.change(loosening = !checked) {
-                                blockTorrents = checked
-                                SecurityManager.setBlockTorrentsEnabled(context, checked)
-                            }
-                        })
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.language_settings)) },
-                    supportingContent = { Text(stringResource(R.string.language_description)) },
-                    leadingContent = { Icon(Icons.Outlined.Language, "") },
-                    modifier = Modifier.clickable { showLanguageDialog = true }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
                     headlineContent = { Text(stringResource(R.string.impulse_lock)) },
                     supportingContent = { Text(stringResource(R.string.impulse_lock_desc)) },
                     leadingContent = { Icon(Icons.Outlined.LockClock, "") },
@@ -248,40 +153,13 @@ fun ConfigTab(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.focus_mode)) },
-                    supportingContent = { Text(stringResource(R.string.focus_mode_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.Timer, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("focus_mode") }
+                Text(
+                    stringResource(R.string.config_section_security),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.usage_warning_settings)) },
-                    supportingContent = { Text(stringResource(R.string.usage_warning_settings_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.NotificationsActive, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("usage_warning") }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.color_filter_settings)) },
-                    supportingContent = { Text(stringResource(R.string.color_filter_settings_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.Palette, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("color_filters") }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.suspension_logs)) },
-                    supportingContent = { Text(stringResource(R.string.suspension_logs_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.History, "") },
-                    modifier = Modifier.clickable { navViewModel.navigateTo("suspension_logs") }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
                 val keyboardLabel = if (shuffleKeyboard)
@@ -327,6 +205,24 @@ fun ConfigTab(
                         else if (forcedRemovalRemaining == 0L) showFinishForcedRemovalDialog = true
                         else showCancelForcedRemovalDialog = true
                     }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+                    item {
+                Text(
+                    stringResource(R.string.config_section_general),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.language_settings)) },
+                    supportingContent = { Text(stringResource(R.string.language_description)) },
+                    leadingContent = { Icon(Icons.Outlined.Language, "") },
+                    modifier = Modifier.clickable { showLanguageDialog = true }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -436,41 +332,6 @@ fun ConfigTab(
         )
     }
 
-    if (showDnsDialog) {
-        val currentDns = viewModel.getPrivateDNS()
-        val externalScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-        DnsSelectionDialog(
-            currentDns = currentDns,
-            errorRes = dnsErrorRes,
-            isLoading = isApplyingDns,
-            onDismiss = { if (!isApplyingDns) showDnsDialog = false },
-            onApply = { host ->
-                recoveryGate.run {
-                    dnsErrorRes = null
-                    isApplyingDns = true
-                    scope.launch {
-                        val result = withTimeoutOrNull(15000.milliseconds) {
-                            val deferred = externalScope.async {
-                                viewModel.setPrivateDNS(host)
-                            }
-                            deferred.await()
-                        }
-                        isApplyingDns = false
-                        if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                            showDnsDialog = false
-                        } else {
-                            dnsErrorRes = when (result) {
-                                DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING -> R.string.dns_error_not_serving
-                                else -> R.string.dns_error_failure
-                            }
-                        }
-                    }
-                }
-            }
-        )
-    }
-
     if (showLanguageDialog) {
         LanguageSelectionDialog(
             onDismiss = { showLanguageDialog = false },
@@ -508,128 +369,6 @@ fun ConfigTab(
     }
 
     RecoveryGateDialog(recoveryGate)
-}
-
-@Composable
-fun DnsSelectionDialog(
-    currentDns: String?,
-    errorRes: Int? = null,
-    isLoading: Boolean = false,
-    onDismiss: () -> Unit,
-    onApply: (String) -> Unit
-) {
-    val options = listOf(
-        "Cloudflare" to "family.cloudflare-dns.com",
-        "AdGuard DNS" to "family.adguard-dns.com",
-        "CleanBrowsing" to "adult-filter-dns.cleanbrowsing.org"
-    )
-    
-    var selectedOption by remember { 
-        mutableStateOf(
-            when {
-                options.any { it.second == currentDns } -> currentDns
-                currentDns != null -> "custom"
-                else -> null
-            }
-        )
-    }
-    var customHost by remember { mutableStateOf(if (selectedOption == "custom") currentDns ?: "" else "") }
-
-    val isCustomValid = remember(customHost) {
-        customHost.matches(Regex("^([a-z0-9]+(-[a-z0-9]+)*\\.)+[a-z]{2,}\$"))
-    }
-
-    AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text(stringResource(R.string.dns_settings)) },
-        text = {
-            Column {
-                options.forEach { (name, host) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !isLoading) { selectedOption = host }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedOption == host,
-                            onClick = { selectedOption = host },
-                            enabled = !isLoading
-                        )
-                        Column(Modifier.padding(start = 8.dp)) {
-                            Text(name, fontWeight = FontWeight.Bold)
-                            Text(host, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isLoading) { selectedOption = "custom" }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = selectedOption == "custom",
-                        onClick = { selectedOption = "custom" },
-                        enabled = !isLoading
-                    )
-                    Text(stringResource(R.string.custom), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
-                }
-                if (selectedOption == "custom") {
-                    OutlinedTextField(
-                        value = customHost,
-                        onValueChange = { customHost = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        placeholder = { Text(stringResource(R.string.dns_host_hint)) },
-                        singleLine = true,
-                        enabled = !isLoading,
-                        isError = !isCustomValid && customHost.isNotEmpty(),
-                        supportingText = {
-                            if (!isCustomValid && customHost.isNotEmpty()) {
-                                Text(stringResource(R.string.invalid_dns_host))
-                            }
-                        }
-                    )
-                }
-                if (errorRes != null) {
-                    Text(
-                        text = stringResource(errorRes),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            val canApply = selectedOption != null && (selectedOption != "custom" || isCustomValid) && !isLoading
-            TextButton(
-                enabled = canApply,
-                onClick = { 
-                    val finalHost = when(selectedOption) {
-                        "custom" -> customHost
-                        else -> selectedOption
-                    }
-                    onApply(finalHost!!)
-                }
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(stringResource(R.string.apply))
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isLoading) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
 }
 
 @Composable

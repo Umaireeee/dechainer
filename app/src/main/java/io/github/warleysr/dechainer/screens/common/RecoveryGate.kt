@@ -20,7 +20,7 @@ import kotlinx.coroutines.delay
 /**
  * Gates a sensitive action behind the recovery-code dialog, unless a recovery session is already
  * active or no recovery code has been set yet (first run, before [SetupRecovery][io.github.warleysr.dechainer.screens.setup.SetupRecovery]).
- * Once the code is right, the configured access challenges run and only then does the session start.
+ * Once the code is right, the Tetris unlock delay runs (if enabled) and only then does the 10-minute session start.
  * Replaces the `pendingAction`/`showRecoveryDialog` pair every settings screen used to hand-roll.
  */
 class RecoveryGate(private val context: Context) {
@@ -69,7 +69,7 @@ class RecoveryGate(private val context: Context) {
     fun confirm(code: String): Boolean {
         val storedCode = SecurityManager.getRecoveryCode(context) ?: return true
         if (!SecurityManager.validateRecoveryCode(code, storedCode)) return false
-        if (SecurityManager.isSessionActive() || SecurityManager.getAccessChallenges(context).isEmpty()) {
+        if (SecurityManager.isSessionActive() || !SecurityManager.isTetrisUnlockEnabled(context)) {
             challengesDone()
         } else {
             isChallenging = true
@@ -120,7 +120,6 @@ fun rememberRecoveryGate(): RecoveryGate {
 
 @Composable
 fun RecoveryGateDialog(gate: RecoveryGate) {
-    val context = LocalContext.current
     if (gate.isDialogVisible) {
         RecoveryConfirmDialog(
             onConfirm = { code -> gate.confirm(code) },
@@ -133,8 +132,7 @@ fun RecoveryGateDialog(gate: RecoveryGate) {
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
             Surface(modifier = Modifier.fillMaxSize()) {
-                ChallengeRunner(
-                    challenges = remember { SecurityManager.getAccessChallenges(context) },
+                TetrisUnlock(
                     onDone = { gate.challengesDone() },
                     onGiveUp = { gate.dismiss() }
                 )
