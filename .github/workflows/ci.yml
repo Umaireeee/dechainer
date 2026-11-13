@@ -10,10 +10,6 @@ on:
         description: "Optional: also build a signed APK and publish a GitHub release with this tag (e.g. v1.12.0)"
         required: false
         default: ""
-      delete_release_tags:
-        description: "Optional, maintenance only: comma-separated release tags to delete (runs nothing else)"
-        required: false
-        default: ""
 
 concurrency:
   # Separate groups per trigger so pushing never cancels a manual release run (and vice versa).
@@ -31,7 +27,6 @@ concurrency:
 jobs:
   build:
     name: Build APKs
-    if: github.event_name != 'workflow_dispatch' || inputs.delete_release_tags == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +52,6 @@ jobs:
 
   unit:
     name: Unit tests
-    if: github.event_name != 'workflow_dispatch' || inputs.delete_release_tags == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +85,6 @@ jobs:
 
   emulator:
     name: Emulator tests
-    if: github.event_name != 'workflow_dispatch' || inputs.delete_release_tags == ''
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -185,23 +178,3 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: release/*.apk
           generate_release_notes: true
-
-  delete_releases:
-    name: Delete old releases
-    if: github.event_name == 'workflow_dispatch' && inputs.delete_release_tags != ''
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Delete the listed releases (never the newest one)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAGS: ${{ inputs.delete_release_tags }}
-        run: |
-          latest=$(gh release view --repo "$REPO" --json tagName --jq .tagName)
-          echo "Newest release (kept): $latest"
-          for tag in $(echo "$TAGS" | tr ',' ' '); do
-            if [ "$tag" = "$latest" ]; then echo "::warning::Not deleting the newest release $tag"; continue; fi
-            if gh release delete "$tag" --repo "$REPO" --yes; then echo "Deleted release $tag"; else echo "::warning::Could not delete $tag"; fi
-          done
