@@ -13,7 +13,6 @@ data class AppItem(
     val reopeningSeconds: Int = 0,
     val timeWindows: List<TimeWindow> = emptyList(),
     val isSuspended: Boolean = false,
-    val hasExplicitContent: Boolean = false,
     /** Has an icon in the launcher, i.e. something the user can actually open. */
     val isLaunchable: Boolean = true
 )

@@ -155,7 +155,8 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
 
     if (picking) {
         TargetPickerDialog(
-            apps = viewModel.apps,
+            // Only apps with a launcher icon: the rest are background components nobody opens.
+            apps = viewModel.apps.filter { it.isLaunchable },
             groups = viewModel.groups,
             onPick = { key -> picking = false; editingKey = key },
             onDismiss = { picking = false }

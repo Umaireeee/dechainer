@@ -56,7 +56,6 @@ object AppRepository {
         val limitsPrefs = dailyLimitsPrefs
         val weeklyPrefs = weeklyLimitsPrefs
         val reopenPrefs = context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE)
-        val ratingsPrefs = context.getSharedPreferences("app_ratings", Context.MODE_PRIVATE)
         val timeWindowsPrefs = context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
 
         val installedApps = packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES)
@@ -86,7 +85,6 @@ object AppRepository {
                     reopeningSeconds = reopenPrefs.getInt(packageName, 0),
                     timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
                     isSuspended = isSuspended,
-                    hasExplicitContent = ratingsPrefs.getBoolean(packageName, false),
                     isLaunchable = packageName in launchable
                 )
             }

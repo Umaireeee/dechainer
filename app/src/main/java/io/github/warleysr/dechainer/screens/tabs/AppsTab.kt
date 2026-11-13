@@ -610,7 +610,6 @@ fun AppRow(
         }
         if (app.isHidden) add(stringResource(R.string.blocked))
         if (app.isUninstallBlocked) add(stringResource(R.string.protected_label))
-        if (app.hasExplicitContent) add(stringResource(R.string.explicit_content))
     }
 
     ListItem(
