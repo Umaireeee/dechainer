@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.warleysr.dechainer"
         minSdk = 30
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.12.5"
+        versionCode = 29
+        versionName = "1.12.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

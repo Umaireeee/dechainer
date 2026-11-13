@@ -66,6 +66,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --build-cache testDebugUnitTest --stacktrace
+      - name: Lint (Android's own static checks)
+        continue-on-error: true
+        run: ./gradlew --build-cache lintDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.txt
+          retention-days: 7
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

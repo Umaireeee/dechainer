@@ -139,6 +139,10 @@
         </service>
 
         <receiver
+            android:name=".data.AccessibilityWatchdogReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".notifications.FocusSystemReceiver"
             android:exported="true">
             <intent-filter>

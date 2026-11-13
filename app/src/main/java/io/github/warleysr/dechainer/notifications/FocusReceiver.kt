@@ -50,6 +50,8 @@ class FocusSystemReceiver : BroadcastReceiver() {
             "android.intent.action.TIME_SET" -> {
                 FocusMode.sync(context)
                 io.github.warleysr.dechainer.data.FocusScheduleManager.reschedule(context)
+                // After a reboot or an update the phone may leave advanced blocking switched off.
+                io.github.warleysr.dechainer.data.AccessibilityWatchdog.onSystemEvent(context)
             }
         }
     }

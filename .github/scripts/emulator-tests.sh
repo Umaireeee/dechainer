@@ -68,8 +68,9 @@ fi
 adb shell dumpsys accessibility | grep -q "$PKG.DechainerAccessibilityService" || fail "Service was unbound during the smoke test"
 echo "Smoke test passed"
 
-echo "== 3) Instrumented tests"
+echo "== 3) Instrumented tests (the watchdog test needs the secure-settings permission, as the app has in real use)"
 adb shell settings delete secure enabled_accessibility_services
+adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
 out=$(adb shell am instrument -w "$PKG.test/androidx.test.runner.AndroidJUnitRunner")
 echo "$out" | tail -20
 echo "$out" > emulator-logs/instrumentation.txt
