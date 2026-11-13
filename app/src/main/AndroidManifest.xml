@@ -111,6 +111,10 @@
         </receiver>
 
         <receiver
+            android:name=".data.AccessibilityWatchdogReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".notifications.ApkUpdateResultReceiver"
             android:exported="false" />
 

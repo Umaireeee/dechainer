@@ -32,6 +32,8 @@ import io.github.warleysr.dechainer.utils.LocaleUtils
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import rikka.shizuku.Shizuku
+import io.github.warleysr.dechainer.data.AccessibilityWatchdog
+import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -58,6 +60,13 @@ fun ConfigTab(
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
+
+    LaunchedEffect(Unit) {
+        // Phones that already had advanced blocking on before the watchdog existed get its permission here.
+        if (Shizuku.pingBinder() && DeviceOwnerRepository.checkShizukuPermission()) {
+            AccessibilityWatchdog.grantPermissionViaShizuku(context)
+        }
+    }
 
     var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
     LaunchedEffect(Unit) {
