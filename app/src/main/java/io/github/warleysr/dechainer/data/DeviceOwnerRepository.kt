@@ -423,6 +423,10 @@ object DeviceOwnerRepository {
     }
 
     fun changeAccessibilityPermission(grant: Boolean) {
+        // Remember what the user chose: only a deliberate "off" (behind the recovery gate) stops the
+        // watchdog from bringing the service back.
+        AccessibilityWatchdog.setWanted(context, grant)
+        if (grant) AccessibilityWatchdog.grantPermissionViaShizuku(context)
         var services = getAccessibilityServices()
         val isGranted = isAccessibilityGranted()
 

@@ -25,6 +25,7 @@ import io.github.warleysr.dechainer.activities.AccessibilityRequestActivity
 import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
 import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
 import io.github.warleysr.dechainer.activities.TimeUpActivity
+import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.AppGroupRepository
 import io.github.warleysr.dechainer.data.AppRepository
@@ -54,6 +55,19 @@ import kotlin.math.max
 class DechainerAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Runs [block] and swallows any exception. An uncaught exception on the main thread kills the
+     * process, and Android then treats the accessibility service as crashed and leaves it switched
+     * off, so one bad edge case would silently end all blocking.
+     */
+    private inline fun guarded(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Timber.e(e, "$what failed")
+        }
+    }
     private var currentPackage: String? = null
     private var sessionStartTime: Long = 0
     private var lastCheckDate: String = LocalDate.now().toString()
@@ -78,11 +92,13 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            guarded("package change") {
             if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
             val packageName = intent.data?.encodedSchemeSpecificPart ?: return
             if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
                 AppRepository.reapplyHiddenIfNeeded(packageName)
             }
+                    }
         }
     }
 
@@ -90,6 +106,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            guarded("screen state change") {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_OFF -> {
                     lastForegroundPackage = currentPackage
@@ -104,10 +121,12 @@ class DechainerAccessibilityService : AccessibilityService() {
                     startTracking(it)
                 }
             }
+                    }
         }
     }
 
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        guarded("preference change") {
         when (prefs) {
             limitPrefs, weeklyLimitPrefs -> {
                 if (key == currentPackage) {
@@ -136,19 +155,20 @@ class DechainerAccessibilityService : AccessibilityService() {
                 if (key == "impulse_block_active") syncImpulseSuspension()
             }
         }
+            }
     }
 
-    private val blockRunnable = Runnable { executeBlocking() }
+    private val blockRunnable = Runnable { guarded("limit block") { executeBlocking() } }
 
     // The allowed span ending doesn't always mean "blocked": the next one may start right away
     // (midnight, or two windows that touch), so the whole check runs again.
-    private val windowEndRunnable = Runnable { recheckWindows() }
+    private val windowEndRunnable = Runnable { guarded("window end check") { recheckWindows() } }
 
     // Saves the running session every few minutes so a killed service loses at most that much usage.
     // Only scheduled while a limited app is open, so it adds no wake-ups the rest of the time.
     private val checkpointRunnable = object : Runnable {
         override fun run() {
-            saveSessionUsage()
+            guarded("usage checkpoint") { saveSessionUsage() }
             if (currentPackage != null) handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
         }
     }
@@ -185,6 +205,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isRunning = true
         disablingService = false
+        // The service is on and the user wants it on: from here on the watchdog keeps it that way.
+        AccessibilityWatchdog.setWanted(applicationContext, true)
+        AccessibilityWatchdog.schedulePeriodic(applicationContext)
 
         limitPrefs = getSharedPreferences(AppTimeLimits.PREFS_NAME, MODE_PRIVATE)
         weeklyLimitPrefs = getSharedPreferences(AppTimeLimits.WEEKLY_PREFS_NAME, MODE_PRIVATE)
@@ -209,12 +232,16 @@ class DechainerAccessibilityService : AccessibilityService() {
         // The un-suspend above may have released apps that are in a running downtime window.
         DowntimeManager.sync(applicationContext)
 
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
-        if (dpm.isAdminActive(admin)) {
-            dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
+        guarded("clearing the install restriction") {
+            val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
+            if (dpm.isDeviceOwnerApp(packageName)) {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
+            }
         }
-        ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(applicationContext)
+        guarded("restoring unknown-sources restrictions") {
+            ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(applicationContext)
+        }
 
         registerReceiver(packageReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -248,31 +275,48 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        unregisterReceiver(packageReceiver)
-        unregisterReceiver(screenReceiver)
-        limitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        weeklyLimitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        timeWindowPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
-        securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        // First, so the app's toggle is truthful even if some cleanup below fails.
+        isRunning = false
+        // Each step is guarded on its own: one failure must not skip the rest, and an exception
+        // escaping here would count as a crash of the service.
+        guarded("unregistering receivers") {
+            unregisterReceiver(packageReceiver)
+            unregisterReceiver(screenReceiver)
+        }
+        guarded("unregistering preference listeners") {
+            limitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            weeklyLimitPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            timeWindowPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        }
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
-        stopTrackingAndSave()
-        isRunning = false
+        guarded("saving usage") { stopTrackingAndSave() }
 
         if (!disablingService) {
-            suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
-
-            val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
-            if (dpm.isAdminActive(admin)) {
-                dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
+            guarded("suspending apps") {
+                suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
             }
 
-            startActivity(
-                Intent(this@DechainerAccessibilityService, AccessibilityRequestActivity::class.java)
-                    .apply { flags = FLAG_ACTIVITY_NEW_TASK }
-            )
+            guarded("adding the install restriction") {
+                val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
+                if (dpm.isDeviceOwnerApp(packageName)) {
+                    dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
+                }
+            }
+
+            // The service stopped without being switched off through the app (the phone killed it,
+            // it crashed, or an update replaced it): ask for it to be brought back.
+            guarded("scheduling the restart") { AccessibilityWatchdog.scheduleSoon(applicationContext) }
+
+            guarded("showing the accessibility request") {
+                startActivity(
+                    Intent(this@DechainerAccessibilityService, AccessibilityRequestActivity::class.java)
+                        .apply { flags = FLAG_ACTIVITY_NEW_TASK }
+                )
+            }
         }
 
         return super.onUnbind(intent)
@@ -285,6 +329,10 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        guarded("accessibility event") { handleAccessibilityEvent(event) }
+    }
+
+    private fun handleAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (event.packageName == packageName) return
 
@@ -384,8 +432,14 @@ class DechainerAccessibilityService : AccessibilityService() {
         val dpm =
             applicationContext.getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(applicationContext, DechainerDeviceAdminReceiver::class.java)
-        if (!dpm.isAdminActive(admin)) return
-        dpm.setPackagesSuspended(admin, packages, suspend)
+        // Suspending apps needs device-owner rights; an admin that isn't the owner would throw.
+        if (!dpm.isAdminActive(admin) || !dpm.isDeviceOwnerApp(applicationContext.packageName)) return
+        try {
+            dpm.setPackagesSuspended(admin, packages, suspend)
+        } catch (e: SecurityException) {
+            Timber.e(e, "Could not change app suspension")
+            return
+        }
         if (suspend && reason != null) {
             packages.forEach { pkg ->
                 SuspensionLogRepository.log(applicationContext, pkg, reason, details)
