@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -52,6 +53,25 @@ private sealed interface ScheduleTarget {
 
     data class Group(val group: AppGroup) : ScheduleTarget {
         override val windows get() = group.timeWindows
+    }
+}
+
+/** The Schedule tab: allowed hours (blocked outside them) and downtime (suspended during them). */
+@Composable
+fun ScheduleTab(navViewModel: NavigationViewModel = viewModel()) {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Opening an app's schedule from the Apps screen lands on the allowed-hours editor.
+    LaunchedEffect(navViewModel.pendingScheduleKey) {
+        if (navViewModel.pendingScheduleKey != null) tab = 0
+    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = tab) {
+            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.schedule_tab_hours)) })
+            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.schedule_tab_downtime)) })
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            if (tab == 0) ScheduleScreen() else DowntimeScreen()
+        }
     }
 }
 
@@ -251,13 +271,13 @@ private fun TargetIcon(target: ScheduleTarget) {
 }
 
 @Composable
-private fun AppIcon(app: AppItem) {
+internal fun AppIcon(app: AppItem) {
     val bitmap = remember(app.packageName) { app.icon.toBitmap(96, 96).asImageBitmap() }
     Image(bitmap = bitmap, contentDescription = null, modifier = Modifier.size(40.dp))
 }
 
 @Composable
-private fun daysSummary(days: Set<Int>): String {
+internal fun daysSummary(days: Set<Int>): String {
     val weekdays = setOf(1, 2, 3, 4, 5)
     val weekend = setOf(6, 7)
     return when {
@@ -342,7 +362,7 @@ private fun PickerRow(onClick: () -> Unit, icon: @Composable () -> Unit, title: 
     }
 }
 
-private data class Preset(val labelRes: Int, val window: TimeWindow)
+internal data class Preset(val labelRes: Int, val window: TimeWindow)
 
 private val PRESETS = listOf(
     Preset(R.string.schedule_preset_evenings, TimeWindow(18 * 60, 22 * 60)),
@@ -437,7 +457,7 @@ private fun ScheduleEditor(
 }
 
 @Composable
-private fun SlotCard(
+internal fun SlotCard(
     window: TimeWindow,
     showError: Boolean,
     onChange: (TimeWindow) -> Unit,

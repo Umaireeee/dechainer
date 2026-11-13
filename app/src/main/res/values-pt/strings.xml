@@ -396,6 +396,31 @@
     <string name="config_section_security">Segurança</string>
     <string name="config_section_general">Geral</string>
     <string name="system_restrictions_desc">Bloqueie VPN, redefinição de fábrica, instalação de apps e mais</string>
+    <string name="group_suggestion_social">Redes sociais</string>
+    <string name="group_suggestion_games">Jogos</string>
+    <string name="group_suggestion_video">Vídeos</string>
+    <string name="suspension_reason_downtime">Pausa programada</string>
+    <string name="group_suggestion_title">Criar um grupo “%1$s”?</string>
+    <string name="group_suggestion_desc">Junte estes apps para que um limite ou horário valha para todos: %1$s</string>
+    <string name="group_suggestion_more">%1$s e mais %2$d</string>
+    <string name="group_suggestion_create">Criar grupo</string>
+    <string name="group_suggestion_dismiss">Agora não</string>
+    <string name="schedule_tab_hours">Horários permitidos</string>
+    <string name="schedule_tab_downtime">Pausa programada</string>
+    <string name="downtime_empty_title">Nenhuma pausa ainda</string>
+    <string name="downtime_empty_desc">Suspenda apps enquanto uma janela estiver ativa, como na hora de dormir ou no trabalho. Eles param por completo, notificações incluídas, e voltam quando termina.</string>
+    <string name="downtime_add">Adicionar pausa</string>
+    <string name="downtime_edit">Editar pausa</string>
+    <string name="downtime_default_name">Pausa programada</string>
+    <string name="downtime_name">Nome</string>
+    <string name="downtime_choose_apps">Escolher apps e grupos</string>
+    <string name="downtime_chosen">%1$d grupos, %2$d apps</string>
+    <string name="downtime_error_no_apps">Escolha pelo menos um app ou grupo.</string>
+    <string name="downtime_editor_hint">Os apps escolhidos ficam suspensos nestes horários, nos dias selecionados, e voltam quando terminam.</string>
+    <string name="downtime_preset_bedtime">Hora de dormir</string>
+    <string name="downtime_preset_work">Horário de trabalho</string>
+    <string name="downtime_preset_weekend">Fins de semana</string>
+    <string name="downtime_delete">Excluir pausa</string>
 </resources>
 
 

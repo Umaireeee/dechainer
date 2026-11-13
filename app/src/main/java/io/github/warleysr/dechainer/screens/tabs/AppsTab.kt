@@ -64,7 +64,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import io.github.warleysr.dechainer.data.GroupSuggestionStore
 import io.github.warleysr.dechainer.data.UsageStatsRepository
+import io.github.warleysr.dechainer.models.GroupSuggestion
+import io.github.warleysr.dechainer.models.GroupSuggestions
 import io.github.warleysr.dechainer.models.AppSection
 import io.github.warleysr.dechainer.models.AppSections
 import kotlinx.coroutines.CoroutineScope
@@ -124,6 +127,8 @@ fun AppsScreen(
     val recoveryGate = rememberRecoveryGate()
     var showMenu by remember { mutableStateOf(false) }
     val selecting = selection.isNotEmpty()
+    val appContext = LocalContext.current
+    var dismissedSuggestions by remember { mutableStateOf(GroupSuggestionStore.dismissed(appContext)) }
 
     BackHandler(enabled = selecting) { selection.clear() }
 
@@ -158,6 +163,9 @@ fun AppsScreen(
     }
 
     val searching = searchQuery.isNotBlank()
+    val suggestion = remember(viewModel.apps, viewModel.groups, dismissedSuggestions) {
+        GroupSuggestions.suggest(viewModel.apps, viewModel.groups, dismissedSuggestions).firstOrNull()
+    }
     val sections = remember(viewModel.apps, viewModel.groups, searchQuery, filter, weeklyUsage) {
         val matching = viewModel.apps.filter { app ->
             (app.name.contains(searchQuery, ignoreCase = true) ||
@@ -264,6 +272,24 @@ fun AppsScreen(
                                 Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             )
                         })
+                    }
+                }
+                if (suggestion != null && !searching && !selecting && filter == AppFilter.ALL) {
+                    item(key = "group_suggestion") {
+                        GroupSuggestionCard(
+                            suggestion = suggestion,
+                            onCreate = {
+                                // A group with no limit or schedule restricts nothing, so no code is needed.
+                                val group = viewModel.createGroup(appContext.getString(suggestion.nameRes))
+                                viewModel.setGroupPackages(group.id, suggestion.apps.map { it.packageName }.toSet())
+                                // Straight to the group editor, to give it a limit.
+                                showEditGroupDialog = viewModel.groups.firstOrNull { it.id == group.id }
+                            },
+                            onDismiss = {
+                                GroupSuggestionStore.dismiss(appContext, suggestion.id)
+                                dismissedSuggestions = GroupSuggestionStore.dismissed(appContext)
+                            }
+                        )
                     }
                 }
                 if (sections.isEmpty()) {
@@ -488,6 +514,27 @@ private val COLLAPSIBLE_SECTIONS = setOf(AppSection.RARELY_USED, AppSection.NEVE
 
 private fun toggleSelection(selection: MutableList<String>, packageName: String) {
     if (!selection.remove(packageName)) selection.add(packageName)
+}
+
+@Composable
+private fun GroupSuggestionCard(suggestion: GroupSuggestion, onCreate: () -> Unit, onDismiss: () -> Unit) {
+    val names = suggestion.apps.take(4).joinToString(", ") { it.name }
+    val extra = suggestion.apps.size - 4
+    val list = if (extra > 0) stringResource(R.string.group_suggestion_more, names, extra) else names
+    Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.group_suggestion_title, stringResource(suggestion.nameRes)),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(stringResource(R.string.group_suggestion_desc, list), style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onCreate) { Text(stringResource(R.string.group_suggestion_create)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.group_suggestion_dismiss)) }
+            }
+        }
+    }
 }
 
 @Composable

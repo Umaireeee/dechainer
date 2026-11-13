@@ -30,6 +30,7 @@ import io.github.warleysr.dechainer.data.AppGroupRepository
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.AppTimeLimits
 import io.github.warleysr.dechainer.data.AppTimeWindows
+import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.Span
@@ -205,6 +206,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         // Must run after the un-suspend above, which would otherwise release a package that is
         // still serving an impulse block.
         syncImpulseSuspension()
+        // The un-suspend above may have released apps that are in a running downtime window.
+        DowntimeManager.sync(applicationContext)
 
         val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
@@ -365,9 +368,11 @@ class DechainerAccessibilityService : AccessibilityService() {
         val suspended = SecurityManager.getActiveImpulseSuspension(ctx)
         if (suspended.isEmpty()) return
 
-        suspendPackages(suspended.toTypedArray(), false)
+        // Apps in a running downtime window stay suspended; downtime gives those back itself.
+        val releasable = suspended - DowntimeManager.heldPackages(ctx)
+        if (releasable.isNotEmpty()) suspendPackages(releasable.toTypedArray(), false)
         SecurityManager.clearActiveImpulseSuspension(ctx)
-        Timber.d("Impulse block: released ${suspended.size} app(s)")
+        Timber.d("Impulse block: released ${releasable.size} app(s)")
     }
 
     private fun suspendPackages(

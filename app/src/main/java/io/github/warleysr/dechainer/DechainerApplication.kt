@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
+import io.github.warleysr.dechainer.data.DowntimeManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,5 +67,8 @@ class DechainerApplication : Application() {
         applicationScope.launch {
             DeviceOwnerRepository.restoreStuckUserSetupComplete()
         }
+
+        // Catches up after a force stop, which also cancels the downtime alarm.
+        applicationScope.launch { DowntimeManager.sync(this@DechainerApplication) }
     }
 }

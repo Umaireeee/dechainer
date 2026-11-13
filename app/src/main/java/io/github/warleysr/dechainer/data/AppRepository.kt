@@ -85,12 +85,19 @@ object AppRepository {
                     reopeningSeconds = reopenPrefs.getInt(packageName, 0),
                     timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
                     isSuspended = isSuspended,
-                    isLaunchable = packageName in launchable
+                    isLaunchable = packageName in launchable,
+                    category = appCategory(appInfo)
                 )
             }
             .sortedBy { it.name.lowercase() }
             .toList()
     }
+
+    @Suppress("DEPRECATION")
+    private fun appCategory(info: ApplicationInfo): Int =
+        if (info.category == ApplicationInfo.CATEGORY_GAME || (info.flags and ApplicationInfo.FLAG_IS_GAME) != 0)
+            ApplicationInfo.CATEGORY_GAME
+        else info.category
 
     fun invalidateCache() {
         synchronized(cacheLock) {

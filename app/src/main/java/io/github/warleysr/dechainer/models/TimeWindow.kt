@@ -69,7 +69,8 @@ data class TimeWindow(
         fun isAllowed(windows: List<TimeWindow>, day: Int, minute: Int): Boolean =
             allowedSpans(listOf(windows), day)?.any { it.contains(minute) } ?: true
 
-        private fun merge(spans: List<Span>): List<Span> {
+        /** Sorted copy of [spans] with overlapping or touching ones joined. */
+        fun merge(spans: List<Span>): List<Span> {
             val result = mutableListOf<Span>()
             for (span in spans.sortedBy { it.start }) {
                 val last = result.lastOrNull()

@@ -396,6 +396,31 @@
     <string name="config_section_security">Security</string>
     <string name="config_section_general">General</string>
     <string name="system_restrictions_desc">Block VPN, factory reset, app installs and more</string>
+    <string name="group_suggestion_social">Social</string>
+    <string name="group_suggestion_games">Games</string>
+    <string name="group_suggestion_video">Video</string>
+    <string name="suspension_reason_downtime">Downtime</string>
+    <string name="group_suggestion_title">Create a “%1$s” group?</string>
+    <string name="group_suggestion_desc">Put these together so one limit or schedule covers all of them: %1$s</string>
+    <string name="group_suggestion_more">%1$s and %2$d more</string>
+    <string name="group_suggestion_create">Create group</string>
+    <string name="group_suggestion_dismiss">Not now</string>
+    <string name="schedule_tab_hours">Allowed hours</string>
+    <string name="schedule_tab_downtime">Downtime</string>
+    <string name="downtime_empty_title">No downtime yet</string>
+    <string name="downtime_empty_desc">Suspend apps while a window runs, such as at bedtime or during work. They stop completely, notifications included, and come back when it ends.</string>
+    <string name="downtime_add">Add downtime</string>
+    <string name="downtime_edit">Edit downtime</string>
+    <string name="downtime_default_name">Downtime</string>
+    <string name="downtime_name">Name</string>
+    <string name="downtime_choose_apps">Choose apps and groups</string>
+    <string name="downtime_chosen">%1$d groups, %2$d apps</string>
+    <string name="downtime_error_no_apps">Choose at least one app or group.</string>
+    <string name="downtime_editor_hint">The chosen apps are suspended during these times, on the days selected, and restored when they end.</string>
+    <string name="downtime_preset_bedtime">Bedtime</string>
+    <string name="downtime_preset_work">Work hours</string>
+    <string name="downtime_preset_weekend">Weekends</string>
+    <string name="downtime_delete">Delete downtime</string>
 </resources>
 
 
