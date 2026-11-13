@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
                                 when (currentScreen) {
                                     "restrictions" -> RestrictionsTab()
                                     "apps" -> AppsTab()
-                                    "schedule" -> ScheduleScreen()
+                                    "schedule" -> ScheduleTab()
                                     "config" -> ConfigTab()
                                     "setup_device_owner" -> SetupDeviceOwnerPrivileges()
                                     "activity_blocker" -> ActivityBlockerScreen()

@@ -56,7 +56,6 @@ object AppRepository {
         val limitsPrefs = dailyLimitsPrefs
         val weeklyPrefs = weeklyLimitsPrefs
         val reopenPrefs = context.getSharedPreferences("reopen_times", Context.MODE_PRIVATE)
-        val ratingsPrefs = context.getSharedPreferences("app_ratings", Context.MODE_PRIVATE)
         val timeWindowsPrefs = context.getSharedPreferences(AppTimeWindows.PREFS_NAME, Context.MODE_PRIVATE)
 
         val installedApps = packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES)
@@ -86,13 +85,19 @@ object AppRepository {
                     reopeningSeconds = reopenPrefs.getInt(packageName, 0),
                     timeWindows = AppTimeWindows.decode(timeWindowsPrefs.getString(packageName, null)),
                     isSuspended = isSuspended,
-                    hasExplicitContent = ratingsPrefs.getBoolean(packageName, false),
-                    isLaunchable = packageName in launchable
+                    isLaunchable = packageName in launchable,
+                    category = appCategory(appInfo)
                 )
             }
             .sortedBy { it.name.lowercase() }
             .toList()
     }
+
+    @Suppress("DEPRECATION")
+    private fun appCategory(info: ApplicationInfo): Int =
+        if (info.category == ApplicationInfo.CATEGORY_GAME || (info.flags and ApplicationInfo.FLAG_IS_GAME) != 0)
+            ApplicationInfo.CATEGORY_GAME
+        else info.category
 
     fun invalidateCache() {
         synchronized(cacheLock) {

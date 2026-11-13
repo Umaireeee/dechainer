@@ -10,7 +10,8 @@ enum class SuspensionReason(val titleResId: Int) {
     IMPULSE_LOCK(R.string.suspension_reason_impulse),
     FOCUS_MODE(R.string.suspension_reason_focus),
     ACCESSIBILITY_DISABLED(R.string.suspension_reason_accessibility_disabled),
-    MANUAL(R.string.suspension_reason_manual)
+    MANUAL(R.string.suspension_reason_manual),
+    DOWNTIME(R.string.suspension_reason_downtime)
 }
 
 data class SuspensionLogEntry(

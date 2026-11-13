@@ -72,6 +72,7 @@ Both are granted once, during setup, through [Shizuku](https://shizuku.rikka.app
 | 🛡️ **Device Owner restrictions** | Block VPNs, private DNS changes, factory reset, app installs, USB debugging and dozens more `UserManager` policies. |
 | ⏱️ **Time limits** | Daily limits per app or group, per weekday, with a lock screen when time is up and an optional cooldown before reopening. |
 | 🗓️ **Schedule** | Pick the hours and days an app can be used with a clock picker. Outside them it is blocked. |
+| 🌙 **Downtime** | Suspend apps or whole groups on a schedule, such as at bedtime. They stop completely and come back when it ends. |
 | ⏸️ **Suspend** | One tap to suspend an app, or select several and suspend or group them together. |
 | 🚧 **Activity blocking** | Block individual screens inside an app, such as a Reels tab. |
 | 🚨 **Impulse lock** | A panic button on the lock screen that locks Déchaîner (and chosen apps) for 15 minutes to 6 hours, resistant to clock changes. |
@@ -85,7 +86,7 @@ Both are granted once, during setup, through [Shizuku](https://shizuku.rikka.app
   - **With rules:** apps that already have a limit, schedule, suspension or group rule.
   - **Most used this week**, then **Rarely used**, **Not used this week** and **Other system tools** (collapsed).
 - Search, filter chips (All, Limited, Suspended, System), a one-tap suspend switch on every row, and long-press multi-select to suspend or group several apps at once.
-- Groups share a limit and a schedule across their apps.
+- Groups share a limit and a schedule across their apps. Déchaîner suggests groups from your installed apps (social, games, video) and creates one in a tap.
 - Ranking needs usage access. Déchaîner tries to grant it through Shizuku, and otherwise links to the Settings screen. Without it, apps are listed A–Z.
 
 </details>
@@ -106,6 +107,17 @@ Both are granted once, during setup, through [Shizuku](https://shizuku.rikka.app
 - Quick presets: Evenings, After work, Weekends.
 - Every slot has an on/off switch. An app with slots but none for today is closed all day.
 - Making a schedule stricter applies after a short undo window; allowing more time needs the recovery code.
+
+</details>
+
+<details>
+<summary><b>Downtime</b></summary>
+
+- A downtime rule suspends chosen apps and groups while its windows run, on the days you pick, and restores them afterwards. Unlike allowed hours, which block an app when you open it, suspended apps stop entirely and their notifications stop too.
+- Windows use the same clock picker, days and on/off switches as the schedule; a window that ends before it starts runs past midnight. Presets: Bedtime, Work hours, Weekends.
+- It costs no battery while idle: one exact alarm is set for the next start or end. It is re-armed after a reboot, an update or a clock change.
+- Downtime only gives back the apps it suspended itself, so it never ends a suspension you made by hand or one from the impulse lock.
+- Shortening a window, dropping a day or removing apps needs the recovery code; making downtime stricter applies after a short undo window.
 
 </details>
 

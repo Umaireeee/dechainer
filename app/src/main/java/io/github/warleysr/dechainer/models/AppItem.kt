@@ -1,5 +1,6 @@
 package io.github.warleysr.dechainer.models
 
+import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
 
 data class AppItem(
@@ -13,7 +14,8 @@ data class AppItem(
     val reopeningSeconds: Int = 0,
     val timeWindows: List<TimeWindow> = emptyList(),
     val isSuspended: Boolean = false,
-    val hasExplicitContent: Boolean = false,
     /** Has an icon in the launcher, i.e. something the user can actually open. */
-    val isLaunchable: Boolean = true
+    val isLaunchable: Boolean = true,
+    /** [ApplicationInfo.category], with games (which may only set the old game flag) folded in. */
+    val category: Int = ApplicationInfo.CATEGORY_UNDEFINED
 )

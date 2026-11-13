@@ -96,6 +96,8 @@ object AppGroupRepository {
     private fun persist(groups: List<AppGroup>) {
         prefs().edit { putString(KEY_GROUPS, encode(groups)) }
         cachedGroups = groups
+        // A rule can cover a whole group, so a membership change can change what is suspended.
+        DowntimeManager.sync(context)
     }
 
     private fun encode(groups: List<AppGroup>): String {
