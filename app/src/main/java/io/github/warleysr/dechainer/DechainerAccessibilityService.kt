@@ -325,14 +325,14 @@ class DechainerAccessibilityService : AccessibilityService() {
             pendingLeaves.clear()
         }
 
-        if (className.contains("Activity", ignoreCase = true)) {
-            addLog(newPackage, className)
-            val blockedActivities = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
-                .getStringSet("blocked_activities", emptySet()) ?: emptySet()
+        // Every screen is logged, not only classes named "...Activity": Settings pages are often
+        // "...SubSettings", so the blocker has to see them too.
+        addLog(newPackage, className)
+        val blockedActivities = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
+            .getStringSet("blocked_activities", emptySet()) ?: emptySet()
 
-            if (blockedActivities.contains(className))
-                performGlobalAction(GLOBAL_ACTION_BACK)
-        }
+        if (blockedActivities.contains(className))
+            performGlobalAction(GLOBAL_ACTION_BACK)
     }
 
     /**
