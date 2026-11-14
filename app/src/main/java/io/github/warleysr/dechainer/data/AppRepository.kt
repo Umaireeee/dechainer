@@ -176,6 +176,7 @@ object AppRepository {
         dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended)
         updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
         if (suspended) {
+            BlockSuspensionManager.forget(context, packageName)
             SuspensionLogRepository.log(context, packageName, SuspensionReason.MANUAL)
         }
     }

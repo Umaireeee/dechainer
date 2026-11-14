@@ -47,7 +47,8 @@ object DowntimeManager {
 
             // The impulse lock may hold the same apps; leave those to it.
             val impulse = SecurityManager.getActiveImpulseSuspension(context)
-            val release = plan.release.filterNot { it in impulse }
+            val blocked = BlockSuspensionManager.heldPackages(context)
+            val release = plan.release.filterNot { it in impulse || it in blocked }
             if (release.isNotEmpty()) dpm.setPackagesSuspended(admin, release.toTypedArray(), false)
             if (plan.suspend.isNotEmpty()) {
                 dpm.setPackagesSuspended(admin, plan.suspend.toTypedArray(), true)
