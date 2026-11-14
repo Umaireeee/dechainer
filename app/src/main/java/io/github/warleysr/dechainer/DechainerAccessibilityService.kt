@@ -580,7 +580,11 @@ class DechainerAccessibilityService : AccessibilityService() {
             intent.putExtra("limit", if (reopening) remainingSeconds else displayLimit)
         }
 
-        if (!reopening) BlockSuspensionManager.suspend(applicationContext, pkg, outsideWindow)
+        // Schedule and time-limit blocks suspend the app silently, with no blocking screen.
+        if (!reopening) {
+            BlockSuspensionManager.suspend(applicationContext, pkg, outsideWindow)
+            return
+        }
 
         startActivity(intent)
     }
