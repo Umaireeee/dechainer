@@ -32,6 +32,7 @@ import io.github.warleysr.dechainer.data.AppTimeLimits
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BlockSuspensionManager
 import io.github.warleysr.dechainer.data.DowntimeManager
+import io.github.warleysr.dechainer.data.MusicLimitTracker
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.Span
@@ -96,10 +97,13 @@ class DechainerAccessibilityService : AccessibilityService() {
                     lastForegroundPackage = currentPackage
                     stopTrackingAndSave(screenOff = true)
                     currentPackage = null
+                    foregroundPackage = null
+                    MusicLimitTracker.onForegroundChanged(applicationContext)
                 }
 
                 Intent.ACTION_SCREEN_ON -> lastForegroundPackage?.let {
                     currentPackage = it
+                    foregroundPackage = it
                     sessionStartTime = SystemClock.elapsedRealtime()
                     checkDateReset()
                     startTracking(it)
@@ -157,6 +161,10 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        /** The app in front right now, or null while the screen is off. Read by [MusicLimitTracker]. */
+        @Volatile
+        var foregroundPackage: String? = null
+
         private val CHECKPOINT_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
 
         var isRunning by mutableStateOf(false)
@@ -304,6 +312,8 @@ class DechainerAccessibilityService : AccessibilityService() {
             stopTrackingAndSave()
             pendingLeaves.remove(newPackage)
             currentPackage = newPackage
+            foregroundPackage = newPackage
+            MusicLimitTracker.onForegroundChanged(applicationContext)
             sessionStartTime = SystemClock.elapsedRealtime()
             checkDateReset()
             startTracking(newPackage)
