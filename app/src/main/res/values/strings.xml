@@ -400,6 +400,8 @@
     <string name="group_suggestion_games">Games</string>
     <string name="group_suggestion_video">Video</string>
     <string name="suspension_reason_downtime">Downtime</string>
+    <string name="suspension_reason_schedule_block">Outside allowed time window</string>
+    <string name="suspension_reason_time_limit_block">Time limit reached</string>
     <string name="group_suggestion_title">Create a “%1$s” group?</string>
     <string name="group_suggestion_desc">Put these together so one limit or schedule covers all of them: %1$s</string>
     <string name="group_suggestion_more">%1$s and %2$d more</string>

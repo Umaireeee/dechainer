@@ -400,6 +400,8 @@
     <string name="group_suggestion_games">Jogos</string>
     <string name="group_suggestion_video">Vídeos</string>
     <string name="suspension_reason_downtime">Pausa programada</string>
+    <string name="suspension_reason_schedule_block">Fora da janela de horário permitida</string>
+    <string name="suspension_reason_time_limit_block">Limite de tempo atingido</string>
     <string name="group_suggestion_title">Criar um grupo “%1$s”?</string>
     <string name="group_suggestion_desc">Junte estes apps para que um limite ou horário valha para todos: %1$s</string>
     <string name="group_suggestion_more">%1$s e mais %2$d</string>
