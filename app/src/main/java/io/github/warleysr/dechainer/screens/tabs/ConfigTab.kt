@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.Adb
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.History
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.SettingsLock
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGenerateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
@@ -94,6 +96,22 @@ fun ConfigTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
+            }
+            item {
+                var settingsLocked by remember { mutableStateOf(SettingsLock.isLocked()) }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.settings_lock_title)) },
+                    supportingContent = { Text(stringResource(R.string.settings_lock_desc)) },
+                    leadingContent = { Icon(Icons.Outlined.Lock, "") },
+                    trailingContent = {
+                        Switch(settingsLocked, onCheckedChange = { checked ->
+                            recoveryGate.change(loosening = !checked) {
+                                if (SettingsLock.setLocked(checked)) settingsLocked = checked
+                            }
+                        })
+                    }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
                 ListItem(
