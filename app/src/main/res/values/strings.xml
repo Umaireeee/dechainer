@@ -402,6 +402,7 @@
     <string name="suspension_reason_downtime">Downtime</string>
     <string name="settings_lock_title">Lock Settings</string>
     <string name="settings_lock_desc">Hides the Settings app so its toggles cannot be changed</string>
+    <string name="settings_locked_toast">Settings is locked by Dechainer. Turn off Lock Settings in Dechainer first.</string>
     <string name="suspension_reason_schedule_block">Outside allowed time window</string>
     <string name="suspension_reason_time_limit_block">Time limit reached</string>
     <string name="group_suggestion_title">Create a “%1$s” group?</string>

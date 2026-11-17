@@ -402,6 +402,7 @@
     <string name="suspension_reason_downtime">Pausa programada</string>
     <string name="settings_lock_title">Bloquear configurações</string>
     <string name="settings_lock_desc">Oculta o app de Configurações para que as opções não possam ser alteradas</string>
+    <string name="settings_locked_toast">Configurações estão bloqueadas pelo Dechainer. Desative Bloquear configurações no Dechainer primeiro.</string>
     <string name="suspension_reason_schedule_block">Fora da janela de horário permitida</string>
     <string name="suspension_reason_time_limit_block">Limite de tempo atingido</string>
     <string name="group_suggestion_title">Criar um grupo “%1$s”?</string>

@@ -62,6 +62,7 @@ object DowntimeManager {
             DowntimeRepository.setHeld(context, plan.held)
             AppRepository.invalidateCache()
             scheduleNext(context, rules, now)
+            BlockSuspensionManager.sync(context)
         } catch (e: Exception) {
             Timber.e(e, "Downtime sync failed")
         }

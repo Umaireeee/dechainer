@@ -101,7 +101,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                     MusicLimitTracker.onForegroundChanged(applicationContext)
                 }
 
-                Intent.ACTION_SCREEN_ON -> lastForegroundPackage?.let {
+                Intent.ACTION_USER_PRESENT -> lastForegroundPackage?.let {
                     currentPackage = it
                     foregroundPackage = it
                     sessionStartTime = SystemClock.elapsedRealtime()
@@ -136,7 +136,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private val blockRunnable = Runnable { executeBlocking() }
+    // Re-checks rather than blocking outright: the day may have changed, and usage must be saved first.
+    private val blockRunnable = Runnable { recheckWindows() }
 
     // The allowed span ending doesn't always mean "blocked": the next one may start right away
     // (midnight, or two windows that touch), so the whole check runs again.
@@ -212,7 +213,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         val blockHeld = BlockSuspensionManager.heldPackages(applicationContext)
-        suspendPackages(getControlledPackages().filterNot { it in blockHeld }.toTypedArray(), false)
+        val manual = getSharedPreferences("manual_suspensions", MODE_PRIVATE).all.keys
+        suspendPackages(getControlledPackages().filterNot { it in blockHeld || it in manual }.toTypedArray(), false)
 
         // Must run after the un-suspend above, which would otherwise release a package that is
         // still serving an impulse block.
@@ -234,7 +236,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         })
         registerReceiver(screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
         })
 
         if (BuildConfig.DEBUG) {
@@ -386,6 +388,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         val releasable = suspended - DowntimeManager.heldPackages(ctx) - BlockSuspensionManager.heldPackages(ctx)
         if (releasable.isNotEmpty()) suspendPackages(releasable.toTypedArray(), false)
         SecurityManager.clearActiveImpulseSuspension(ctx)
+        BlockSuspensionManager.sync(ctx)
         Timber.d("Impulse block: released ${releasable.size} app(s)")
     }
 
@@ -553,6 +556,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         stopTrackingAndSave()
         currentPackage = null
+        foregroundPackage = null
 
         val individualAppName = appLabel(pkg)
 
@@ -606,6 +610,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         handler.removeCallbacks(windowEndRunnable)
         handler.removeCallbacks(checkpointRunnable)
         saveSessionUsage()
+        checkDateReset()
         startTracking(pkg)
     }
 
@@ -628,6 +633,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         handler.removeCallbacks(windowEndRunnable)
         handler.removeCallbacks(checkpointRunnable)
         saveSessionUsage()
+        checkDateReset()
         currentPackage?.let { startTracking(it) }
     }
 

@@ -1,5 +1,8 @@
 package io.github.warleysr.dechainer.activities
 
+import android.content.ActivityNotFoundException
+import android.widget.Toast
+
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -49,7 +52,11 @@ class AccessibilityRequestActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(onClick = {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        try {
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(this@AccessibilityRequestActivity, R.string.settings_locked_toast, Toast.LENGTH_LONG).show()
+                        }
                     }) {
                         Text(stringResource(R.string.go_to_settings))
                     }

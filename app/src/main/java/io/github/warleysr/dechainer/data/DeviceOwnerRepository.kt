@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer.data
 
+import io.github.warleysr.dechainer.security.SecurityManager
+
 import android.accounts.AccountManager
 import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
@@ -223,9 +225,24 @@ object DeviceOwnerRepository {
         restoreUserSetupComplete(userId)
     }
 
+    /** Gives the phone back before device owner is removed: unhides Settings and unsuspends everything Dechainer holds. */
+    private fun releaseHeldApps() {
+        try {
+            SettingsLock.setLocked(false)
+            val ctx = DechainerApplication.getInstance()
+            val manual = ctx.getSharedPreferences("manual_suspensions", android.content.Context.MODE_PRIVATE).all.keys
+            val held = BlockSuspensionManager.heldPackages(ctx) + DowntimeRepository.getHeld(ctx) +
+                SecurityManager.getActiveImpulseSuspension(ctx) + manual
+            if (held.isNotEmpty()) dpm.setPackagesSuspended(adminName, held.toTypedArray(), false)
+        } catch (e: Exception) {
+            Timber.e(e, "Could not release held apps")
+        }
+    }
+
     /** Removes device-owner status, or requests it via Shizuku with setup bypass — returns the command output. */
     fun processDeviceOwnerPrivileges(remove: Boolean = false): String {
         if (remove && dpm.isAdminActive(adminName)) {
+            releaseHeldApps()
             dpm.clearDeviceOwnerApp(packageName)
             return ""
         }
