@@ -115,26 +115,17 @@ class DechainerAccessibilityService : AccessibilityService() {
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (prefs) {
             limitPrefs, weeklyLimitPrefs -> {
-                if (key == currentPackage) {
-                    handler.removeCallbacks(blockRunnable)
-                    currentPackage?.let { startTracking(it) }
-                }
+                if (key == currentPackage) retrackCurrent()
             }
 
             timeWindowPrefs -> {
                 BlockSuspensionManager.sync(applicationContext)
-                if (key == currentPackage) {
-                    handler.removeCallbacks(blockRunnable)
-                    handler.removeCallbacks(windowEndRunnable)
-                    currentPackage?.let { startTracking(it) }
-                }
+                if (key == currentPackage) retrackCurrent()
             }
 
             groupsPrefs -> {
                 BlockSuspensionManager.sync(applicationContext)
-                handler.removeCallbacks(blockRunnable)
-                handler.removeCallbacks(windowEndRunnable)
-                currentPackage?.let { startTracking(it) }
+                retrackCurrent()
             }
 
             securityPrefs -> {
@@ -156,6 +147,14 @@ class DechainerAccessibilityService : AccessibilityService() {
     private val checkpointRunnable = object : Runnable {
         override fun run() {
             saveSessionUsage()
+            // A session can run past midnight: the day's usage starts again, so re-arm the limit timer.
+            if (checkDateReset()) currentPackage?.let { pkg ->
+                handler.removeCallbacks(blockRunnable)
+                handler.removeCallbacks(windowEndRunnable)
+                startTracking(pkg)
+            }
+            // Removing first leaves exactly one pending checkpoint, even if startTracking just scheduled one.
+            handler.removeCallbacks(this)
             if (currentPackage != null) handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
         }
     }
@@ -610,13 +609,26 @@ class DechainerAccessibilityService : AccessibilityService() {
         startTracking(pkg)
     }
 
-    private fun checkDateReset() {
+    /** Clears the day's usage when the date has changed. Returns true when it did. */
+    private fun checkDateReset(): Boolean {
         val today = LocalDate.now().toString()
-        if (today != lastCheckDate) {
-            usagePrefs.edit { clear() }
-            groupUsagePrefs.edit { clear() }
-            lastCheckDate = today
-        }
+        if (today == lastCheckDate) return false
+        usagePrefs.edit { clear() }
+        groupUsagePrefs.edit { clear() }
+        lastCheckDate = today
+        return true
+    }
+
+    /**
+     * Re-applies the open app's limits after their settings change. Time already used in this
+     * stretch is saved first, so the new timer counts from the right place.
+     */
+    private fun retrackCurrent() {
+        handler.removeCallbacks(blockRunnable)
+        handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(checkpointRunnable)
+        saveSessionUsage()
+        currentPackage?.let { startTracking(it) }
     }
 
     private fun getRemainingSecondsToReopen(pkg: String): Int {

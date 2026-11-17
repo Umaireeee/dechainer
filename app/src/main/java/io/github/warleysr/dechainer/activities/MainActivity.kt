@@ -75,7 +75,8 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     while (true) {
                         currentTime = System.currentTimeMillis()
-                        delay(1000)
+                        // Per second only while the session countdown is on screen; per minute otherwise.
+                        delay(if (SecurityManager.isSessionActive()) 1000L else 60_000L)
                     }
                 }
 
