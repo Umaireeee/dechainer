@@ -102,6 +102,33 @@ object AccessibilityWatchdog {
         }
     }
 
+    private var guardObserver: android.database.ContentObserver? = null
+
+    /**
+     * Puts the service back the moment it is removed from the enabled list (for example when someone
+     * switches it off in system settings), as long as the app wants it on. Our own write re-adds it,
+     * which fires this observer again, but the "already listed" check stops any loop.
+     */
+    fun startGuard(context: Context) {
+        val app = context.applicationContext
+        if (guardObserver != null) return
+        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                if (!isWanted(app) || !hasPermission(app)) return
+                val listed = ServiceList.isListed(
+                    Settings.Secure.getString(app.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+                    app.packageName,
+                    DechainerAccessibilityService::class.java.name
+                )
+                if (!listed) addToList(app)
+            }
+        }
+        app.contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES), false, observer
+        )
+        guardObserver = observer
+    }
+
     private fun addToList(context: Context) {
         try {
             val resolver = context.contentResolver

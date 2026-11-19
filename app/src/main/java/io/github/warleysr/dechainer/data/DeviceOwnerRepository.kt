@@ -295,11 +295,37 @@ object DeviceOwnerRepository {
         var result = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
         for (candidate in candidates) {
             result = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, candidate)
-            if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) break
+            if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                dnsGuardPrefs().edit().putString(KEY_DNS_WANTED, candidate).apply()
+                break
+            }
             if (result != DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING) break
             Timber.w("Private DNS host $candidate is not serving, trying the next one")
         }
         return result
+    }
+
+    private const val KEY_DNS_WANTED = "dns_wanted"
+
+    private fun dnsGuardPrefs() = context.getSharedPreferences("private_dns_guard", Context.MODE_PRIVATE)
+
+    /**
+     * Puts the chosen DNS host back if the system setting is changed from outside the app. The host
+     * is only remembered after the device accepted it, so a failed attempt never becomes the target.
+     */
+    fun startPrivateDnsGuard() {
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                val wanted = dnsGuardPrefs().getString(KEY_DNS_WANTED, null) ?: return
+                if (getPrivateDNS() != wanted) setPrivateDNS(wanted)
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            android.provider.Settings.Global.getUriFor("private_dns_specifier"), false, observer
+        )
+        context.contentResolver.registerContentObserver(
+            android.provider.Settings.Global.getUriFor("private_dns_mode"), false, observer
+        )
     }
 
     fun getPrivateDNS(): String? {

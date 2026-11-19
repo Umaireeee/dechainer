@@ -140,20 +140,6 @@ fun ConfigTab(
                     headlineContent = { Text(stringResource(R.string.activity_blocker)) },
                     supportingContent = { Text(stringResource(R.string.activity_blocker_description)) },
                     leadingContent = { Icon(Icons.Outlined.Accessibility, "") },
-                    trailingContent = {
-                        Switch(advancedBlocking, onCheckedChange = { checked ->
-                            if (!Shizuku.pingBinder()) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(shizukuNotRunningMsg)
-                                }
-                                return@Switch
-                            }
-                            recoveryGate.change(loosening = !checked) {
-                                DechainerAccessibilityService.prepareServiceDisable()
-                                viewModel.changeAccessibilityPermission(checked)
-                            }
-                        })
-                    }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }

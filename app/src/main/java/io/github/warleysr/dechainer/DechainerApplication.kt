@@ -75,6 +75,10 @@ class DechainerApplication : Application() {
 
         // Catches up with a focus phase that ran out while the process was dead, and re-arms its alarm.
         FocusMode.sync(this)
+
+        // Keeps the accessibility service and the private DNS choice from being switched off in system settings.
+        io.github.warleysr.dechainer.data.AccessibilityWatchdog.startGuard(this)
+        DeviceOwnerRepository.startPrivateDnsGuard()
     }
 
     // A killed process skips the service's onUnbind, leaving the modes applied.
