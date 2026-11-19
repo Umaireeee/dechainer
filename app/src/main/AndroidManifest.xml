@@ -134,6 +134,10 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <receiver
+            android:name=".data.AccessibilityWatchdogReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

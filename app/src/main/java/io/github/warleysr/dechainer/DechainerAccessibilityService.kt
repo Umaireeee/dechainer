@@ -26,6 +26,7 @@ import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
 import io.github.warleysr.dechainer.activities.ReopeningLimitActivity
 import io.github.warleysr.dechainer.activities.TimeUpActivity
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
+import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppGroupRepository
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.AppTimeLimits
@@ -188,6 +189,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isRunning = true
         disablingService = false
+        // The service is on and the user wants it on: from here on the watchdog keeps it that way.
+        AccessibilityWatchdog.setWanted(applicationContext, true)
+        AccessibilityWatchdog.schedulePeriodic(applicationContext)
 
         limitPrefs = getSharedPreferences(AppTimeLimits.PREFS_NAME, MODE_PRIVATE)
         weeklyLimitPrefs = getSharedPreferences(AppTimeLimits.WEEKLY_PREFS_NAME, MODE_PRIVATE)
@@ -267,6 +271,9 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         if (!disablingService) {
             suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
+
+            // Switched off outside the app: ask for it to be brought back.
+            AccessibilityWatchdog.scheduleSoon(applicationContext)
 
             val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)

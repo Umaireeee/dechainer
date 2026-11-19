@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DowntimeManager
@@ -70,5 +71,9 @@ class DechainerApplication : Application() {
 
         // Catches up after a force stop, which also cancels the downtime alarm.
         applicationScope.launch { DowntimeManager.sync(this@DechainerApplication) }
+
+        // Keeps the accessibility service and the private DNS choice from being switched off in system settings.
+        AccessibilityWatchdog.startGuard(this)
+        DeviceOwnerRepository.startPrivateDnsGuard()
     }
 }

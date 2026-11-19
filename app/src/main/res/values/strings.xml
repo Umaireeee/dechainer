@@ -423,6 +423,13 @@
     <string name="downtime_preset_work">Work hours</string>
     <string name="downtime_preset_weekend">Weekends</string>
     <string name="downtime_delete">Delete downtime</string>
+<string name="dns_description">Private DNS used to block access to sites</string>
+<string name="dns_settings">Private DNS</string>
+<string name="custom">Custom</string>
+<string name="dns_host_hint">Ex: dns.example.com</string>
+<string name="invalid_dns_host">Invalid DNS host</string>
+<string name="dns_error_not_serving">The specified host does not provide DNS service</string>
+<string name="dns_error_failure">Failed to apply private DNS</string>
 </resources>
 
 
