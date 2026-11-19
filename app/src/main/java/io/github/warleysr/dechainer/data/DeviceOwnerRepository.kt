@@ -278,8 +278,28 @@ object DeviceOwnerRepository {
         return commandOutput
     }
 
+    /** Filtering DNS providers offered in the DNS settings, in the order they are tried on fallback. */
+    val CLEAN_DNS_PRESETS: List<Pair<String, String>> = listOf(
+        "Cloudflare" to "family.cloudflare-dns.com",
+        "AdGuard DNS" to "family.adguard-dns.com",
+        "CleanBrowsing" to "adult-filter-dns.cleanbrowsing.org"
+    )
+
+    /**
+     * Sets the private DNS host. If the host is not answering, Android rejects it with
+     * PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING, so the next filtering preset is tried until one
+     * is accepted. Returns the last result, which is PRIVATE_DNS_SET_NO_ERROR on success.
+     */
     fun setPrivateDNS(host: String): Int {
-        return dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host)
+        val candidates = listOf(host) + CLEAN_DNS_PRESETS.map { it.second }.filter { it != host }
+        var result = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
+        for (candidate in candidates) {
+            result = dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, candidate)
+            if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) break
+            if (result != DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING) break
+            Timber.w("Private DNS host $candidate is not serving, trying the next one")
+        }
+        return result
     }
 
     fun getPrivateDNS(): String? {

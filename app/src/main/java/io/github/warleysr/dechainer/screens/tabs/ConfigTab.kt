@@ -38,6 +38,7 @@ import io.github.warleysr.dechainer.screens.common.RecoveryGenerateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.utils.LocaleUtils
+import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -484,11 +485,7 @@ fun DnsSelectionDialog(
     onDismiss: () -> Unit,
     onApply: (String) -> Unit
 ) {
-    val options = listOf(
-        "Cloudflare" to "family.cloudflare-dns.com",
-        "AdGuard DNS" to "family.adguard-dns.com",
-        "CleanBrowsing" to "adult-filter-dns.cleanbrowsing.org"
-    )
+    val options = DeviceOwnerRepository.CLEAN_DNS_PRESETS
     
     var selectedOption by remember { 
         mutableStateOf(
