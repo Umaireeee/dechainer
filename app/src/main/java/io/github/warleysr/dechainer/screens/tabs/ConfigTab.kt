@@ -72,6 +72,7 @@ fun ConfigTab(
     val snackbarHostState = remember { SnackbarHostState() }
     val shizukuNotRunningMsg = stringResource(R.string.shizuku_not_running)
     val advancedBlockingRequiredMsg = stringResource(R.string.advanced_blocking_required)
+    val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
 
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
 
