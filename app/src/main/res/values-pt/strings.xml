@@ -430,6 +430,7 @@
 <string name="invalid_dns_host">Host de DNS inválido</string>
 <string name="dns_error_not_serving">O host especificado não provê serviço DNS</string>
 <string name="dns_error_failure">Falha ao aplicar DNS privado</string>
+    <string name="get_owner_privileges_first">Obtenha os privilégios de dono primeiro!</string>
 </resources>
 
 

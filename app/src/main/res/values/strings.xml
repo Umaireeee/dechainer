@@ -430,6 +430,7 @@
 <string name="invalid_dns_host">Invalid DNS host</string>
 <string name="dns_error_not_serving">The specified host does not provide DNS service</string>
 <string name="dns_error_failure">Failed to apply private DNS</string>
+    <string name="get_owner_privileges_first">Get owner privileges first!</string>
 </resources>
 
 
