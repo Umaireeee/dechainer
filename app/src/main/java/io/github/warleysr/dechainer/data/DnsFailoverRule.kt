@@ -8,13 +8,29 @@ object DnsFailoverRule {
         "family.cloudflare-dns.com",
         "family.adguard-dns.com",
         "adult-filter-dns.cleanbrowsing.org",
-        "family-filter-dns.cleanbrowsing.org"
+        "family-filter-dns.cleanbrowsing.org",
+        "family.freedns.controld.com"
+    )
+
+    /**
+     * Known bootstrap IPv4 addresses for each clean provider so DoT reachability probing works even
+     * when the phone's current Private DNS is broken or IPv6 routes drop port 853.
+     */
+    val BOOTSTRAP_IPS: Map<String, List<String>> = mapOf(
+        "family.cloudflare-dns.com" to listOf("1.1.1.3", "1.0.0.3"),
+        "family.adguard-dns.com" to listOf("94.140.14.15", "94.140.15.16"),
+        "adult-filter-dns.cleanbrowsing.org" to listOf("185.228.168.10", "185.228.169.11"),
+        "family-filter-dns.cleanbrowsing.org" to listOf("185.228.168.168", "185.228.169.168"),
+        "family.freedns.controld.com" to listOf("76.76.2.4", "76.76.10.4")
     )
 
     const val DEFAULT_PROBE_INTERVAL_MS = 60_000L
 
     fun isCleanHost(host: String?, candidates: List<String> = CLEAN_HOSTS): Boolean =
         host != null && candidates.any { it.equals(host, ignoreCase = true) }
+
+    fun bootstrapIpsFor(host: String): List<String> =
+        BOOTSTRAP_IPS.entries.firstOrNull { it.key.equals(host, ignoreCase = true) }?.value.orEmpty()
 
     /**
      * Picks the clean DNS host to enforce.

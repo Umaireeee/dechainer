@@ -12,6 +12,7 @@ import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.NotificationGuard
+import io.github.warleysr.dechainer.data.SettingsLock
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,7 @@ class DechainerApplication : Application() {
 
         // Catches up after a force stop, which also cancels alarms.
         applicationScope.launch {
+            if (SettingsLock.isLocked()) SettingsLock.setLocked(false)
             DowntimeManager.sync(this@DechainerApplication)
             AccessibilityWatchdog.cancelLegacyPeriodic(this@DechainerApplication)
             if (AccessibilityWatchdog.isWanted(this@DechainerApplication)) {

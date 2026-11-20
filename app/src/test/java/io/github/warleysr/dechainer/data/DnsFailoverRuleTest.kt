@@ -153,4 +153,12 @@ class DnsFailoverRuleTest {
             )
         )
     }
+
+    @Test
+    fun everyCleanPresetHasBootstrapIps() {
+        DnsFailoverRule.CLEAN_HOSTS.forEach { host ->
+            assertTrue("Missing bootstrap IPs for $host", DnsFailoverRule.bootstrapIpsFor(host).isNotEmpty())
+        }
+        assertTrue(DnsFailoverRule.bootstrapIpsFor("custom.example.com").isEmpty())
+    }
 }

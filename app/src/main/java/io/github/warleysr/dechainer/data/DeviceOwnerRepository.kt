@@ -299,7 +299,8 @@ object DeviceOwnerRepository {
         "Cloudflare Family" to DnsFailoverRule.CLEAN_HOSTS[0],
         "AdGuard Family" to DnsFailoverRule.CLEAN_HOSTS[1],
         "CleanBrowsing Adult" to DnsFailoverRule.CLEAN_HOSTS[2],
-        "CleanBrowsing Family" to DnsFailoverRule.CLEAN_HOSTS[3]
+        "CleanBrowsing Family" to DnsFailoverRule.CLEAN_HOSTS[3],
+        "Control D Family" to DnsFailoverRule.CLEAN_HOSTS[4]
     )
 
     internal fun applyPrivateDnsHostOnly(host: String): Int {

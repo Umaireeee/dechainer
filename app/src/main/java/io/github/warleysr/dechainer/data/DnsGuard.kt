@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -38,7 +39,7 @@ object DnsGuard {
     private const val KEY_DNS_WANTED = "dns_wanted"
     private const val KEY_AUTO_FAILOVER = "auto_failover"
     private const val DOT_PORT = 853
-    private const val DOT_TIMEOUT_MS = 2_500
+    private const val DOT_TIMEOUT_MS = 3_500
 
     data class DnsStatus(
         val activeHost: String? = null,
@@ -50,7 +51,7 @@ object DnsGuard {
     private val worker = Executors.newSingleThreadExecutor {
         Thread(it, "dns-guard").apply { isDaemon = true }
     }
-    private val probePool = Executors.newFixedThreadPool(4) {
+    private val probePool = Executors.newFixedThreadPool(5) {
         Thread(it, "dns-probe").apply { isDaemon = true }
     }
     private val stateLock = Any()
@@ -103,20 +104,39 @@ object DnsGuard {
     internal fun needsRestore(pinnedHost: String?, currentHost: String?): Boolean =
         pinnedHost != null && !pinnedHost.equals(currentHost, ignoreCase = true)
 
-    /** Whether [host] completes a Private DNS (DoT, port 853) TLS handshake within 2.5 seconds. */
-    fun canReachDoT(host: String): Boolean = try {
-        val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-        (factory.createSocket() as SSLSocket).use { socket ->
-            socket.soTimeout = DOT_TIMEOUT_MS
-            socket.sslParameters = socket.sslParameters.apply {
-                serverNames = listOf(SNIHostName(host))
-            }
-            socket.connect(InetSocketAddress(host, DOT_PORT), DOT_TIMEOUT_MS)
-            socket.startHandshake()
+    /**
+     * Whether [host] completes a Private DNS (DoT, port 853) TLS handshake.
+     * Tries known bootstrap IPv4 addresses first (immune to a stuck broken Private DNS or dead
+     * IPv6 route), then falls back to system DNS resolution for [host].
+     */
+    fun canReachDoT(host: String): Boolean {
+        val addresses = LinkedHashSet<InetAddress>()
+        DnsFailoverRule.bootstrapIpsFor(host).forEach { ip ->
+            runCatching { addresses += InetAddress.getByName(ip) }
         }
-        true
-    } catch (_: Exception) {
-        false
+        runCatching {
+            addresses.addAll(InetAddress.getAllByName(host))
+        }
+        if (addresses.isEmpty()) return false
+
+        val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+        for (addr in addresses) {
+            try {
+                (factory.createSocket() as SSLSocket).use { socket ->
+                    socket.soTimeout = DOT_TIMEOUT_MS
+                    socket.sslParameters = socket.sslParameters.apply {
+                        serverNames = listOf(SNIHostName(host))
+                        endpointIdentificationAlgorithm = "HTTPS"
+                    }
+                    socket.connect(InetSocketAddress(addr, DOT_PORT), DOT_TIMEOUT_MS)
+                    socket.startHandshake()
+                }
+                return true
+            } catch (_: Exception) {
+                // Try the next IP candidate for this provider.
+            }
+        }
+        return false
     }
 
     /** Probes all clean DNS providers in parallel and returns reachability in priority order. */
@@ -153,6 +173,9 @@ object DnsGuard {
                 add(preferred)
                 DnsFailoverRule.CLEAN_HOSTS.forEach { host ->
                     if (host != preferred && reachability[host] == true) add(host)
+                }
+                DnsFailoverRule.CLEAN_HOSTS.forEach { host ->
+                    if (host !in this) add(host)
                 }
             }
 

@@ -21,6 +21,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
 import io.github.warleysr.dechainer.MediaPlaybackListener
+import io.github.warleysr.dechainer.utils.ShizukuRunner
+import rikka.shizuku.Shizuku
 import timber.log.Timber
 import java.util.concurrent.Executors
 
@@ -57,6 +59,53 @@ object NotificationGuard {
 
     fun setListenerWanted(context: Context, wanted: Boolean) {
         prefs(context).edit(commit = true) { putBoolean(KEY_LISTENER_WANTED, wanted) }
+    }
+
+    fun isListenerEnabled(context: Context): Boolean = try {
+        NotificationManagerCompat.getEnabledListenerPackages(context.applicationContext)
+            .contains(context.packageName)
+    } catch (_: Exception) {
+        false
+    }
+
+    fun areNotificationsEnabled(context: Context): Boolean = try {
+        NotificationManagerCompat.from(context.applicationContext).areNotificationsEnabled()
+    } catch (_: Exception) {
+        true
+    }
+
+    /**
+     * Grants Notification Access (`MediaPlaybackListener`) via Shizuku + `WRITE_SECURE_SETTINGS`
+     * when Shizuku is running, and marks it protected by the passive observer. Returns true if enabled.
+     */
+    fun enableListenerViaShizuku(context: Context): Boolean {
+        val ctx = context.applicationContext
+        setListenerWanted(ctx, true)
+        enforcePostNotifications(ctx)
+        if (!Shizuku.pingBinder() || !DeviceOwnerRepository.checkShizukuPermission()) return false
+        AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(ctx)
+        val component = "${ctx.packageName}/.${MediaPlaybackListener::class.java.simpleName}"
+        ShizukuRunner.exec("cmd", "notification", "allow_listener", component)
+        ensureNotificationListenerEnabled(ctx)
+        return isListenerEnabled(ctx)
+    }
+
+    fun disableListenerViaShizuku(context: Context): Boolean {
+        val ctx = context.applicationContext
+        setListenerWanted(ctx, false)
+        if (!Shizuku.pingBinder() || !DeviceOwnerRepository.checkShizukuPermission()) return false
+        val component = "${ctx.packageName}/.${MediaPlaybackListener::class.java.simpleName}"
+        ShizukuRunner.exec("cmd", "notification", "disallow_listener", component)
+        val resolver = ctx.contentResolver
+        val serviceClass = MediaPlaybackListener::class.java.name
+        val current = Settings.Secure.getString(resolver, SETTING_ENABLED_LISTENERS)
+        if (AccessibilityWatchdog.ServiceList.isListed(current, ctx.packageName, serviceClass)) {
+            val updated = AccessibilityWatchdog.ServiceList.without(current, ctx.packageName, serviceClass)
+            runCatching {
+                Settings.Secure.putString(resolver, SETTING_ENABLED_LISTENERS, updated.ifEmpty { "null" })
+            }
+        }
+        return !isListenerEnabled(ctx)
     }
 
     /** Enforces both `POST_NOTIFICATIONS` (Device Owner) and Notification Access (if wanted). */

@@ -442,8 +442,15 @@
     <string name="dns_status_active_checking">Active: %1$s · Checking…</string>
     <string name="dns_status_auto_tag">%1$s (Auto)</string>
     <string name="dns_badge_connected">Active</string>
-    <string name="dns_all_unreachable">No clean DNS server is reachable from this network right now.</string>
+    <string name="dns_all_unreachable">No clean DNS server responded to the probe on this network. Auto will still try each clean server.</string>
     <string name="dns_error_unreachable">This network cannot reach that server on port 853. Pick one with ✓ or choose Auto.</string>
+    <string name="dns_recheck">Re-check</string>
+    <string name="activity_blocker_protected">Active · Auto-restore guard on</string>
+    <string name="activity_blocker_unprotected">Active · Open Shizuku once to auto-restore if turned off</string>
+    <string name="notification_access_title">Notification access</string>
+    <string name="notification_access_desc">Reads background media playback for limits and protects alerts</string>
+    <string name="notification_access_protected">Active · Auto-restore guard on</string>
+    <string name="notification_access_manual">Active · Open Shizuku once to auto-restore if turned off</string>
     <string name="get_owner_privileges_first">Get owner privileges first!</string>
 </resources>
 

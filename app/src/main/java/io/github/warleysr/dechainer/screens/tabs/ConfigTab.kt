@@ -8,6 +8,7 @@ import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsFailoverRule
 import io.github.warleysr.dechainer.data.DnsGuard
+import io.github.warleysr.dechainer.data.NotificationGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,17 +16,20 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.Adb
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockClock
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.*
@@ -37,10 +41,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.data.SettingsLock
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.RecoveryGenerateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
@@ -79,6 +84,21 @@ fun ConfigTab(
     var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
+    var hasSecureGuard by remember { mutableStateOf(AccessibilityWatchdog.hasPermission(context)) }
+    var notificationAccess by remember { mutableStateOf(NotificationGuard.isListenerEnabled(context)) }
+
+    DisposableEffect(context) {
+        val activity = context as? ComponentActivity
+        val refreshGuards = {
+            hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
+            notificationAccess = NotificationGuard.isListenerEnabled(context)
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshGuards()
+        }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose { activity?.lifecycle?.removeObserver(observer) }
+    }
 
     var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
     LaunchedEffect(Unit) {
@@ -124,22 +144,6 @@ fun ConfigTab(
                 )
             }
             item {
-                var settingsLocked by remember { mutableStateOf(SettingsLock.isLocked()) }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_lock_title)) },
-                    supportingContent = { Text(stringResource(R.string.settings_lock_desc)) },
-                    leadingContent = { Icon(Icons.Outlined.Lock, "") },
-                    trailingContent = {
-                        Switch(settingsLocked, onCheckedChange = { checked ->
-                            recoveryGate.change(loosening = !checked) {
-                                if (SettingsLock.setLocked(checked)) settingsLocked = checked
-                            }
-                        })
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.restrictions)) },
                     supportingContent = { Text(stringResource(R.string.system_restrictions_desc)) },
@@ -149,9 +153,14 @@ fun ConfigTab(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
+                val accessibilityStatusText = when {
+                    advancedBlocking && hasSecureGuard -> stringResource(R.string.activity_blocker_protected)
+                    advancedBlocking -> stringResource(R.string.activity_blocker_unprotected)
+                    else -> stringResource(R.string.activity_blocker_description)
+                }
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.activity_blocker)) },
-                    supportingContent = { Text(stringResource(R.string.activity_blocker_description)) },
+                    supportingContent = { Text(accessibilityStatusText) },
                     leadingContent = { Icon(Icons.Outlined.Accessibility, "") },
                     trailingContent = {
                         Switch(
@@ -162,9 +171,7 @@ fun ConfigTab(
                                         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                                     } catch (_: ActivityNotFoundException) {
                                         scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                context.getString(R.string.settings_locked_toast)
-                                            )
+                                            snackbarHostState.showSnackbar(shizukuNotRunningMsg)
                                         }
                                     }
                                 }
@@ -179,6 +186,7 @@ fun ConfigTab(
                                                 false
                                             }
                                         }
+                                        hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
                                         if (!enabledViaShizuku) openSettings()
                                     }
                                 } else {
@@ -195,6 +203,53 @@ fun ConfigTab(
                                                 }
                                             }
                                             if (!disabledViaShizuku) openSettings()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
+                val notifStatusText = when {
+                    notificationAccess && hasSecureGuard -> stringResource(R.string.notification_access_protected)
+                    notificationAccess -> stringResource(R.string.notification_access_manual)
+                    else -> stringResource(R.string.notification_access_desc)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.notification_access_title)) },
+                    supportingContent = { Text(notifStatusText) },
+                    leadingContent = { Icon(Icons.Outlined.NotificationsActive, "") },
+                    trailingContent = {
+                        Switch(
+                            checked = notificationAccess,
+                            onCheckedChange = { enable ->
+                                val openListenerSettings = {
+                                    try {
+                                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                    } catch (_: ActivityNotFoundException) {
+                                        scope.launch { snackbarHostState.showSnackbar(shizukuNotRunningMsg) }
+                                    }
+                                }
+                                if (enable) {
+                                    scope.launch {
+                                        val enabledViaShizuku = withContext(Dispatchers.IO) {
+                                            NotificationGuard.enableListenerViaShizuku(context)
+                                        }
+                                        hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
+                                        notificationAccess = NotificationGuard.isListenerEnabled(context)
+                                        if (!enabledViaShizuku) openListenerSettings()
+                                    }
+                                } else {
+                                    recoveryGate.run {
+                                        scope.launch {
+                                            val disabledViaShizuku = withContext(Dispatchers.IO) {
+                                                NotificationGuard.disableListenerViaShizuku(context)
+                                            }
+                                            notificationAccess = NotificationGuard.isListenerEnabled(context)
+                                            if (!disabledViaShizuku) openListenerSettings()
                                         }
                                     }
                                 }
@@ -643,8 +698,10 @@ fun DnsSelectionDialog(
     var autoSwitch by remember { mutableStateOf(currentAutoFailover || currentDns == null) }
     var customHost by remember { mutableStateOf(if (selectedOption == "custom") currentDns ?: "" else "") }
 
+    var probeTrigger by remember { mutableIntStateOf(0) }
     var reachable by remember { mutableStateOf<Map<String, Boolean?>>(options.associate { it.second to null }) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(probeTrigger) {
+        reachable = options.associate { it.second to null }
         options.forEach { (_, host) ->
             launch {
                 val ok = withContext(Dispatchers.IO) { DnsGuard.canReachDoT(host) }
@@ -661,9 +718,23 @@ fun DnsSelectionDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text(stringResource(R.string.dns_settings)) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.dns_settings))
+                TextButton(
+                    enabled = !isLoading,
+                    onClick = { probeTrigger++ }
+                ) {
+                    Text(stringResource(R.string.dns_recheck))
+                }
+            }
+        },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
