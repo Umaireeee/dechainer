@@ -93,6 +93,7 @@
     <string name="apk_update_success">App atualizado</string>
     <string name="apk_update_signature_mismatch">A assinatura do APK não corresponde à do app instalado</string>
     <string name="apk_update_failed">Falha ao atualizar o app</string>
+    <string name="apk_update_downgrade_warning">Atenção: esta é uma versão mais antiga. Instalá-la vai desinstalar o app atual primeiro e apagar seus dados locais.</string>
     <string name="remove">Remover</string>
     
     <string name="activity_blocker">Bloqueio avançado</string>
@@ -159,7 +160,7 @@
     <string name="keyboard_normal">Teclado Normal</string>
     <string name="keyboard_normal_desc">Campo de texto padrão para inserir o código de recuperação</string>
     <string name="keyboard_shuffle">Teclado Shuffle</string>
-    <string name="keyboard_shuffle_desc">Grade 4×4 que embaralha após cada toque para evitar memorização de posições</string>
+    <string name="keyboard_shuffle_desc">Grade com 26 letras que embaralha após cada toque para evitar memorização de posições</string>
     <string name="change_recovery_code">Alterar código de recuperação</string>
     <string name="change_recovery_code_desc">Gera um novo código de recuperação para substituir o atual</string>
     <string name="shuffle_keyboard_backspace">⌫ Apagar último</string>

@@ -147,8 +147,8 @@ fun AppsScreen(
                 }
             }
         }
-        refresh()
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refresh() }
+        if (activity == null) refresh()
         activity?.lifecycle?.addObserver(observer)
         onDispose {
             activity?.lifecycle?.removeObserver(observer)
@@ -268,9 +268,11 @@ fun AppsScreen(
                 if (weeklyUsage == null) {
                     item(key = "usage_banner") {
                         UsageAccessBanner(onOpenSettings = {
-                            context.startActivity(
-                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
                         })
                     }
                 }
@@ -358,6 +360,7 @@ fun AppsScreen(
             },
             onSetTimeLimit = {
                 showTimeLimitDialog = app
+                selectedApp = null
             },
             onSetTimeWindows = {
                 navViewModel.pendingScheduleKey = "app:${app.packageName}"
@@ -366,10 +369,12 @@ fun AppsScreen(
             },
             onSetGroup = {
                 showGroupPickerDialog = app
+                selectedApp = null
             },
             currentGroupName = viewModel.groupFor(app.packageName)?.name,
             onManageRestrictions = {
                 showRestrictionsDialog = app
+                selectedApp = null
             }
         )
     }
@@ -379,9 +384,10 @@ fun AppsScreen(
             app = app,
             onDismiss = { showTimeLimitDialog = null },
             onConfirm = { limit, reopeningSeconds ->
-                recoveryGate.change(isLooserLimit(app.timeLimit, limit) || reopeningSeconds < app.reopeningSeconds) {
-                    viewModel.setAppTimeLimit(app.packageName, limit)
+                val liveApp = viewModel.apps.firstOrNull { it.packageName == app.packageName } ?: app
+                recoveryGate.change(isLooserLimit(liveApp.timeLimit, limit) || reopeningSeconds < liveApp.reopeningSeconds) {
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
+                    viewModel.setAppTimeLimit(app.packageName, limit)
                 }
                 showTimeLimitDialog = null
             }
@@ -454,9 +460,13 @@ fun AppsScreen(
             allApps = viewModel.apps,
             onDismiss = { showEditGroupDialog = null },
             onSave = { name, limit, windows, packageNames ->
+                val stolenFromOtherGroup = (packageNames - group.packageNames).any { pkg ->
+                    viewModel.groupFor(pkg)?.let { it.id != group.id } == true
+                }
                 val loosening = isLooserLimit(group.timeLimit, limit) ||
                     isLooserWindows(group.timeWindows, windows) ||
-                    !packageNames.containsAll(group.packageNames)
+                    !packageNames.containsAll(group.packageNames) ||
+                    stolenFromOtherGroup
                 recoveryGate.change(loosening) {
                     if (name != group.name) viewModel.renameGroup(group.id, name)
                     viewModel.setGroupTimeLimit(group.id, limit)
@@ -902,8 +912,8 @@ fun NumberPickerWheel(
     label: String,
     modifier: Modifier = Modifier.width(70.dp)
 ) {
-    val items = range.toList()
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = items.indexOf(value))
+    val items = remember(range) { range.toList() }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = items.indexOf(value).coerceAtLeast(0))
     val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val currentOnValueChange by rememberUpdatedState(onValueChange)
 
@@ -991,9 +1001,9 @@ fun SecondInputField(
         OutlinedTextField(
             value = textFieldValue,
             onValueChange = { newValue ->
-                if (newValue.all { it.isDigit() } || newValue.isEmpty()) {
-                    textFieldValue = newValue
-                    val parsed = newValue.toIntOrNull() ?: 0
+                if (newValue.length <= 6 && (newValue.all { it.isDigit() } || newValue.isEmpty())) {
+                    val parsed = (newValue.toIntOrNull() ?: 0).coerceAtMost(86_400)
+                    textFieldValue = if (newValue.isEmpty()) newValue else parsed.toString()
                     seconds = parsed
                     onValueChange(parsed)
                 }
@@ -1008,7 +1018,7 @@ fun SecondInputField(
         )
 
         SmallIncrementButton(label = "+15") {
-            seconds += 15
+            seconds = (seconds + 15).coerceAtMost(86_400)
             textFieldValue = seconds.toString()
             onValueChange(seconds)
         }

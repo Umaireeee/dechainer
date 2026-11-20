@@ -1,9 +1,13 @@
 package io.github.warleysr.dechainer.activities
 
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.safeDrawingPadding
+import io.github.warleysr.dechainer.ui.theme.DechainerTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -31,16 +35,32 @@ class OutsideTimeWindowActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        enableEdgeToEdge()
 
         setContent {
-            OutsideTimeWindowScreen(
-                appName = intent.getStringExtra("appName") ?: "",
-                windows = intent.getStringArrayListExtra("windows") ?: arrayListOf(),
-                onClose = { finishAfterTransition() }
-            )
+            DechainerTheme {
+                OutsideTimeWindowScreen(
+                    appName = intent.getStringExtra("appName") ?: "",
+                    windows = intent.getStringArrayListExtra("windows") ?: arrayListOf(),
+                    onClose = { goHome() }
+                )
+            }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
+    }
+
+    private fun goHome() {
+        startActivity(
+            android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_HOME)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        finishAfterTransition()
     }
 }
 
@@ -51,7 +71,7 @@ fun OutsideTimeWindowScreen(appName: String, windows: List<String>, onClose: () 
         color = MaterialTheme.colorScheme.errorContainer
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

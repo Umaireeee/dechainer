@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -13,9 +14,11 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +35,7 @@ import androidx.core.graphics.drawable.toBitmap
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller.Inspection
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,8 +45,9 @@ import kotlinx.coroutines.withContext
 fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var inspection by remember { mutableStateOf<Inspection?>(null) }
-    var installing by remember { mutableStateOf(false) }
+    val recoveryGate = rememberRecoveryGate()
+    var inspection by remember(uri) { mutableStateOf<Inspection?>(null) }
+    var installing by remember(uri) { mutableStateOf(false) }
 
     LaunchedEffect(uri) {
         inspection = withContext(Dispatchers.IO) {
@@ -51,6 +56,18 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
     }
 
     val current = inspection
+    var consumedByInstall by remember(current) { mutableStateOf(false) }
+
+    DisposableEffect(current) {
+        onDispose {
+            if (current is Inspection.Update && !consumedByInstall) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    current.file.delete()
+                }
+            }
+        }
+    }
+
     if (current == null || installing) {
         AlertDialog(
             onDismissRequest = {},
@@ -70,6 +87,7 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
     if (current !is Inspection.Update) {
         val message = when (current) {
             Inspection.NewApp -> R.string.apk_update_new_app
+            Inspection.SignatureMismatch -> R.string.apk_update_signature_mismatch
             else -> R.string.apk_update_invalid
         }
         AlertDialog(
@@ -83,11 +101,22 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
         return
     }
 
-    AlertDialog(
-        onDismissRequest = {
-            current.file.delete()
+    fun startInstall() {
+        consumedByInstall = true
+        installing = true
+        scope.launch {
+            val started = withContext(Dispatchers.IO) {
+                ApkUpdateInstaller.install(context.applicationContext, current)
+            }
+            if (!started) {
+                Toast.makeText(context, R.string.apk_update_failed, Toast.LENGTH_LONG).show()
+            }
             onFinish()
-        },
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onFinish,
         icon = if (current.icon != null) {
             {
                 Image(
@@ -102,33 +131,35 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
             Column {
                 Text(stringResource(R.string.apk_update_installed_version, current.installedVersion))
                 Text(stringResource(R.string.apk_update_new_version, current.newVersion))
+                if (current.isDowngrade) {
+                    Text(
+                        text = stringResource(R.string.apk_update_downgrade_warning),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                installing = true
-                scope.launch {
-                    val started = withContext(Dispatchers.IO) {
-                        ApkUpdateInstaller.install(context.applicationContext, current)
-                    }
-                    if (!started) {
-                        Toast.makeText(context, R.string.apk_update_failed, Toast.LENGTH_LONG).show()
-                    }
-                    onFinish()
+                if (current.isDowngrade) {
+                    recoveryGate.run { startInstall() }
+                } else {
+                    startInstall()
                 }
             }) {
                 Text(stringResource(R.string.apk_update_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = {
-                current.file.delete()
-                onFinish()
-            }) {
+            TextButton(onClick = onFinish) {
                 Text(stringResource(R.string.cancel))
             }
         }
     )
+
+    RecoveryGateDialog(recoveryGate)
 }
 
 /** Explains what updating through an APK does before the file picker opens. */

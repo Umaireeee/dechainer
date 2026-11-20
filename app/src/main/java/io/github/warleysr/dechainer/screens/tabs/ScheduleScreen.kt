@@ -31,12 +31,15 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.AppGroupRepository
+import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.isLooserWindows
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import java.time.DayOfWeek
@@ -97,11 +100,31 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
         else -> null
     }
 
-    fun save(target: ScheduleTarget, windows: List<TimeWindow>) {
-        recoveryGate.change(isLooserWindows(target.windows, windows)) {
-            when (target) {
-                is ScheduleTarget.App -> viewModel.setAppTimeWindows(target.item.packageName, windows)
-                is ScheduleTarget.Group -> viewModel.setGroupTimeWindows(target.group.id, windows)
+    LaunchedEffect(editingKey, viewModel.isLoading, viewModel.apps, viewModel.groups) {
+        val key = editingKey ?: return@LaunchedEffect
+        if (!viewModel.isLoading && targetFor(key) == null) {
+            editingKey = null
+        }
+    }
+
+    fun liveWindowsFor(key: String): List<TimeWindow>? = when {
+        key.startsWith("app:") -> AppRepository.getApp(key.removePrefix("app:"))?.timeWindows
+        key.startsWith("group:") -> AppGroupRepository.getGroups().firstOrNull { it.id == key.removePrefix("group:") }?.timeWindows
+        else -> null
+    }
+
+    fun saveWindows(key: String, initialWindows: List<TimeWindow>, transform: (List<TimeWindow>) -> List<TimeWindow>) {
+        val preview = transform(initialWindows)
+        val loosening = isLooserWindows(initialWindows, preview)
+        recoveryGate.change(loosening) {
+            val latest = liveWindowsFor(key) ?: return@change
+            val updated = transform(latest)
+            if (!loosening && !SecurityManager.isSessionActive() && isLooserWindows(latest, updated)) {
+                return@change
+            }
+            when {
+                key.startsWith("app:") -> viewModel.setAppTimeWindows(key.removePrefix("app:"), updated)
+                key.startsWith("group:") -> viewModel.setGroupTimeWindows(key.removePrefix("group:"), updated)
             }
         }
     }
@@ -147,7 +170,7 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
                         target = ScheduleTarget.Group(group),
                         onOpen = { editingKey = "group:${group.id}" },
                         onToggle = { index, enabled ->
-                            save(ScheduleTarget.Group(group), group.timeWindows.toggled(index, enabled))
+                            saveWindows("group:${group.id}", group.timeWindows) { it.toggled(index, enabled) }
                         }
                     )
                 }
@@ -156,7 +179,7 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
                         target = ScheduleTarget.App(app),
                         onOpen = { editingKey = "app:${app.packageName}" },
                         onToggle = { index, enabled ->
-                            save(ScheduleTarget.App(app), app.timeWindows.toggled(index, enabled))
+                            saveWindows("app:${app.packageName}", app.timeWindows) { it.toggled(index, enabled) }
                         }
                     )
                 }
@@ -185,14 +208,12 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
 
     editingKey?.let { key ->
         val target = targetFor(key)
-        if (target == null) {
-            editingKey = null
-        } else {
+        if (target != null) {
             ScheduleEditor(
                 target = target,
                 onDismiss = { editingKey = null },
                 onSave = { windows ->
-                    save(target, windows)
+                    saveWindows(key, target.windows) { windows }
                     editingKey = null
                 }
             )

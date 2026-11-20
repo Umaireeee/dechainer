@@ -8,6 +8,7 @@ import io.github.warleysr.dechainer.models.TimeLimit
 import io.github.warleysr.dechainer.models.TimeWindow
 import org.json.JSONArray
 import org.json.JSONObject
+import timber.log.Timber
 import java.time.DayOfWeek
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -40,13 +41,20 @@ object AppGroupRepository {
 
     fun createGroup(name: String): AppGroup {
         val group = AppGroup(id = UUID.randomUUID().toString(), name = name)
-        synchronized(lock) { persist(getGroups() + group) }
+        synchronized(lock) { persistLocked(getGroups() + group) }
+        DowntimeManager.sync(context)
         return group
     }
 
     fun deleteGroup(groupId: String) {
-        synchronized(lock) { persist(getGroups().filterNot { it.id == groupId }) }
+        synchronized(lock) { persistLocked(getGroups().filterNot { it.id == groupId }) }
         context.getSharedPreferences(USAGE_PREFS_NAME, Context.MODE_PRIVATE).edit { remove(groupId) }
+        val rules = DowntimeRepository.getRules(context)
+        if (rules.any { groupId in it.groupIds }) {
+            DowntimeRepository.save(rules.map { it.copy(groupIds = it.groupIds - groupId) }, context)
+        } else {
+            DowntimeManager.sync(context)
+        }
     }
 
     fun renameGroup(groupId: String, name: String) = updateGroup(groupId) { it.copy(name = name) }
@@ -64,8 +72,9 @@ object AppGroupRepository {
                 if (group.id == groupId) group.copy(packageNames = packageNames)
                 else group.copy(packageNames = group.packageNames - packageNames)
             }
-            persist(updated)
+            persistLocked(updated)
         }
+        DowntimeManager.sync(context)
     }
 
     /** Assigns [packageName] to [groupId] (or removes it from any group when null), keeping the one-group-per-app invariant. */
@@ -78,26 +87,27 @@ object AppGroupRepository {
                     else -> group
                 }
             }
-            persist(updated)
+            persistLocked(updated)
         }
+        DowntimeManager.sync(context)
     }
 
     fun getGroupUsage(groupId: String, inMinutes: Boolean = false): Long {
-        val used = context.getSharedPreferences(USAGE_PREFS_NAME, Context.MODE_PRIVATE).getLong(groupId, 0L)
+        val used = DailyUsageStore.getGroupUsageMillis(context, groupId)
         return if (inMinutes) TimeUnit.MILLISECONDS.toMinutes(used) else used
     }
 
     private fun updateGroup(groupId: String, transform: (AppGroup) -> AppGroup) {
         synchronized(lock) {
-            persist(getGroups().map { if (it.id == groupId) transform(it) else it })
+            persistLocked(getGroups().map { if (it.id == groupId) transform(it) else it })
         }
+        DowntimeManager.sync(context)
     }
 
-    private fun persist(groups: List<AppGroup>) {
-        prefs().edit { putString(KEY_GROUPS, encode(groups)) }
+    private fun persistLocked(groups: List<AppGroup>) {
+        // Update cachedGroups before edit() so synchronous prefsListener callbacks read fresh groups.
         cachedGroups = groups
-        // A rule can cover a whole group, so a membership change can change what is suspended.
-        DowntimeManager.sync(context)
+        prefs().edit { putString(KEY_GROUPS, encode(groups)) }
     }
 
     private fun encode(groups: List<AppGroup>): String {
@@ -117,27 +127,30 @@ object AppGroupRepository {
 
     private fun decode(json: String?): List<AppGroup> {
         if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            val array = JSONArray(json)
-            (0 until array.length()).map { i ->
+        val array = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            runCatching {
                 val obj = array.getJSONObject(i)
-                val packagesArray = obj.getJSONArray("packages")
-                val packages = (0 until packagesArray.length()).map { packagesArray.getString(it) }.toSet()
-                val windows = AppTimeWindows.fromJson(obj.getJSONArray("windows"))
+                val packagesArray = obj.optJSONArray("packages")
+                val packages = packagesArray
+                    ?.let { arr -> (0 until arr.length()).map { arr.getString(it) }.toSet() }
+                    ?: emptySet()
+                val windows = obj.optJSONArray("windows")
+                    ?.let { AppTimeWindows.fromJson(it) }
+                    ?: emptyList()
                 // Groups saved before per-weekday limits existed only have the daily "limit".
                 val weekly = obj.optJSONArray("weeklyLimit")
                     ?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } }
-                    ?.takeIf { it.size == DayOfWeek.entries.size }
+                    ?.takeIf { it.size == DayOfWeek.entries.size && it.all { m -> m >= 0 } }
                 AppGroup(
                     id = obj.getString("id"),
                     name = obj.getString("name"),
                     packageNames = packages,
-                    timeLimit = weekly?.let { TimeLimit.perDay(it) } ?: TimeLimit.daily(obj.getInt("limit")),
+                    timeLimit = weekly?.let { TimeLimit.perDay(it) }
+                        ?: TimeLimit.daily(obj.optInt("limit", 0).coerceAtLeast(0)),
                     timeWindows = windows
                 )
-            }
-        } catch (_: Exception) {
-            emptyList()
+            }.onFailure { Timber.w(it, "Skipping malformed app group at index $i") }.getOrNull()
         }
     }
 }

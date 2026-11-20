@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
@@ -22,8 +23,8 @@ android {
         applicationId = "io.github.warleysr.dechainer"
         minSdk = 30
         targetSdk = 36
-        versionCode = 31
-        versionName = "2.2.7"
+        versionCode = 32
+        versionName = "2.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -39,6 +40,7 @@ android {
 
     dependenciesInfo {
         includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {
@@ -53,11 +55,6 @@ android {
     }
 
     buildTypes {
-        if (releaseStoreFile != null) {
-            debug {
-                signingConfig = signingConfigs.getByName("dechainer")
-            }
-        }
         release {
             if (releaseStoreFile != null) {
                 signingConfig = signingConfigs.getByName("dechainer")
@@ -71,8 +68,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
@@ -87,6 +84,12 @@ android {
                 it.systemProperty("user.country", "US")
             }
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -108,7 +111,6 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.timber)
-    implementation(libs.json)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.androidx.test.core.ktx)

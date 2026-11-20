@@ -36,8 +36,12 @@ fun RestrictionsTab(
     navViewModel: NavigationViewModel = viewModel()
 ) {
     val recoveryGate = rememberRecoveryGate()
+    val isOwner = deviceOwnerViewModel.isDeviceOwner()
+    LaunchedEffect(isOwner) {
+        if (isOwner) restrictionsViewModel.loadRestrictions()
+    }
 
-    if (!deviceOwnerViewModel.isDeviceOwner()) {
+    if (!isOwner) {
         NoDeviceOwnerPrivileges(navViewModel)
     } else {
         Column(
@@ -72,7 +76,11 @@ fun RestrictionsTab(
 
             Button(
                 onClick = {
-                    recoveryGate.change(restrictionsViewModel.isLoosening()) { restrictionsViewModel.applyChanges() }
+                    val snapshot = restrictionsViewModel.snapshotDrafts()
+                    val loosening = restrictionsViewModel.isLoosening(snapshot)
+                    recoveryGate.change(loosening) {
+                        restrictionsViewModel.applyChanges(snapshot, allowLoosening = loosening)
+                    }
                 },
                 enabled = restrictionsViewModel.hasPendingChanges(),
                 shape = RoundedCornerShape(16.dp),

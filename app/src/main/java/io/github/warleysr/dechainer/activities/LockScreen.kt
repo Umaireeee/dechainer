@@ -10,6 +10,7 @@ import androidx.biometric.AuthenticationResultCallback
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+import androidx.biometric.BiometricPrompt
 import androidx.biometric.compose.rememberAuthenticationLauncher
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,12 +38,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
-import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.screens.common.ApkUpdateDialog
 import io.github.warleysr.dechainer.screens.common.ApkUpdateIntroDialog
 import io.github.warleysr.dechainer.screens.common.UsageLimitsOverview
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
@@ -53,24 +52,29 @@ import kotlin.time.Duration.Companion.seconds
  * part of opening the app: they run when a recovery session is started (see RecoveryGate).
  */
 @Composable
-fun LockScreen(onAuthenticated: () -> Unit) {
-    var authError by remember { mutableStateOf<String?>(null) }
-    var impulseRemaining by remember { mutableLongStateOf(-1L) }
-    var showingLimits by remember { mutableStateOf(false) }
-
+fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
     val context = LocalContext.current
-    val recoveryGate = rememberRecoveryGate()
+    var authError by remember { mutableStateOf<String?>(null) }
+    var impulseRemaining by remember {
+        mutableLongStateOf(SecurityManager.getImpulseBlockRemainingTime(context))
+    }
+    var showingLimits by remember { mutableStateOf(false) }
 
     // Updating apps needs no authentication: only APKs of apps that are already installed go through.
     // Without the unknown sources restriction APKs install normally, so the updater is not offered.
     val apkUpdatesAvailable = remember { ApkUpdateInstaller.isUnknownSourcesRestricted(context) }
     var showingApkIntro by remember { mutableStateOf(false) }
-    var pickedApk by remember { mutableStateOf<Uri?>(null) }
+    var pickedApk by rememberSaveable { mutableStateOf<Uri?>(null) }
     val apkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         pickedApk = uri
     }
 
     fun proceedAfterAuthentication() {
+        val remaining = SecurityManager.getImpulseBlockRemainingTime(context)
+        if (remaining > 0) {
+            impulseRemaining = remaining
+            return
+        }
         authError = null
         onAuthenticated()
     }
@@ -80,7 +84,14 @@ fun LockScreen(onAuthenticated: () -> Unit) {
             override fun onAuthResult(result: AuthenticationResult) {
                 when (result) {
                     is AuthenticationResult.Success -> proceedAfterAuthentication()
-                    is AuthenticationResult.Error -> authError = result.errString.toString()
+                    is AuthenticationResult.Error -> {
+                        if (result.errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                            result.errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                            result.errorCode != BiometricPrompt.ERROR_CANCELED
+                        ) {
+                            authError = result.errString.toString()
+                        }
+                    }
                     else -> {}
                 }
             }
@@ -92,6 +103,12 @@ fun LockScreen(onAuthenticated: () -> Unit) {
     )
 
     fun launchAuthentication() {
+        val remaining = SecurityManager.getImpulseBlockRemainingTime(context)
+        if (remaining > 0) {
+            impulseRemaining = remaining
+            return
+        }
+
         val biometricManager = BiometricManager.from(context)
         val canUseBiometric = biometricManager.canAuthenticate(BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
@@ -100,10 +117,21 @@ fun LockScreen(onAuthenticated: () -> Unit) {
 
         when {
             canUseBiometric -> {
-                val request = AuthenticationRequest.biometricRequest(
-                    title = context.getString(R.string.biometric_title)
-                ) {
-                    setSubtitle(context.getString(R.string.biometric_subtitle))
+                val request = if (canUseDeviceCredential) {
+                    AuthenticationRequest.biometricRequest(
+                        title = context.getString(R.string.biometric_title),
+                        AuthenticationRequest.Biometric.Fallback.DeviceCredential
+                    ) {
+                        setMinStrength(AuthenticationRequest.Biometric.Strength.Class3())
+                        setSubtitle(context.getString(R.string.biometric_subtitle))
+                    }
+                } else {
+                    AuthenticationRequest.biometricRequest(
+                        title = context.getString(R.string.biometric_title)
+                    ) {
+                        setMinStrength(AuthenticationRequest.Biometric.Strength.Class3())
+                        setSubtitle(context.getString(R.string.biometric_subtitle))
+                    }
                 }
                 launcher.launch(request)
             }
@@ -122,7 +150,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(impulseRemaining > 0) {
         while (true) {
             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
             delay(if (impulseRemaining > 0) 1.seconds else 10.seconds)
@@ -138,7 +166,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         }
 
         val secondaryButtons: @Composable (showAccess: Boolean) -> Unit = { showAccess ->
-            val isOwner = DeviceOwnerRepository.isDeviceOwner()
             if (showAccess) {
                 SmallActionButton(
                     icon = Icons.Outlined.LockOpen,
@@ -159,7 +186,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                         onClick = { showingLimits = true },
                         modifier = Modifier.weight(1f)
                     )
-                    if (apkUpdatesAvailable) {
+                    if (showAccess && apkUpdatesAvailable) {
                         QuietActionButton(
                             icon = Icons.Outlined.SystemUpdate,
                             title = stringResource(R.string.apk_update_button),
@@ -186,7 +213,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
                 secondaryButtons(false)
             } else {
-                if (DeviceOwnerRepository.isDeviceOwner()) {
+                if (isOwner) {
                     BigActionButton(
                         icon = Icons.Filled.Warning,
                         title = stringResource(R.string.having_impulses),
@@ -231,8 +258,6 @@ fun LockScreen(onAuthenticated: () -> Unit) {
         pickedApk?.let { uri ->
             key(uri) { ApkUpdateDialog(uri = uri, onFinish = { pickedApk = null }) }
         }
-
-        RecoveryGateDialog(recoveryGate)
     }
 }
 
@@ -337,7 +362,7 @@ private fun BigActionButton(
 
 @Composable
 private fun ImpulseCountdown(remainingMillis: Long) {
-    val totalSeconds = remainingMillis / 1000
+    val totalSeconds = (remainingMillis + 999) / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60

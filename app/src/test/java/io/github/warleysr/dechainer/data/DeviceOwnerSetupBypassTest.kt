@@ -37,6 +37,13 @@ class DeviceOwnerSetupBypassTest {
     }
 
     @Test
+    fun `parseDeviceOwner handles old and new dpm list-owners formats`() {
+        DeviceOwnerRepository.parseDeviceOwner("Device owner: admin=ComponentInfo{a.b/a.b.Rcv}, name=x") shouldBe ("a.b" to "a.b.Rcv")
+        DeviceOwnerRepository.parseDeviceOwner("1 owner:\nUser 0: admin=a.b/.Rcv\n  isAffiliated=true") shouldBe ("a.b" to "a.b.Rcv")
+        DeviceOwnerRepository.parseDeviceOwner("no owners") shouldBe null
+    }
+
+    @Test
     fun `restoreStuckUserSetupComplete does not crash when Shizuku binder is unavailable`() {
         // Shizuku is not running in pure unit test environment, so this should return safely without throwing
         DeviceOwnerRepository.restoreStuckUserSetupComplete()

@@ -14,6 +14,7 @@ import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import rikka.shizuku.Shizuku
 import rikka.shizuku.Shizuku.OnRequestPermissionResultListener
+import timber.log.Timber
 
 class DeviceOwnerViewModel : ViewModel() {
 
@@ -27,12 +28,13 @@ class DeviceOwnerViewModel : ViewModel() {
             shizukuPermission.value = grantResult == PackageManager.PERMISSION_GRANTED
         }
 
-    fun addShizukuListener() {
-        Shizuku.addRequestPermissionResultListener(requestResultPermissionListener)
+    init {
+        runCatching { Shizuku.addRequestPermissionResultListener(requestResultPermissionListener) }
     }
 
-    fun removeShizukuListener() {
-        Shizuku.removeRequestPermissionResultListener(requestResultPermissionListener)
+    override fun onCleared() {
+        runCatching { Shizuku.removeRequestPermissionResultListener(requestResultPermissionListener) }
+        super.onCleared()
     }
 
     fun isShizukuPermissionGranted() = shizukuPermission.value
@@ -45,14 +47,20 @@ class DeviceOwnerViewModel : ViewModel() {
 
     fun openShizukuSetupGuide() = DeviceOwnerRepository.openShizukuSetupGuide()
 
-    fun removeDeviceOwner() = processDeviceOwnerPrivileges(remove = true)
+    fun removeDeviceOwner(onComplete: ((String) -> Unit)? = null) =
+        processDeviceOwnerPrivileges(remove = true, onComplete = onComplete)
 
     fun processDeviceOwnerPrivileges(
         remove: Boolean = false,
         onComplete: ((String) -> Unit)? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val output = DeviceOwnerRepository.processDeviceOwnerPrivileges(remove)
+            val output = try {
+                DeviceOwnerRepository.processDeviceOwnerPrivileges(remove)
+            } catch (e: Exception) {
+                Timber.e(e, "processDeviceOwnerPrivileges failed")
+                e.message.orEmpty()
+            }
             val granted = DeviceOwnerRepository.isDeviceOwner()
             withContext(Dispatchers.Main) {
                 isDeviceOwner.value = granted

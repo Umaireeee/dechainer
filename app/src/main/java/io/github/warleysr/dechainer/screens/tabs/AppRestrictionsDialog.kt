@@ -127,11 +127,11 @@ fun AppRestrictionsDialog(
     onDismiss: () -> Unit,
     onSave: (Bundle) -> Unit
 ) {
-    val availableRestrictions = remember {
+    val availableRestrictions = remember(app.packageName) {
         viewModel.getAvailableRestrictions(app.packageName)
             .filter { !it.key.equals("URLBlocklist", ignoreCase = true) }
     }
-    val currentRestrictions = remember { viewModel.getApplicationRestrictions(app.packageName) }
+    val currentRestrictions = remember(app.packageName) { viewModel.getApplicationRestrictions(app.packageName) }
     
     var searchQuery by remember { mutableStateOf("") }
     
@@ -187,12 +187,12 @@ fun AppRestrictionsDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                val bundle = Bundle()
-                if (currentRestrictions.containsKey("URLBlocklist")) {
-                    val urls = currentRestrictions.getStringArray("URLBlocklist")
-                    if (urls != null) bundle.putStringArray("URLBlocklist", urls)
+                // Start from the live bundle so keys the dialog doesn't show (e.g. URLBlocklist) survive as-is.
+                val bundle = Bundle(currentRestrictions)
+                states.forEach {
+                    bundle.remove(it.entry.key)
+                    it.writeToBundle(bundle)
                 }
-                states.forEach { it.writeToBundle(bundle) }
                 onSave(bundle)
             }) {
                 Text(stringResource(R.string.confirm))
@@ -285,7 +285,7 @@ fun RestrictionEntryRow(state: RestrictionEditorState) {
             RestrictionEntry.TYPE_INTEGER -> {
                 OutlinedTextField(
                     value = state.intValue,
-                    onValueChange = { state.intValue = it.filter { ch -> ch.isDigit() } },
+                    onValueChange = { state.intValue = it.filterIndexed { i, ch -> ch.isDigit() || (i == 0 && ch == '-') } },
                     label = { Text(entry.title ?: entry.key) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,

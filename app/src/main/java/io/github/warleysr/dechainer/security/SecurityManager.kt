@@ -3,16 +3,19 @@ package io.github.warleysr.dechainer.security
 import android.content.Context
 import android.os.SystemClock
 import android.os.UserManager
+import android.provider.Settings
+import android.util.Base64
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import io.github.warleysr.dechainer.BuildConfig
 import io.github.warleysr.dechainer.data.DeviceAdmin
-import org.json.JSONArray
-import org.json.JSONObject
+import java.security.MessageDigest
 import java.security.SecureRandom
-import androidx.core.content.edit
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class SecurityManager {
 
@@ -39,16 +42,32 @@ class SecurityManager {
         const val DEBUG_AUTO_START_SESSION_KEY = "debug_auto_start_session"
 
         private const val DEBUG_RESTORE_UNKNOWN_SOURCES_KEY = "debug_restore_unknown_sources_restriction"
+        private const val RECOVERY_PREFS = "recovery_prefs"
+        private const val KEY_LEGACY_RECOVERY_CODE = "recovery_code"
+        private const val KEY_RECOVERY_HASH = "recovery_code_hash"
+        private const val KEY_RECOVERY_SALT = "recovery_code_salt"
+        private const val PBKDF2_ITERATIONS = 120_000
+        private const val PBKDF2_KEY_BITS = 256
+        private const val SALT_BYTES = 16
+        private const val MAX_FREE_ATTEMPTS = 5
+        private const val BASE_LOCKOUT_MS = 30_000L
 
-        private val isRecoveryKeySet = mutableStateOf(false)
-        
+        var isRecoveryKeySet by mutableStateOf(false)
+            private set
+
         var sessionEndTime by mutableLongStateOf(0L)
             private set
 
-        fun isSessionActive(): Boolean = System.currentTimeMillis() < sessionEndTime
+        private var failedAttempts = 0
+        private var lockoutUntilElapsed = 0L
+
+        fun getSessionRemainingMillis(): Long =
+            (sessionEndTime - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+
+        fun isSessionActive(): Boolean = getSessionRemainingMillis() > 0L
 
         fun startSession() {
-            sessionEndTime = System.currentTimeMillis() + (10 * 60 * 1000) // 10 minutes
+            sessionEndTime = SystemClock.elapsedRealtime() + (10 * 60 * 1000L) // 10 minutes
         }
 
         /** Restarts the 10-minute countdown of a session that is still active; an expired one needs the code again. */
@@ -76,7 +95,7 @@ class SecurityManager {
 
             val dpm = DeviceAdmin.policyManager
             val admin = DeviceAdmin.component
-            if (!dpm.isAdminActive(admin)) return
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
             val wasActive = dpm.getUserRestrictions(admin)
                 .getBoolean(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
@@ -98,7 +117,7 @@ class SecurityManager {
 
             val dpm = DeviceAdmin.policyManager
             val admin = DeviceAdmin.component
-            if (dpm.isAdminActive(admin)) {
+            if (dpm.isDeviceOwnerApp(context.packageName)) {
                 dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY)
             }
         }
@@ -192,6 +211,7 @@ class SecurityManager {
          * releasing has to act on what was actually suspended.
          */
         fun getActiveImpulseSuspension(context: Context): Set<String> {
+            if (getImpulseBlockRemainingTime(context) <= 0L) return emptySet()
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             return prefs.getStringSet("impulse_active_suspension", emptySet()) ?: emptySet()
         }
@@ -206,13 +226,18 @@ class SecurityManager {
             prefs.edit { remove("impulse_active_suspension") }
         }
 
+        private fun readBootCount(context: Context): Int =
+            runCatching { Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1) }
+                .getOrDefault(-1)
+
         fun startImpulseBlock(context: Context) {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             val duration = getImpulseDurationMinutes(context) * 60 * 1000L
-            prefs.edit {
+            prefs.edit(commit = true) {
                 putLong("impulse_block_start_rtc", System.currentTimeMillis())
                 putLong("impulse_block_start_elapsed", SystemClock.elapsedRealtime())
                 putLong("impulse_block_duration", duration)
+                putInt("impulse_block_boot_count", readBootCount(context))
                 putBoolean("impulse_block_active", true)
             }
         }
@@ -224,27 +249,22 @@ class SecurityManager {
             val startRtc = prefs.getLong("impulse_block_start_rtc", 0L)
             val startElapsed = prefs.getLong("impulse_block_start_elapsed", 0L)
             val duration = prefs.getLong("impulse_block_duration", 0L)
+            val storedBootCount = prefs.getInt("impulse_block_boot_count", -1)
+            val currentBootCount = readBootCount(context)
 
             val nowRtc = System.currentTimeMillis()
             val nowElapsed = SystemClock.elapsedRealtime()
 
-            // Resistance logic:
-            // 1. If elapsed time says it's over, it's over.
-            // 2. If RTC says it's over, but elapsed time says it's NOT, 
-            //    it means the user moved the clock forward. Trust elapsed time.
-            // 3. If elapsed time is LESS than startElapsed, a reboot happened.
-            //    In this case, we have to trust RTC but cross-reference if possible.
-            
             val remainingElapsed = (startElapsed + duration) - nowElapsed
             val remainingRtc = (startRtc + duration) - nowRtc
+            val rebooted = (storedBootCount != -1 && currentBootCount != -1 && currentBootCount != storedBootCount) ||
+                nowElapsed < startElapsed
 
-            val remaining = if (nowElapsed < startElapsed) {
-                // Reboot occurred, fallback to RTC but ensure it didn't jump forward illegally
-                // Actually, without a secure remote clock, we can only do so much.
-                // But we can at least detect if they moved it backwards.
-                remainingRtc
+            val remaining = if (rebooted) {
+                // Clamp RTC fallback to [.., duration] so rolling the clock back cannot cause multi-year lockouts.
+                remainingRtc.coerceAtMost(duration)
             } else {
-                // No reboot, trust elapsed time as it's resistant to clock changes
+                // No reboot: trust monotonic elapsed time as it is resistant to wall-clock changes.
                 remainingElapsed
             }
 
@@ -262,29 +282,96 @@ class SecurityManager {
                 .joinToString("")
         }
 
-        fun getRecoveryCode(context: Context) : String? {
-            return context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE).getString("recovery_code", null)
+        private fun hashRecoveryCode(code: String, salt: ByteArray): ByteArray {
+            val spec = PBEKeySpec(code.toCharArray(), salt, PBKDF2_ITERATIONS, PBKDF2_KEY_BITS)
+            return try {
+                SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+            } finally {
+                spec.clearPassword()
+            }
         }
 
-        fun isRecoveryCodeSet(context: Context) : Boolean  {
-            isRecoveryKeySet.value = getRecoveryCode(context) != null
-            return isRecoveryKeySet.value
+        @Synchronized
+        private fun migrateLegacyRecoveryCodeIfNeeded(context: Context) {
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+            val legacy = prefs.getString(KEY_LEGACY_RECOVERY_CODE, null) ?: return
+            if (prefs.getString(KEY_RECOVERY_HASH, null) != null) {
+                prefs.edit(commit = true) { remove(KEY_LEGACY_RECOVERY_CODE) }
+                return
+            }
+            val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
+            val hash = hashRecoveryCode(legacy, salt)
+            prefs.edit(commit = true) {
+                putString(KEY_RECOVERY_HASH, Base64.encodeToString(hash, Base64.NO_WRAP))
+                putString(KEY_RECOVERY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
+                remove(KEY_LEGACY_RECOVERY_CODE)
+            }
+        }
+
+        fun syncRecoveryCodeState(context: Context) {
+            isRecoveryKeySet = isRecoveryCodeSet(context)
+        }
+
+        fun isRecoveryCodeSet(context: Context): Boolean {
+            migrateLegacyRecoveryCodeIfNeeded(context)
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+            return prefs.getString(KEY_RECOVERY_HASH, null) != null
         }
 
         fun saveRecoveryCode(context: Context, code: String) {
-            val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            prefs.edit { putString("recovery_code", code) }
-            isRecoveryKeySet.value = true
+            val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
+            val hash = hashRecoveryCode(code, salt)
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+            prefs.edit(commit = true) {
+                putString(KEY_RECOVERY_HASH, Base64.encodeToString(hash, Base64.NO_WRAP))
+                putString(KEY_RECOVERY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
+                remove(KEY_LEGACY_RECOVERY_CODE)
+            }
+            synchronized(this) {
+                failedAttempts = 0
+                lockoutUntilElapsed = 0L
+            }
+            isRecoveryKeySet = true
         }
 
-        fun validateRecoveryCode(userInput: String, storedKey: String): Boolean {
-            if (isSessionActive()) return true
+        @Synchronized
+        fun getRecoveryLockoutRemainingMillis(): Long =
+            (lockoutUntilElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
 
-            return userInput == storedKey
+        @Synchronized
+        internal fun resetRateLimitForTests() {
+            failedAttempts = 0
+            lockoutUntilElapsed = 0L
+        }
+
+        @Synchronized
+        fun verifyRecoveryCode(context: Context, userInput: String): Boolean {
+            if (getRecoveryLockoutRemainingMillis() > 0L) return false
+            migrateLegacyRecoveryCodeIfNeeded(context)
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+            val hashB64 = prefs.getString(KEY_RECOVERY_HASH, null) ?: return false
+            val saltB64 = prefs.getString(KEY_RECOVERY_SALT, null) ?: return false
+
+            val expected = runCatching { Base64.decode(hashB64, Base64.NO_WRAP) }.getOrNull() ?: return false
+            val salt = runCatching { Base64.decode(saltB64, Base64.NO_WRAP) }.getOrNull() ?: return false
+            val actual = hashRecoveryCode(userInput, salt)
+
+            return if (MessageDigest.isEqual(expected, actual)) {
+                failedAttempts = 0
+                lockoutUntilElapsed = 0L
+                true
+            } else {
+                failedAttempts++
+                if (failedAttempts >= MAX_FREE_ATTEMPTS) {
+                    val shift = (failedAttempts - MAX_FREE_ATTEMPTS).coerceAtMost(4)
+                    lockoutUntilElapsed = SystemClock.elapsedRealtime() + (BASE_LOCKOUT_MS * (1L shl shift))
+                }
+                false
+            }
         }
 
         fun startForcedRemoval(context: Context) {
-            val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
             prefs.edit {
                 putBoolean("forced_removal_active", true)
                 putLong("forced_removal_accumulated", 0L)
@@ -293,14 +380,16 @@ class SecurityManager {
         }
 
         fun cancelForcedRemoval(context: Context) {
-            val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
-            prefs.edit {
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+            prefs.edit(commit = true) {
                 putBoolean("forced_removal_active", false)
+                remove("forced_removal_accumulated")
+                remove("forced_removal_last_elapsed")
             }
         }
 
         fun getForcedRemovalRemainingTime(context: Context): Long {
-            val prefs = context.getSharedPreferences("recovery_prefs", Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
             if (!prefs.getBoolean("forced_removal_active", false)) return -1L
 
             var accumulated = prefs.getLong("forced_removal_accumulated", 0L)

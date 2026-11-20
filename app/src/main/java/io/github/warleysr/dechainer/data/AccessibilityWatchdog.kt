@@ -13,6 +13,8 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.DechainerAccessibilityService
+import io.github.warleysr.dechainer.utils.ShizukuRunner
+import rikka.shizuku.Shizuku
 import timber.log.Timber
 
 /**
@@ -63,73 +65,114 @@ object AccessibilityWatchdog {
 
     fun isWanted(context: Context) = prefs(context).getBoolean(KEY_WANTED, false)
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var rebinding = false
+    private var rebindRunnable: Runnable? = null
+
     fun setWanted(context: Context, wanted: Boolean) {
         prefs(context).edit { putBoolean(KEY_WANTED, wanted) }
-        if (!wanted) cancelAll(context)
+        if (!wanted) {
+            rebinding = false
+            rebindRunnable?.let { mainHandler.removeCallbacks(it) }
+            rebindRunnable = null
+            cancelAll(context)
+        }
     }
 
     fun hasPermission(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
 
+    fun grantWriteSecureSettingsViaShizuku(context: Context): Boolean {
+        if (hasPermission(context)) return true
+        return try {
+            if (!Shizuku.pingBinder() || !DeviceOwnerRepository.checkShizukuPermission()) return false
+            ShizukuRunner.exec("pm", "grant", context.packageName, Manifest.permission.WRITE_SECURE_SETTINGS)
+            hasPermission(context)
+        } catch (e: Exception) {
+            Timber.w(e, "Could not grant WRITE_SECURE_SETTINGS via Shizuku")
+            false
+        }
+    }
+
     /**
      * Switches the service back on if it should be on but isn't running.
-     * A running service in a healthy list is left completely alone.
+     * Returns `true` when an async off/on rebind gap was scheduled so receivers stay alive for it.
      */
-    fun ensureEnabled(context: Context) {
+    fun ensureEnabled(context: Context): Boolean {
         val app = context.applicationContext
-        if (!isWanted(app) || !hasPermission(app)) return
+        if (!isWanted(app) || !hasPermission(app)) return false
 
         val resolver = app.contentResolver
         val serviceClass = DechainerAccessibilityService::class.java.name
         val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
         val listed = ServiceList.isListed(current, app.packageName, serviceClass)
-        if (listed && DechainerAccessibilityService.isRunning) return
+        val globallyEnabled = Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
+        if (listed && globallyEnabled && DechainerAccessibilityService.isRunning) return false
 
-        try {
-            if (listed) {
+        return try {
+            if (listed && !DechainerAccessibilityService.isRunning) {
                 // Listed but not running (killed or crashed): take it out of the list and put it back,
                 // which makes the system start it afresh.
+                rebindRunnable?.let { mainHandler.removeCallbacks(it) }
+                rebinding = true
                 Settings.Secure.putString(
                     resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
                     ServiceList.without(current, app.packageName, serviceClass)
                 )
-                Handler(Looper.getMainLooper()).postDelayed({ addToList(app) }, REBIND_GAP_MS)
+                val runnable = Runnable {
+                    rebinding = false
+                    rebindRunnable = null
+                    addToList(app)
+                }
+                rebindRunnable = runnable
+                mainHandler.postDelayed(runnable, REBIND_GAP_MS)
+                true
             } else {
                 addToList(app)
+                false
             }
         } catch (e: SecurityException) {
+            rebinding = false
             Timber.e(e, "Could not switch advanced blocking back on")
+            false
         }
     }
 
     private var guardObserver: android.database.ContentObserver? = null
 
     /**
-     * Puts the service back the moment it is removed from the enabled list (for example when someone
-     * switches it off in system settings), as long as the app wants it on. Our own write re-adds it,
-     * which fires this observer again, but the "already listed" check stops any loop.
+     * Puts the service back the moment it is removed from the enabled list or global accessibility
+     * is turned off, as long as the app wants it on.
      */
     fun startGuard(context: Context) {
         val app = context.applicationContext
         if (guardObserver != null) return
-        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+        val observer = object : android.database.ContentObserver(mainHandler) {
             override fun onChange(selfChange: Boolean) {
-                if (!isWanted(app) || !hasPermission(app)) return
+                if (rebinding || !isWanted(app) || !hasPermission(app)) return
+                val resolver = app.contentResolver
                 val listed = ServiceList.isListed(
-                    Settings.Secure.getString(app.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+                    Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
                     app.packageName,
                     DechainerAccessibilityService::class.java.name
                 )
-                if (!listed) addToList(app)
+                val globallyEnabled = Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
+                if (!listed || !globallyEnabled) addToList(app)
             }
         }
         app.contentResolver.registerContentObserver(
             Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES), false, observer
         )
+        app.contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED), false, observer
+        )
         guardObserver = observer
     }
 
     private fun addToList(context: Context) {
+        if (!isWanted(context) || !hasPermission(context)) return
         try {
             val resolver = context.contentResolver
             val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
@@ -192,13 +235,16 @@ object AccessibilityWatchdog {
 class AccessibilityWatchdogReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != AccessibilityWatchdog.ACTION_CHECK) return
-        // Stay alive for the short gap of the off/on rebind.
-        val pending = goAsync()
-        try {
+        val scheduledRebind = try {
             AccessibilityWatchdog.ensureEnabled(context)
         } catch (e: Exception) {
             Timber.e(e, "Accessibility watchdog check failed")
+            false
         }
-        Handler(Looper.getMainLooper()).postDelayed({ pending.finish() }, 2_500L)
+        if (scheduledRebind) {
+            // Stay alive only for the short gap of the off/on rebind.
+            val pending = goAsync()
+            Handler(Looper.getMainLooper()).postDelayed({ pending.finish() }, 2_500L)
+        }
     }
 }

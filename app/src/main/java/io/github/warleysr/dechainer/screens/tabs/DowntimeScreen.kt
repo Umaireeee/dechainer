@@ -33,6 +33,7 @@ import io.github.warleysr.dechainer.models.DowntimeRule
 import io.github.warleysr.dechainer.models.TimeWindow
 import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 
 private val DOWNTIME_PRESETS = listOf(
@@ -48,11 +49,20 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
     var rules by remember { mutableStateOf(DowntimeRepository.getRules()) }
     var editing by remember { mutableStateOf<DowntimeRule?>(null) }
 
-    fun save(newRules: List<DowntimeRule>) {
-        val old = rules
-        recoveryGate.change(Downtime.isLooser(old, newRules, viewModel.groups)) {
-            DowntimeRepository.save(newRules)
-            rules = newRules
+    fun saveTransform(transform: (List<DowntimeRule>) -> List<DowntimeRule>) {
+        val current = DowntimeRepository.getRules()
+        val preview = transform(current)
+        val loosening = Downtime.isLooser(current, preview, viewModel.groups)
+        recoveryGate.change(loosening) {
+            val latest = DowntimeRepository.getRules()
+            val updated = transform(latest)
+            if (!loosening && !SecurityManager.isSessionActive() &&
+                Downtime.isLooser(latest, updated, viewModel.groups)
+            ) {
+                return@change
+            }
+            DowntimeRepository.save(updated)
+            rules = updated
         }
     }
 
@@ -89,8 +99,13 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
                         groups = viewModel.groups,
                         onOpen = { editing = rule },
                         onToggle = { index, enabled ->
-                            val windows = rule.windows.mapIndexed { i, w -> if (i == index) w.copy(enabled = enabled) else w }
-                            save(rules.map { if (it.id == rule.id) rule.copy(windows = windows) else it })
+                            saveTransform { list ->
+                                list.map { r ->
+                                    if (r.id == rule.id) r.copy(
+                                        windows = r.windows.mapIndexed { i, w -> if (i == index) w.copy(enabled = enabled) else w }
+                                    ) else r
+                                }
+                            }
                         }
                     )
                 }
@@ -114,14 +129,18 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
             groups = viewModel.groups,
             onDismiss = { editing = null },
             onSave = { saved ->
-                save(if (isNew) rules + saved else rules.map { if (it.id == saved.id) saved else it })
+                saveTransform { list ->
+                    if (list.none { it.id == saved.id }) list + saved
+                    else list.map { if (it.id == saved.id) saved else it }
+                }
                 editing = null
             },
             onDelete = {
                 // Removing downtime gives apps back, so it needs the recovery code.
                 recoveryGate.run {
-                    DowntimeRepository.save(rules.filterNot { it.id == draft.id })
-                    rules = rules.filterNot { it.id == draft.id }
+                    val updated = DowntimeRepository.getRules().filterNot { it.id == draft.id }
+                    DowntimeRepository.save(updated)
+                    rules = updated
                 }
                 editing = null
             }
@@ -214,7 +233,6 @@ private fun DowntimeEditor(
                         modifier = Modifier.weight(1f)
                     )
                     Button(
-                        enabled = canSave,
                         onClick = {
                             if (!canSave) { showErrors = true; return@Button }
                             onSave(rule.copy(name = name.trim(), packageNames = packages, groupIds = groupIds, windows = windows.toList()))

@@ -7,6 +7,7 @@ import android.content.pm.PackageInstaller
 import android.widget.Toast
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
+import io.github.warleysr.dechainer.data.AppRepository
 
 class ApkUpdateResultReceiver : BroadcastReceiver() {
     companion object {
@@ -20,12 +21,21 @@ class ApkUpdateResultReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_DOWNGRADE_UNINSTALL_RESULT -> onDowngradeUninstallResult(context, intent)
             ACTION_INSTALL_RESULT -> onInstallResult(context, intent)
+            ACTION_UNINSTALL_RESULT -> {
+                ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(context)
+                AppRepository.invalidateCache()
+            }
         }
     }
 
     private fun onDowngradeUninstallResult(context: Context, intent: Intent) {
         val sessionId = intent.getIntExtra(ApkUpdateInstaller.EXTRA_DOWNGRADE_SESSION_ID, -1)
-        val packageName = intent.getStringExtra(ApkUpdateInstaller.EXTRA_PACKAGE) ?: return
+        val packageName = intent.getStringExtra(ApkUpdateInstaller.EXTRA_PACKAGE)
+        if (packageName == null) {
+            if (sessionId != -1) runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
+            ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(context, if (sessionId != -1) sessionId else null)
+            return
+        }
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
 
         if (status == PackageInstaller.STATUS_SUCCESS && sessionId != -1) {
@@ -48,18 +58,23 @@ class ApkUpdateResultReceiver : BroadcastReceiver() {
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION && sessionId != -1) {
             runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
         }
+        if (status == PackageInstaller.STATUS_SUCCESS &&
+            !isDowngrade &&
+            packageName != null &&
+            ApkUpdateInstaller.isFreshInstall(context, packageName)
+        ) {
+            // Keep DISALLOW_UNINSTALL_APPS lifted until the rollback uninstall finishes.
+            ApkUpdateInstaller.uninstallForFreshRollback(context, packageName)
+            AppRepository.invalidateCache()
+            Toast.makeText(context, R.string.apk_update_new_app, Toast.LENGTH_LONG).show()
+            return
+        }
+
         ApkUpdateInstaller.onInstallFinished(context, sessionId, packageName)
         if (packageName == null) return
 
         val message = when (status) {
-            PackageInstaller.STATUS_SUCCESS -> {
-                if (!isDowngrade && ApkUpdateInstaller.isFreshInstall(context, packageName)) {
-                    ApkUpdateInstaller.uninstall(context, packageName)
-                    R.string.apk_update_new_app
-                } else {
-                    R.string.apk_update_success
-                }
-            }
+            PackageInstaller.STATUS_SUCCESS -> R.string.apk_update_success
             PackageInstaller.STATUS_FAILURE_CONFLICT -> R.string.apk_update_signature_mismatch
             else -> R.string.apk_update_failed
         }

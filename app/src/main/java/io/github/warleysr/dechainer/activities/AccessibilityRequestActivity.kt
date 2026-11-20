@@ -8,7 +8,12 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.safeDrawingPadding
+import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material3.*
@@ -23,14 +28,16 @@ import io.github.warleysr.dechainer.R
 class AccessibilityRequestActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         setContent {
+            DechainerTheme {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -62,10 +69,12 @@ class AccessibilityRequestActivity : ComponentActivity() {
                     }
                 }
             }
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        if (DechainerAccessibilityService.isRunning) finish()
     }
 }

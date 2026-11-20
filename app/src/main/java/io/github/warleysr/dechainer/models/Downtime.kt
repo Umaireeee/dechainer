@@ -1,7 +1,10 @@
 package io.github.warleysr.dechainer.models
 
+import io.github.warleysr.dechainer.data.SuspensionCoordinator
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.UUID
 
 /**
@@ -39,19 +42,49 @@ object Downtime {
         rules: List<DowntimeRule>,
         now: LocalDateTime,
         zone: ZoneId = ZoneId.systemDefault()
+    ): Long? = nextBoundaryMillis(rules, now.atZone(zone), groups = null)
+
+    fun nextBoundaryMillis(
+        rules: List<DowntimeRule>,
+        now: ZonedDateTime,
+        groups: List<AppGroup>? = null
     ): Long? {
-        var best: LocalDateTime? = null
+        val zone = now.zone
+        val zoneRules = zone.rules
+        val nowInstant = now.toInstant()
+        val scopedRules = if (groups == null) rules else rules.filter { packagesOf(it, groups).isNotEmpty() }
+        if (scopedRules.isEmpty()) return null
+
+        var best: Instant? = null
+        val startDate = now.toLocalDate()
         for (offset in 0..7) {
-            val date = now.toLocalDate().plusDays(offset.toLong())
+            val date = startDate.plusDays(offset.toLong())
             val day = date.dayOfWeek.value
-            for (rule in rules) for (window in rule.windows) for (span in window.spansOn(day)) {
-                for (minute in intArrayOf(span.start, span.end)) {
-                    val moment = date.atStartOfDay().plusMinutes(minute.toLong())
-                    if (moment.isAfter(now) && (best == null || moment.isBefore(best))) best = moment
+            val prevDay = TimeWindow.previousDay(day)
+            val nextDay = if (day == 7) 1 else day + 1
+            for (rule in scopedRules) {
+                for (window in rule.windows) {
+                    for (span in window.spansOn(day)) {
+                        for (minute in intArrayOf(span.start, span.end)) {
+                            // Skip redundant midnight boundaries when the same rule stays active across 23:59 -> 00:00.
+                            if (minute == 0 && rule.windows.any { w -> w.spansOn(prevDay).any { it.contains(1439) } }) {
+                                continue
+                            }
+                            if (minute == 1440 && rule.windows.any { w -> w.spansOn(nextDay).any { it.contains(0) } }) {
+                                continue
+                            }
+                            val moment = date.atStartOfDay().plusMinutes(minute.toLong())
+                            for (instant in SuspensionCoordinator.resolvedInstants(moment, zone, zoneRules)) {
+                                if (instant.isAfter(nowInstant) && (best == null || instant.isBefore(best))) {
+                                    best = instant
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        return best?.atZone(zone)?.toInstant()?.toEpochMilli()
+        return best?.toEpochMilli()
     }
 
     /**
@@ -59,14 +92,16 @@ object Downtime {
      * shortened or turned off, a day dropped, an app or group removed.
      */
     fun isLooser(old: List<DowntimeRule>, new: List<DowntimeRule>, groups: List<AppGroup>): Boolean {
-        val packages = old.flatMapTo(mutableSetOf()) { packagesOf(it, groups) }
-        fun spans(rules: List<DowntimeRule>, pkg: String, day: Int) = TimeWindow.merge(
-            rules.filter { pkg in packagesOf(it, groups) }.flatMap { r -> r.windows.flatMap { it.spansOn(day) } }
+        val oldPackagesByRule = old.associateWith { packagesOf(it, groups) }
+        val newPackagesByRule = new.associateWith { packagesOf(it, groups) }
+        val packages = oldPackagesByRule.values.flatten().toSet()
+        fun spans(byRule: Map<DowntimeRule, Set<String>>, pkg: String, day: Int) = TimeWindow.merge(
+            byRule.entries.filter { pkg in it.value }.flatMap { (r, _) -> r.windows.flatMap { it.spansOn(day) } }
         )
         return (1..7).any { day ->
             packages.any { pkg ->
-                val kept = spans(new, pkg, day)
-                spans(old, pkg, day).any { o -> kept.none { it.start <= o.start && it.end >= o.end } }
+                val kept = spans(newPackagesByRule, pkg, day)
+                spans(oldPackagesByRule, pkg, day).any { o -> kept.none { it.start <= o.start && it.end >= o.end } }
             }
         }
     }

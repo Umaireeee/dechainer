@@ -11,6 +11,7 @@ object SettingsLock {
     const val SETTINGS_PACKAGE = "com.android.settings"
 
     fun isLocked(): Boolean = try {
+        DeviceOwnerRepository.isDeviceOwner() &&
         DeviceAdmin.policyManager.isApplicationHidden(DeviceAdmin.component, SETTINGS_PACKAGE)
     } catch (e: Exception) {
         Timber.e(e, "Could not read Settings lock")

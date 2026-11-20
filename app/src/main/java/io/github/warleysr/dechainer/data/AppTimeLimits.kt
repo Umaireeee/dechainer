@@ -16,7 +16,7 @@ object AppTimeLimits {
 
     fun read(daily: SharedPreferences, weekly: SharedPreferences, packageName: String): TimeLimit {
         decodeWeekly(weekly.getString(packageName, null))?.let { return TimeLimit.perDay(it) }
-        return TimeLimit.daily(daily.getInt(packageName, 0))
+        return TimeLimit.daily(runCatching { daily.getInt(packageName, 0) }.getOrDefault(0))
     }
 
     fun readAll(daily: SharedPreferences, weekly: SharedPreferences): Map<String, TimeLimit> {
@@ -32,13 +32,13 @@ object AppTimeLimits {
 
     fun write(daily: SharedPreferences, weekly: SharedPreferences, packageName: String, limit: TimeLimit) {
         val perDay = limit.weeklyMinutes?.takeIf { limit.isSet }
-        // Clear the other file first so the service never sees the package in both at once.
+        // Write destination first so OnSharedPreferenceChangeListener never observes a 0-limit window.
         if (perDay != null) {
-            daily.edit { remove(packageName) }
             weekly.edit { putString(packageName, encodeWeekly(perDay)) }
+            daily.edit { remove(packageName) }
         } else {
-            weekly.edit { remove(packageName) }
             daily.edit { if (limit.dailyMinutes > 0) putInt(packageName, limit.dailyMinutes) else remove(packageName) }
+            weekly.edit { remove(packageName) }
         }
     }
 
@@ -47,6 +47,6 @@ object AppTimeLimits {
     fun decodeWeekly(value: String?): List<Int>? {
         if (value.isNullOrEmpty()) return null
         val minutes = value.split(",").map { it.trim().toIntOrNull() ?: return null }
-        return minutes.takeIf { it.size == DayOfWeek.entries.size }
+        return minutes.takeIf { it.size == DayOfWeek.entries.size && it.all { m -> m >= 0 } }
     }
 }

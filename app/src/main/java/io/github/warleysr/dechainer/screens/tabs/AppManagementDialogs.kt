@@ -49,6 +49,7 @@ fun AppManagementDialogs(
             },
             onSetTimeLimit = {
                 showTimeLimitDialog = app
+                onDismissSelectedApp()
             },
             onSetTimeWindows = {
                 navViewModel.pendingScheduleKey = "app:${app.packageName}"
@@ -57,10 +58,12 @@ fun AppManagementDialogs(
             },
             onSetGroup = {
                 showGroupPickerDialog = app
+                onDismissSelectedApp()
             },
             currentGroupName = viewModel.groupFor(app.packageName)?.name,
             onManageRestrictions = {
                 showRestrictionsDialog = app
+                onDismissSelectedApp()
             }
         )
     }
@@ -70,9 +73,10 @@ fun AppManagementDialogs(
             app = app,
             onDismiss = { showTimeLimitDialog = null },
             onConfirm = { limit, reopeningSeconds ->
-                recoveryGate.change(isLooserLimit(app.timeLimit, limit) || reopeningSeconds < app.reopeningSeconds) {
-                    viewModel.setAppTimeLimit(app.packageName, limit)
+                val liveApp = viewModel.apps.firstOrNull { it.packageName == app.packageName } ?: app
+                recoveryGate.change(isLooserLimit(liveApp.timeLimit, limit) || reopeningSeconds < liveApp.reopeningSeconds) {
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
+                    viewModel.setAppTimeLimit(app.packageName, limit)
                 }
                 showTimeLimitDialog = null
             }
@@ -143,9 +147,13 @@ fun AppManagementDialogs(
             allApps = viewModel.apps,
             onDismiss = { showEditGroupDialog = null },
             onSave = { name, limit, windows, packageNames ->
+                val stolenFromOtherGroup = (packageNames - group.packageNames).any { pkg ->
+                    viewModel.groupFor(pkg)?.let { it.id != group.id } == true
+                }
                 val loosening = isLooserLimit(group.timeLimit, limit) ||
                     isLooserWindows(group.timeWindows, windows) ||
-                    !packageNames.containsAll(group.packageNames)
+                    !packageNames.containsAll(group.packageNames) ||
+                    stolenFromOtherGroup
                 recoveryGate.change(loosening) {
                     if (name != group.name) viewModel.renameGroup(group.id, name)
                     viewModel.setGroupTimeLimit(group.id, limit)

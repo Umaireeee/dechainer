@@ -8,7 +8,8 @@ object SystemRestrictions {
         UserManager.DISALLOW_CONFIG_VPN,
         UserManager.DISALLOW_CONFIG_PRIVATE_DNS,
         UserManager.DISALLOW_FACTORY_RESET,
-        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY
+        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY,
+        UserManager.DISALLOW_CONFIG_DATE_TIME
     )
 
     // Additional known vendor / Knox / OEM restrictions

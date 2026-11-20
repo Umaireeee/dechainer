@@ -1,24 +1,18 @@
 package io.github.warleysr.dechainer.utils
 
+import android.content.pm.PackageManager
+import android.os.ParcelFileDescriptor
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
-import java.io.BufferedReader
-import java.io.FileInputStream
-import java.io.InputStreamReader
+import timber.log.Timber
+import kotlin.concurrent.thread
 
 class ShizukuRunner {
     interface CommandResultListener {
-        /*
-        * Runs after the command executes, at least partially. Does not run with 'done' if the command throws an error.
-        * output: The output of the command
-        * done: If the command has finished executing
-         */
+        /** Runs after the command finishes. [done] is always true. */
         fun onCommandResult(output: String, done: Boolean) {}
 
-        /*
-        * Runs if the command throws an error.
-        * error: The error message
-         */
+        /** Runs if the command fails or writes to stderr. */
         fun onCommandError(error: String) {}
     }
 
@@ -29,82 +23,44 @@ class ShizukuRunner {
     )
 
     companion object {
+        /** Runs [command] as an argv array (never through a shell). Returns null if Shizuku is unavailable. */
         fun exec(vararg command: String): ProcessResult? {
-            val binder = Shizuku.getBinder()
-            if (binder == null || !binder.pingBinder()) return null
-            val cmdArray = if (command.size == 1 && command[0].contains(" ")) {
-                arrayOf("sh", "-c", command[0])
-            } else {
-                command
-            }
+            if (command.isEmpty()) return null
             return try {
+                val binder = Shizuku.getBinder()
+                if (binder == null || !binder.pingBinder()) return null
                 if (Shizuku.isPreV11()) return null
+                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return null
                 val service = IShizukuService.Stub.asInterface(binder) ?: return null
-                val process = service.newProcess(cmdArray, null, null) ?: return null
-                var error = ""
-                val errorReader = Thread {
-                    error = try {
-                        BufferedReader(InputStreamReader(FileInputStream(process.errorStream.fileDescriptor))).use {
-                            it.readText()
-                        }
-                    } catch (_: Exception) { "" }
-                }
-                errorReader.start()
-                val output = try {
-                    BufferedReader(InputStreamReader(FileInputStream(process.inputStream.fileDescriptor))).use {
-                        it.readText()
+                val process = service.newProcess(arrayOf(*command), null, null) ?: return null
+                try {
+                    runCatching { process.outputStream?.close() }
+                    var error = ""
+                    val errorReader = thread(isDaemon = true, name = "shizuku-stderr") {
+                        error = runCatching { ParcelFileDescriptor.AutoCloseInputStream(process.errorStream).bufferedReader().use { it.readText() } }
+                            .getOrDefault("")
                     }
-                } catch (_: Exception) { "" }
-                errorReader.join()
-                val code = process.waitFor()
-                ProcessResult(code, output.trim(), error.trim())
-            } catch (_: Exception) {
+                    val output = runCatching { ParcelFileDescriptor.AutoCloseInputStream(process.inputStream).bufferedReader().use { it.readText() } }
+                        .getOrDefault("")
+                    errorReader.join(10_000)
+                    val code = process.waitFor()
+                    ProcessResult(code, output.trim(), error.trim())
+                } finally {
+                    runCatching { process.destroy() }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Shizuku exec failed")
                 null
             }
         }
 
+        /** Runs a shell line. Only for fixed strings: never interpolate untrusted data. */
         fun command(command: String, listener: CommandResultListener, lineBundle: Int = Integer.MAX_VALUE) {
-            println("Command: $command")
-
-            try {
-                val process = IShizukuService.Stub.asInterface(Shizuku.getBinder())
-                    .newProcess(arrayOf("sh", "-c", command), null, null)
-
-                val reader = BufferedReader(
-                    InputStreamReader(FileInputStream(process.inputStream.fileDescriptor))
-                )
-                val err = BufferedReader(
-                    InputStreamReader(FileInputStream(process.errorStream.fileDescriptor))
-                )
-                val output = StringBuilder()
-                val errordata = StringBuilder()
-                var line: String?
-                var linecount = 0
-
-                while (reader.readLine().also { line = it } != null) {
-                    linecount++
-                    output.append(line).append("\n")
-                    if (linecount == lineBundle) {
-                        linecount = 0
-                        listener.onCommandResult(output.toString(), false)
-                    }
-                }
-                reader.close()
-
-                while (err.readLine().also { line = it } != null) {
-                    errordata.append(line).append("\n")
-                }
-                err.close()
-
-                if (errordata.isNotBlank()) {
-                    listener.onCommandError(errordata.toString())
-                } else
-                    listener.onCommandResult(output.toString(), true)
-
-                process.waitFor()
-
-            } catch (e: Exception) {
-                listener.onCommandError(e.message ?: "No Shizuku")
+            val result = exec("sh", "-c", command)
+            when {
+                result == null -> listener.onCommandError("No Shizuku")
+                result.error.isNotBlank() && result.exitCode != 0 -> listener.onCommandError(result.error)
+                else -> listener.onCommandResult(result.output, true)
             }
         }
     }

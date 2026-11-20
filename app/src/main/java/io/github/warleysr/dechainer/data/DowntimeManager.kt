@@ -5,12 +5,14 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import io.github.warleysr.dechainer.DowntimeReceiver
+import io.github.warleysr.dechainer.AlarmTickReceiver
+import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.Downtime
 import io.github.warleysr.dechainer.models.SuspensionReason
 import io.github.warleysr.dechainer.security.SecurityManager
 import timber.log.Timber
 import java.time.LocalDateTime
+import java.time.ZonedDateTime
 
 /**
  * Makes the device match the downtime rules: suspends the apps of every running window, gives
@@ -25,46 +27,75 @@ object DowntimeManager {
 
     fun heldPackages(context: Context): Set<String> = DowntimeRepository.getHeld(context)
 
+    /** Packages currently required to be suspended by an active downtime rule right now. */
+    fun activePackages(context: Context): Set<String> {
+        val now = LocalDateTime.now()
+        val rules = DowntimeRepository.getRules(context)
+        return Downtime.suspendedAt(
+            rules, AppGroupRepository.getGroups(), now.dayOfWeek.value, now.hour * 60 + now.minute
+        ).filterTo(mutableSetOf()) { it != context.packageName }
+    }
+
     fun sync(context: Context) {
-        try {
-            val dpm = DeviceAdmin.policyManager
-            val admin = DeviceAdmin.component
-            val rules = DowntimeRepository.getRules(context)
-            val held = DowntimeRepository.getHeld(context)
+        synchronized(SuspensionCoordinator.lock) {
+            try {
+                val dpm = DeviceAdmin.policyManager
+                val admin = DeviceAdmin.component
+                val rules = DowntimeRepository.getRules(context)
+                val held = DowntimeRepository.getHeld(context)
 
-            if (!dpm.isAdminActive(admin) || !dpm.isDeviceOwnerApp(context.packageName)) {
-                cancelAlarm(context)
-                return
-            }
-
-            val now = LocalDateTime.now()
-            val should = Downtime.suspendedAt(
-                rules, AppGroupRepository.getGroups(), now.dayOfWeek.value, now.hour * 60 + now.minute
-            ).filterTo(mutableSetOf()) { it != context.packageName }
-
-            val suspendedNow = (should + held).filterTo(mutableSetOf()) { isSuspended(dpm, admin, it) }
-            val plan = Downtime.plan(should, held, suspendedNow)
-
-            // The impulse lock may hold the same apps; leave those to it.
-            val impulse = SecurityManager.getActiveImpulseSuspension(context)
-            val blocked = BlockSuspensionManager.heldPackages(context)
-            val release = plan.release.filterNot { it in impulse || it in blocked }
-            if (release.isNotEmpty()) dpm.setPackagesSuspended(admin, release.toTypedArray(), false)
-            if (plan.suspend.isNotEmpty()) {
-                dpm.setPackagesSuspended(admin, plan.suspend.toTypedArray(), true)
-                val names = rules.associate { it.id to it.name }
-                plan.suspend.forEach { pkg ->
-                    val rule = rules.firstOrNull { pkg in Downtime.packagesOf(it, AppGroupRepository.getGroups()) }
-                    SuspensionLogRepository.log(context, pkg, SuspensionReason.DOWNTIME, rule?.let { names[it.id] })
+                if (!dpm.isAdminActive(admin) || !dpm.isDeviceOwnerApp(context.packageName)) {
+                    cancelAlarm(context)
+                    return
                 }
-            }
 
-            DowntimeRepository.setHeld(context, plan.held)
-            AppRepository.invalidateCache()
-            scheduleNext(context, rules, now)
-            BlockSuspensionManager.sync(context)
-        } catch (e: Exception) {
-            Timber.e(e, "Downtime sync failed")
+                val groups = AppGroupRepository.getGroups()
+                val now = ZonedDateTime.now()
+                val day = now.dayOfWeek.value
+                val minute = now.hour * 60 + now.minute
+                val activeRules = rules.filter { rule ->
+                    rule.windows.any { w -> w.spansOn(day).any { it.contains(minute) } }
+                }
+                val rulePackages = activeRules.associateWith { Downtime.packagesOf(it, groups) }
+                val should = rulePackages.values.flatten().filterTo(mutableSetOf()) { it != context.packageName }
+
+                val suspendedNow = should.filterTo(mutableSetOf()) { isSuspended(dpm, admin, it) }
+                val plan = Downtime.plan(should, held, suspendedNow)
+
+                // Leave apps held by impulse lock, active blocks, or manual suspension untouched.
+                val impulse = SecurityManager.getActiveImpulseSuspension(context)
+                val blocked = BlockSuspensionManager.heldPackages(context)
+                val manual = SuspensionCoordinator.manualSuspensions(context)
+                val release = plan.release.filterNot { it in impulse || it in blocked || it in manual }
+
+                val failedRelease = if (release.isNotEmpty()) {
+                    dpm.setPackagesSuspended(admin, release.toTypedArray(), false).toSet()
+                } else {
+                    emptySet()
+                }
+                val actualRelease = release.toSet() - failedRelease
+
+                val failedSuspend = if (plan.suspend.isNotEmpty()) {
+                    dpm.setPackagesSuspended(admin, plan.suspend.toTypedArray(), true).toSet()
+                } else {
+                    emptySet()
+                }
+                val actualSuspend = plan.suspend - failedSuspend
+                actualSuspend.forEach { pkg ->
+                    val rule = activeRules.firstOrNull { pkg in rulePackages[it].orEmpty() }
+                    SuspensionLogRepository.log(context, pkg, SuspensionReason.DOWNTIME, rule?.name)
+                }
+
+                val finalHeld = (plan.held - failedSuspend) + failedRelease
+                DowntimeRepository.setHeld(context, finalHeld)
+                if (actualRelease.isNotEmpty() || actualSuspend.isNotEmpty()) {
+                    AppRepository.invalidateCache()
+                }
+                scheduleNext(context, rules, groups, now)
+                BlockSuspensionManager.sync(context)
+            } catch (e: Exception) {
+                Timber.e(e, "Downtime sync failed")
+            }
         }
     }
 
@@ -73,7 +104,7 @@ object DowntimeManager {
 
     private fun alarmIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
         context, 0,
-        Intent(context, DowntimeReceiver::class.java).setAction(ACTION_TICK),
+        Intent(context, AlarmTickReceiver::class.java).setAction(ACTION_TICK),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
@@ -81,10 +112,15 @@ object DowntimeManager {
         (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(alarmIntent(context))
     }
 
-    private fun scheduleNext(context: Context, rules: List<io.github.warleysr.dechainer.models.DowntimeRule>, now: LocalDateTime) {
+    private fun scheduleNext(
+        context: Context,
+        rules: List<io.github.warleysr.dechainer.models.DowntimeRule>,
+        groups: List<AppGroup>,
+        now: ZonedDateTime
+    ) {
         val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val at = Downtime.nextBoundaryMillis(rules, now)
-        if (at == null) {
+        val at = Downtime.nextBoundaryMillis(rules, now, groups)
+        if (at == null || at <= System.currentTimeMillis()) {
             cancelAlarm(context)
             return
         }

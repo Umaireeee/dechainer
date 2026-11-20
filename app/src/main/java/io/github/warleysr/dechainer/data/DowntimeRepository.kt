@@ -6,6 +6,7 @@ import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.models.DowntimeRule
 import org.json.JSONArray
 import org.json.JSONObject
+import timber.log.Timber
 
 /** Stores the downtime rules, and which apps downtime itself has suspended. */
 object DowntimeRepository {
@@ -33,6 +34,16 @@ object DowntimeRepository {
         prefs(context).edit { putStringSet(KEY_HELD, HashSet(held)) }
     }
 
+    fun forget(context: Context, pkg: String) {
+        val held = getHeld(context)
+        if (pkg in held) setHeld(context, held - pkg)
+    }
+
+    fun addHeld(context: Context, packages: Set<String>) {
+        if (packages.isEmpty()) return
+        setHeld(context, getHeld(context) + packages)
+    }
+
     internal fun encode(rules: List<DowntimeRule>): String {
         val array = JSONArray()
         rules.forEach { rule ->
@@ -49,9 +60,9 @@ object DowntimeRepository {
 
     internal fun decode(json: String?): List<DowntimeRule> {
         if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            val array = JSONArray(json)
-            (0 until array.length()).map { i ->
+        val array = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            runCatching {
                 val obj = array.getJSONObject(i)
                 fun strings(key: String) = obj.optJSONArray(key)
                     ?.let { arr -> (0 until arr.length()).map { arr.getString(it) }.toSet() } ?: emptySet()
@@ -60,11 +71,9 @@ object DowntimeRepository {
                     name = obj.getString("name"),
                     packageNames = strings("packages"),
                     groupIds = strings("groups"),
-                    windows = AppTimeWindows.fromJson(obj.getJSONArray("windows"))
+                    windows = obj.optJSONArray("windows")?.let { AppTimeWindows.fromJson(it) } ?: emptyList()
                 )
-            }
-        } catch (_: Exception) {
-            emptyList()
+            }.onFailure { Timber.w(it, "Skipping malformed downtime rule at index $i") }.getOrNull()
         }
     }
 }

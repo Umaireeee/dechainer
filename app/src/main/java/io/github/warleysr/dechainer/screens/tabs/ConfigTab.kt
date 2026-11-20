@@ -1,18 +1,16 @@
 package io.github.warleysr.dechainer.screens.tabs
 import android.app.admin.DevicePolicyManager
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.ImageSearch
-import androidx.compose.material.icons.outlined.NoAdultContent
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Web
+import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 import androidx.compose.foundation.clickable
@@ -146,6 +144,54 @@ fun ConfigTab(
                     headlineContent = { Text(stringResource(R.string.activity_blocker)) },
                     supportingContent = { Text(stringResource(R.string.activity_blocker_description)) },
                     leadingContent = { Icon(Icons.Outlined.Accessibility, "") },
+                    trailingContent = {
+                        Switch(
+                            checked = advancedBlocking,
+                            onCheckedChange = { enable ->
+                                val openSettings = {
+                                    try {
+                                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                    } catch (_: ActivityNotFoundException) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                context.getString(R.string.settings_locked_toast)
+                                            )
+                                        }
+                                    }
+                                }
+                                if (enable) {
+                                    scope.launch {
+                                        val enabledViaShizuku = withContext(Dispatchers.IO) {
+                                            if (Shizuku.pingBinder() && DeviceOwnerRepository.checkShizukuPermission()) {
+                                                AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(context)
+                                                DeviceOwnerRepository.changeAccessibilityPermission(true)
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        }
+                                        if (!enabledViaShizuku) openSettings()
+                                    }
+                                } else {
+                                    recoveryGate.run {
+                                        DechainerAccessibilityService.prepareServiceDisable()
+                                        AccessibilityWatchdog.setWanted(context, false)
+                                        scope.launch {
+                                            val disabledViaShizuku = withContext(Dispatchers.IO) {
+                                                if (Shizuku.pingBinder() && DeviceOwnerRepository.checkShizukuPermission()) {
+                                                    DeviceOwnerRepository.changeAccessibilityPermission(false)
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            }
+                                            if (!disabledViaShizuku) openSettings()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -353,10 +399,13 @@ fun ConfigTab(
                 TextButton(
                     enabled = confirmForcedRemoval,
                     onClick = {
-                        viewModel.removeDeviceOwner()
                         showFinishForcedRemovalDialog = false
                         confirmForcedRemoval = false
-                        (context as? android.app.Activity)?.recreate()
+                        viewModel.removeDeviceOwner {
+                            SecurityManager.cancelForcedRemoval(context)
+                            forcedRemovalRemaining = -1L
+                            (context as? android.app.Activity)?.recreate()
+                        }
                     }
                 ) {
                     Text(stringResource(R.string.confirm))
@@ -425,6 +474,10 @@ fun ConfigTab(
             currentShuffle = shuffleKeyboard,
             onDismiss = { showKeyboardDialog = false },
             onApply = { isShuffle ->
+                if (isShuffle == shuffleKeyboard) {
+                    showKeyboardDialog = false
+                    return@KeyboardTypeDialog
+                }
                 val loosening = shuffleKeyboard && !isShuffle
                 recoveryGate.change(loosening) {
                     shuffleKeyboard = isShuffle

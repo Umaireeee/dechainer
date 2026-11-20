@@ -173,14 +173,20 @@ object AppRepository {
     }
 
     fun setAppSuspended(packageName: String, suspended: Boolean) {
-        dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended)
-        updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
-        context.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).edit {
-            if (suspended) putBoolean(packageName, true) else remove(packageName)
-        }
-        if (suspended) {
+        synchronized(SuspensionCoordinator.lock) {
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
+            val failed = dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended).toSet()
+            if (packageName in failed) return
+
+            updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
+            context.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).edit {
+                if (suspended) putBoolean(packageName, true) else remove(packageName)
+            }
             BlockSuspensionManager.forget(context, packageName)
-            SuspensionLogRepository.log(context, packageName, SuspensionReason.MANUAL)
+            DowntimeRepository.forget(context, packageName)
+            if (suspended) {
+                SuspensionLogRepository.log(context, packageName, SuspensionReason.MANUAL)
+            }
         }
     }
 
@@ -192,13 +198,13 @@ object AppRepository {
     fun setAppTimeLimit(packageName: String, limit: TimeLimit) {
         AppTimeLimits.write(dailyLimitsPrefs, weeklyLimitsPrefs, packageName, limit)
         updateCachedApp(packageName) { it.copy(timeLimit = limit) }
+        BlockSuspensionManager.sync(context)
     }
 
     fun getAppTimeLimits(): Map<String, TimeLimit> = AppTimeLimits.readAll(dailyLimitsPrefs, weeklyLimitsPrefs)
 
     fun getAppUsage(packageName: String, inMinutes: Boolean = false): Long {
-        val used = context.getSharedPreferences("internal_usage_stats", Context.MODE_PRIVATE)
-            .getLong(packageName, 0L)
+        val used = DailyUsageStore.getAppUsageMillis(context, packageName)
         return if (inMinutes) TimeUnit.MILLISECONDS.toMinutes(used) else used
     }
 
@@ -218,16 +224,16 @@ object AppRepository {
             if (windows.isEmpty()) remove(packageName) else putString(packageName, AppTimeWindows.encode(windows))
         }
         updateCachedApp(packageName) { it.copy(timeWindows = windows) }
+        BlockSuspensionManager.sync(context)
     }
 
-    fun getApplicationRestrictions(packageName: String): Bundle {
-        return dpm.getApplicationRestrictions(adminName, packageName)
-    }
+    fun getApplicationRestrictions(packageName: String): Bundle =
+        runCatching { dpm.getApplicationRestrictions(adminName, packageName) }.getOrDefault(Bundle())
 
     fun setApplicationRestrictions(packageName: String, restrictions: Bundle) {
-        val current = dpm.getApplicationRestrictions(adminName, packageName)
-        current.putAll(restrictions)
-        dpm.setApplicationRestrictions(adminName, packageName, current)
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        // Replaces the whole bundle, so a cleared integer/string entry is actually removed.
+        runCatching { dpm.setApplicationRestrictions(adminName, packageName, restrictions) }
     }
 
     fun getAvailableRestrictions(packageName: String): List<RestrictionEntry> {

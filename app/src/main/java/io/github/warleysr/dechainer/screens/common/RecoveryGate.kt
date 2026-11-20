@@ -45,10 +45,10 @@ class RecoveryGate(private val context: Context) {
 
     /** [onCancel] runs if the user dismisses the dialog instead of confirming — for rolling back optimistic UI updates. */
     fun run(onCancel: (() -> Unit)? = null, action: () -> Unit) {
-        val storedCode = SecurityManager.getRecoveryCode(context)
-        if (storedCode == null || SecurityManager.isSessionActive()) {
+        if (!SecurityManager.isRecoveryCodeSet(context) || SecurityManager.isSessionActive()) {
             action()
         } else {
+            pendingCancel?.invoke()
             pendingAction = action
             pendingCancel = onCancel
         }
@@ -67,8 +67,11 @@ class RecoveryGate(private val context: Context) {
     }
 
     fun confirm(code: String): Boolean {
-        val storedCode = SecurityManager.getRecoveryCode(context) ?: return true
-        if (!SecurityManager.validateRecoveryCode(code, storedCode)) return false
+        if (!SecurityManager.isRecoveryCodeSet(context)) {
+            challengesDone()
+            return true
+        }
+        if (!SecurityManager.verifyRecoveryCode(context, code)) return false
         if (SecurityManager.isSessionActive() || !SecurityManager.isTetrisUnlockEnabled(context)) {
             challengesDone()
         } else {
@@ -80,13 +83,15 @@ class RecoveryGate(private val context: Context) {
     fun challengesDone() {
         if (!SecurityManager.isSessionActive()) SecurityManager.startSession()
         updateSessionActive()
-        pendingAction?.invoke()
+        val action = pendingAction
         clear()
+        action?.invoke()
     }
 
     fun dismiss() {
-        pendingCancel?.invoke()
+        val cancel = pendingCancel
         clear()
+        cancel?.invoke()
     }
 
     private fun clear() {
@@ -105,7 +110,7 @@ fun rememberRecoveryGate(): RecoveryGate {
     LaunchedEffect(gate, SecurityManager.sessionEndTime) {
         gate.updateSessionActive()
         while (gate.isSessionActive) {
-            val remaining = SecurityManager.sessionEndTime - System.currentTimeMillis()
+            val remaining = SecurityManager.getSessionRemainingMillis()
             if (remaining <= 0) {
                 gate.updateSessionActive()
                 break
@@ -129,7 +134,11 @@ fun RecoveryGateDialog(gate: RecoveryGate) {
     if (gate.isChallenging) {
         Dialog(
             onDismissRequest = { gate.dismiss() },
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+                dismissOnBackPress = false
+            )
         ) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 TetrisUnlock(

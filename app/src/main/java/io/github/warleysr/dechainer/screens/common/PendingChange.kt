@@ -3,10 +3,12 @@ package io.github.warleysr.dechainer.screens.common
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import io.github.warleysr.dechainer.models.Span
 import io.github.warleysr.dechainer.models.TimeLimit
 import io.github.warleysr.dechainer.models.TimeWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -20,16 +22,30 @@ object PendingChange {
     val snackbarHost = SnackbarHostState()
 
     // App-wide scope: the screen that started the change may be gone before the delay ends.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var activeJob: Job? = null
+    private var activeAction: (() -> Unit)? = null
 
     fun schedule(message: String, undoLabel: String, onUndo: (() -> Unit)? = null, action: () -> Unit) {
-        // Dismissing a showing snackbar commits its change right away, so changes never overlap.
+        // Commit any in-flight restriction immediately before replacing it so rapid calls don't
+        // race on SnackbarHostState's mutex or drop an undo window.
+        activeJob?.cancel()
+        val displaced = activeAction
+        activeJob = null
+        activeAction = null
         snackbarHost.currentSnackbarData?.dismiss()
-        scope.launch {
+        displaced?.invoke()
+
+        activeAction = action
+        activeJob = scope.launch {
             val result = withTimeoutOrNull(UNDO_WINDOW_MS) {
                 snackbarHost.showSnackbar(message, undoLabel, duration = SnackbarDuration.Indefinite)
             }
-            if (result == SnackbarResult.ActionPerformed) onUndo?.invoke() else action()
+            if (activeAction === action) {
+                activeAction = null
+                activeJob = null
+                if (result == SnackbarResult.ActionPerformed) onUndo?.invoke() else action()
+            }
         }
     }
 }
@@ -40,29 +56,55 @@ private fun cap(minutes: Int) = if (minutes == 0) Int.MAX_VALUE else minutes
 fun isLooserLimit(old: TimeLimit, new: TimeLimit) =
     DayOfWeek.entries.any { cap(new.minutesFor(it)) > cap(old.minutesFor(it)) }
 
+private val FULL_DAY = listOf(Span(0, 1440))
+
+private fun spansCoveredBy(newSpans: List<Span>, oldSpans: List<Span>): Boolean =
+    newSpans.all { ns -> oldSpans.any { os -> os.start <= ns.start && ns.end <= os.end } }
+
 /** Windows are the *allowed* periods and an empty list means always allowed: loosening is allowing a minute of a day that wasn't. */
 fun isLooserWindows(old: List<TimeWindow>, new: List<TimeWindow>): Boolean =
     (1..7).any { day ->
-        (0 until 1440).any { TimeWindow.isAllowed(new, day, it) && !TimeWindow.isAllowed(old, day, it) }
+        val oldSpans = TimeWindow.allowedSpans(listOf(old), day) ?: FULL_DAY
+        val newSpans = TimeWindow.allowedSpans(listOf(new), day) ?: FULL_DAY
+        !spansCoveredBy(newSpans, oldSpans)
     }
 
+private fun isPermissiveKey(key: String): Boolean {
+    val lower = key.lowercase()
+    return lower.startsWith("allow") || "allowlist" in lower || "whitelist" in lower || "exception" in lower
+}
+
+@Suppress("DEPRECATION")
 fun isLooserRestrictions(current: android.os.Bundle, new: android.os.Bundle): Boolean {
-    for (key in current.keySet()) {
+    val currentKeys = current.keySet()
+    for (key in new.keySet()) {
+        if (key !in currentKeys && isPermissiveKey(key)) return true
+    }
+    for (key in currentKeys) {
         val oldVal = current.get(key)
         val newVal = if (new.containsKey(key)) new.get(key) else null
         when (oldVal) {
             is Boolean -> {
-                if (oldVal && newVal != true) return true
+                if (isPermissiveKey(key)) {
+                    if (!oldVal && newVal == true) return true
+                } else {
+                    if (oldVal && newVal != true) return true
+                }
             }
             is String -> {
-                if (oldVal.isNotEmpty() && (newVal as? String).isNullOrEmpty()) return true
+                if (oldVal.isNotEmpty() && (newVal as? String) != oldVal) return true
             }
             is Number -> {
-                if (oldVal.toLong() != 0L && (newVal == null || (newVal as? Number)?.toLong() == 0L)) return true
+                if (oldVal.toLong() != (newVal as? Number)?.toLong()) return true
             }
             is Array<*> -> {
+                val oldSet = oldVal.toSet()
                 val newSet = (newVal as? Array<*>)?.toSet() ?: emptySet()
-                if (!newSet.containsAll(oldVal.toSet())) return true
+                if (isPermissiveKey(key)) {
+                    if (!oldSet.containsAll(newSet)) return true
+                } else {
+                    if (!newSet.containsAll(oldSet)) return true
+                }
             }
             is android.os.Bundle -> {
                 if (newVal !is android.os.Bundle || isLooserRestrictions(oldVal, newVal)) return true

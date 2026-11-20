@@ -1,6 +1,5 @@
 [versions]
 agp = "8.13.2"
-json = "20260814"
 kotlin = "2.4.10"
 coreKtx = "1.17.0"
 junit = "4.13.2"
@@ -28,7 +27,6 @@ androidx-biometric-compose = { group = "androidx.biometric", name = "biometric-c
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtended" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
-json = { module = "org.json:json", version.ref = "json" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }

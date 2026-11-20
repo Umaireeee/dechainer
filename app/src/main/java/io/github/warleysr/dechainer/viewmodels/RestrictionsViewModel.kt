@@ -4,6 +4,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import io.github.warleysr.dechainer.data.DeviceAdmin
 import io.github.warleysr.dechainer.data.SystemRestrictions
+import io.github.warleysr.dechainer.security.SecurityManager
+import timber.log.Timber
 
 class RestrictionsViewModel : ViewModel() {
     private val dpm = DeviceAdmin.policyManager
@@ -52,29 +54,52 @@ class RestrictionsViewModel : ViewModel() {
         }
     }
 
-    fun applyChanges() {
+    fun snapshotDrafts(): Map<String, Boolean> = draftRestrictions.toMap()
+
+    fun applyChanges(
+        snapshot: Map<String, Boolean> = draftRestrictions,
+        allowLoosening: Boolean = true
+    ) {
+        if (!dpm.isDeviceOwnerApp(adminName.packageName)) return
         val currentlyAppliedRestrictions = dpm.getUserRestrictions(adminName)
-        val allTrackedKeys = (allKeys + draftRestrictions.keys).distinct()
+        val allTrackedKeys = (allKeys + snapshot.keys + currentlyAppliedRestrictions.keySet()).distinct()
         allTrackedKeys.forEach { key ->
-            val shouldEnable = draftRestrictions[key] ?: false
+            val wasEnabled = currentlyAppliedRestrictions.getBoolean(key)
+            val shouldEnable = snapshot[key] == true
+            if (shouldEnable == wasEnabled) return@forEach
+
             if (shouldEnable) {
-                dpm.addUserRestriction(adminName, key)
-            } else if (currentlyAppliedRestrictions.containsKey(key)) {
-                dpm.clearUserRestriction(adminName, key)
+                runCatching { dpm.addUserRestriction(adminName, key) }
+                    .onFailure { Timber.w(it, "Failed to add restriction $key") }
+            } else if (allowLoosening || SecurityManager.isSessionActive()) {
+                runCatching { dpm.clearUserRestriction(adminName, key) }
+                    .onFailure { Timber.w(it, "Failed to clear restriction $key") }
             }
         }
         loadRestrictions()
     }
 
-    fun isAllDraftsEnabled(keys: List<String>): Boolean = keys.all { draftRestrictions[it] == true }
+    fun isAllDraftsEnabled(keys: List<String>): Boolean =
+        keys.isNotEmpty() && keys.all { draftRestrictions[it] == true }
 
     fun hasPendingChanges(): Boolean {
         val allTrackedKeys = (allKeys + draftRestrictions.keys).distinct()
-        return allTrackedKeys.any { draftRestrictions[it] != appliedRestrictions[it] }
+        return allTrackedKeys.any { (draftRestrictions[it] == true) != (appliedRestrictions[it] == true) }
     }
 
-    fun isLoosening(): Boolean {
-        val allTrackedKeys = (allKeys + draftRestrictions.keys).distinct()
-        return allTrackedKeys.any { appliedRestrictions[it] == true && draftRestrictions[it] != true }
+    fun isLoosening(snapshot: Map<String, Boolean> = draftRestrictions): Boolean {
+        val liveRestrictions = if (dpm.isDeviceOwnerApp(adminName.packageName)) {
+            dpm.getUserRestrictions(adminName)
+        } else {
+            null
+        }
+        val allTrackedKeys = (
+            allKeys + appliedRestrictions.keys + snapshot.keys + liveRestrictions?.keySet().orEmpty()
+        ).distinct()
+        return allTrackedKeys.any { key ->
+            val wasEnabled = appliedRestrictions[key] == true || (liveRestrictions?.getBoolean(key) == true)
+            val shouldEnable = snapshot[key] == true
+            wasEnabled && !shouldEnable
+        }
     }
 }

@@ -21,6 +21,7 @@ import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.ImpulseLockViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
@@ -29,6 +30,10 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
 
     val sessionActive = recoveryGate.isSessionActive
     val accessibilityActive = DechainerAccessibilityService.isRunning
+
+    LaunchedEffect(sessionActive) {
+        if (!sessionActive) showAppSelectionDialog = false
+    }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -82,7 +87,7 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                 Slider(
                     value = viewModel.tetrisMinutes.toFloat(),
                     enabled = sessionActive,
-                    onValueChange = { viewModel.updateTetrisMinutes(it.toInt()) },
+                    onValueChange = { viewModel.updateTetrisMinutes(it.roundToInt()) },
                     valueRange = SecurityManager.TETRIS_MIN_MINUTES.toFloat()..
                         SecurityManager.TETRIS_MAX_MINUTES.toFloat(),
                     steps = SecurityManager.TETRIS_MAX_MINUTES - SecurityManager.TETRIS_MIN_MINUTES - 1,
@@ -135,7 +140,7 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
             Slider(
                 value = viewModel.durationMinutes.toFloat(),
                 enabled = sessionActive,
-                onValueChange = { viewModel.updateDurationMinutes(it.toInt()) },
+                onValueChange = { viewModel.updateDurationMinutes(it.roundToInt()) },
                 valueRange = SecurityManager.IMPULSE_MIN_DURATION_MINUTES.toFloat()..
                     SecurityManager.IMPULSE_MAX_DURATION_MINUTES.toFloat(),
                 // 15-minute increments between the two bounds.
@@ -197,7 +202,7 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
         item { Spacer(Modifier.height(24.dp)) }
     }
 
-    if (showAppSelectionDialog) {
+    if (showAppSelectionDialog && sessionActive) {
         AppPickerDialog(
             apps = viewModel.apps,
             isLoading = viewModel.isLoadingApps,

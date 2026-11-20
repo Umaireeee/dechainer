@@ -10,6 +10,7 @@ import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DowntimeManager
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,10 +28,19 @@ class DechainerApplication : Application() {
         }
     }
 
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val applicationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, throwable ->
+            Timber.e(throwable, "Uncaught coroutine failure in DechainerApplication")
+        }
+    )
 
     private val packageChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_PACKAGE_REMOVED &&
+                intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            ) {
+                return
+            }
             AppRepository.invalidateCache()
             applicationScope.launch { AppRepository.getApps() }
         }
@@ -70,7 +80,15 @@ class DechainerApplication : Application() {
         }
 
         // Catches up after a force stop, which also cancels the downtime alarm.
-        applicationScope.launch { DowntimeManager.sync(this@DechainerApplication) }
+        applicationScope.launch {
+            DowntimeManager.sync(this@DechainerApplication)
+            if (AccessibilityWatchdog.isWanted(this@DechainerApplication)) {
+                if (!AccessibilityWatchdog.hasPermission(this@DechainerApplication)) {
+                    AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(this@DechainerApplication)
+                }
+                AccessibilityWatchdog.schedulePeriodic(this@DechainerApplication)
+            }
+        }
 
         // Keeps the accessibility service and the private DNS choice from being switched off in system settings.
         AccessibilityWatchdog.startGuard(this)

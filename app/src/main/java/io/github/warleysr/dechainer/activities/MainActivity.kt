@@ -1,16 +1,11 @@
 package io.github.warleysr.dechainer.activities
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -30,10 +25,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
@@ -45,38 +39,53 @@ import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        private const val STATE_AUTHENTICATED = "authenticated"
+        private const val AUTH_GRACE_MS = 30_000L
+    }
+
     private val authenticated = mutableStateOf(false)
+    private var lastStopElapsed = 0L
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (SecurityManager.consumeDebugAutoStartSession(this)) authenticated.value = true
+        val wasAuthenticated = savedInstanceState?.getBoolean(STATE_AUTHENTICATED, false) == true
+        authenticated.value =
+            (wasAuthenticated && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L) ||
+                SecurityManager.consumeDebugAutoStartSession(this)
+        SecurityManager.syncRecoveryCodeState(this)
         SecurityManager.consumeDebugRestoreUnknownSourcesRestriction(this)
-        ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(this@MainActivity, abandonStale = true)
+        }
         enableEdgeToEdge()
         setContent {
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
-                viewModel.addShizukuListener()
                 val navViewModel: NavigationViewModel = viewModel()
 
+                val recoverySet = SecurityManager.isRecoveryKeySet
+                val isUnlocked = recoverySet && authenticated.value
                 val currentScreen = navViewModel.selectedTab()
                 val isRoot = currentScreen in listOf("apps", "schedule", "config", "suspension_logs")
 
-                BackHandler(enabled = !isRoot) {
+                BackHandler(enabled = isUnlocked && !isRoot) {
                     navViewModel.goBack()
                 }
 
-                var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-                LaunchedEffect(Unit) {
+                var sessionRemaining by remember { mutableLongStateOf(SecurityManager.getSessionRemainingMillis()) }
+                LaunchedEffect(SecurityManager.sessionEndTime) {
                     while (true) {
-                        currentTime = System.currentTimeMillis()
-                        // Per second only while the session countdown is on screen; per minute otherwise.
-                        delay(if (SecurityManager.isSessionActive()) 1000L else 60_000L)
+                        sessionRemaining = SecurityManager.getSessionRemainingMillis()
+                        if (sessionRemaining <= 0L) break
+                        delay(1000L)
                     }
                 }
 
@@ -86,17 +95,17 @@ class MainActivity : ComponentActivity() {
                         TopAppBar(
                             title = { Text(stringResource(R.string.app_name)) },
                             navigationIcon = {
-                                if (!isRoot) {
+                                if (isUnlocked && !isRoot) {
                                     IconButton(onClick = { navViewModel.goBack() }) {
                                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, null)
                                     }
                                 }
                             },
                             actions = {
-                                if (SecurityManager.isSessionActive()) {
-                                    val remaining = SecurityManager.sessionEndTime - currentTime
-                                    val minutes = (remaining / 1000) / 60
-                                    val seconds = (remaining / 1000) % 60
+                                if (isUnlocked && sessionRemaining > 0L) {
+                                    val totalSeconds = sessionRemaining / 1000L
+                                    val minutes = totalSeconds / 60
+                                    val seconds = totalSeconds % 60
                                     
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Outlined.LockClock, null, modifier = Modifier.padding(end = 4.dp))
@@ -136,7 +145,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     bottomBar = {
-                        if (!SecurityManager.isRecoveryCodeSet(this) || !authenticated.value) return@Scaffold
+                        if (!isUnlocked) return@Scaffold
 
                         val tabs = listOf(
                             Pair("apps", stringResource(R.string.apps)),
@@ -174,7 +183,7 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
 
-                    if (!(SecurityManager.isRecoveryCodeSet(this)))
+                    if (!recoverySet)
                         SetupRecovery(innerPadding)
                     else {
                         if (!authenticated.value)
@@ -183,7 +192,14 @@ class MainActivity : ComponentActivity() {
                                     .padding(innerPadding)
                                     .consumeWindowInsets(innerPadding)
                             ) {
-                                LockScreen(onAuthenticated = { authenticated.value = true })
+                                LockScreen(
+                                    isOwner = viewModel.isDeviceOwner(),
+                                    onAuthenticated = {
+                                        if (SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) <= 0L) {
+                                            authenticated.value = true
+                                        }
+                                    }
+                                )
                             }
                         else
                             Box(modifier = Modifier.padding(innerPadding)) {
@@ -204,8 +220,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(
+            STATE_AUTHENTICATED,
+            authenticated.value && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L
+        )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            lastStopElapsed = SystemClock.elapsedRealtime()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val impulseActive = SecurityManager.getImpulseBlockRemainingTime(this) > 0L
+        val timedOutInBackground = lastStopElapsed > 0L &&
+            SystemClock.elapsedRealtime() - lastStopElapsed > AUTH_GRACE_MS
+        if (impulseActive || timedOutInBackground) {
+            authenticated.value = false
+        }
+        lastStopElapsed = 0L
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        SecurityManager.endSession()
+        if (!isChangingConfigurations) {
+            SecurityManager.endSession()
+        }
     }
 }
