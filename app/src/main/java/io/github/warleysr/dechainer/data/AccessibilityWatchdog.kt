@@ -159,7 +159,9 @@ object AccessibilityWatchdog {
                     DechainerAccessibilityService::class.java.name
                 )
                 val globallyEnabled = Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
-                if (!listed || !globallyEnabled) addToList(app)
+                if (!listed || !globallyEnabled || !DechainerAccessibilityService.isRunning) {
+                    ensureEnabled(app)
+                }
             }
         }
         app.contentResolver.registerContentObserver(
@@ -186,11 +188,11 @@ object AccessibilityWatchdog {
         }
     }
 
-    /** Called after a reboot or an app update. */
+    /** Called after a reboot or an app update. Zero periodic polling: only re-enables if needed. */
     fun onSystemEvent(context: Context) {
+        cancelLegacyPeriodic(context)
         if (!isWanted(context)) return
-        schedulePeriodic(context)
-        // Give the system a moment to bind the service by itself before stepping in.
+        ensureEnabled(context)
         scheduleSoon(context)
     }
 
@@ -201,17 +203,16 @@ object AccessibilityWatchdog {
     )
 
     /**
-     * A check every half hour while the device is awake. Inexact on purpose: the system batches
-     * it with other work, so it costs next to nothing, and it never wakes a sleeping phone.
+     * Legacy entrypoint kept for binary callers: cancels any old periodic repeating alarm so
+     * watchdog recovery remains strictly event-driven with zero background polling.
      */
     fun schedulePeriodic(context: Context) {
+        cancelLegacyPeriodic(context)
+    }
+
+    fun cancelLegacyPeriodic(context: Context) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
-        alarms.setInexactRepeating(
-            AlarmManager.ELAPSED_REALTIME,
-            SystemClock.elapsedRealtime() + AlarmManager.INTERVAL_HALF_HOUR,
-            AlarmManager.INTERVAL_HALF_HOUR,
-            pendingIntent(context, PERIODIC_REQUEST)
-        )
+        alarms.cancel(pendingIntent(context, PERIODIC_REQUEST))
     }
 
     /** One check shortly from now, for when the service has just stopped unexpectedly. */

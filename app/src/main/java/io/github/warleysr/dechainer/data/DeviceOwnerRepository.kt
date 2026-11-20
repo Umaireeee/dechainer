@@ -242,7 +242,9 @@ object DeviceOwnerRepository {
             val held = BlockSuspensionManager.heldPackages(ctx) + DowntimeRepository.getHeld(ctx) +
                 SecurityManager.getActiveImpulseSuspension(ctx) + manual
             if (held.isNotEmpty()) dpm.setPackagesSuspended(adminName, held.toTypedArray(), false)
-            dnsGuardPrefs().edit().remove(KEY_DNS_WANTED).apply()
+            DnsGuard.forget(ctx)
+            AccessibilityWatchdog.setWanted(ctx, false)
+            NotificationGuard.setListenerWanted(ctx, false)
             SecurityManager.cancelForcedRemoval(ctx)
             AppRepository.invalidateCache()
         } catch (e: Exception) {
@@ -294,25 +296,30 @@ object DeviceOwnerRepository {
 
     /** Filtering DNS providers offered in the DNS settings, in the order they are tried on fallback. */
     val CLEAN_DNS_PRESETS: List<Pair<String, String>> = listOf(
-        "Cloudflare" to "family.cloudflare-dns.com",
-        "AdGuard DNS" to "family.adguard-dns.com",
-        "CleanBrowsing" to "adult-filter-dns.cleanbrowsing.org"
+        "Cloudflare Family" to DnsFailoverRule.CLEAN_HOSTS[0],
+        "AdGuard Family" to DnsFailoverRule.CLEAN_HOSTS[1],
+        "CleanBrowsing Adult" to DnsFailoverRule.CLEAN_HOSTS[2],
+        "CleanBrowsing Family" to DnsFailoverRule.CLEAN_HOSTS[3]
     )
 
+    internal fun applyPrivateDnsHostOnly(host: String): Int {
+        if (!isDeviceOwner()) return DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
+        return runCatching { dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, host) }
+            .getOrDefault(DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING)
+    }
+
     /**
-     * Sets the private DNS host. If the host is not answering, Android rejects it with
-     * PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING, so the next filtering preset is tried until one
-     * is accepted. Returns the last result, which is PRIVATE_DNS_SET_NO_ERROR on success.
+     * Sets the private DNS host. If the host is not answering and [autoFailover] is on (or if Android
+     * rejects it with `HOST_NOT_SERVING`), the next clean preset is tried until one is accepted.
      */
-    fun setPrivateDNS(host: String): Int {
+    fun setPrivateDNS(host: String, autoFailover: Boolean = DnsGuard.isAutoFailover(context)): Int {
         var result = DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING
         if (!isDeviceOwner()) return result
         val candidates = listOf(host) + CLEAN_DNS_PRESETS.map { it.second }.filter { it != host }
         for (candidate in candidates) {
-            result = runCatching { dpm.setGlobalPrivateDnsModeSpecifiedHost(adminName, candidate) }
-                .getOrDefault(DevicePolicyManager.PRIVATE_DNS_SET_ERROR_FAILURE_SETTING)
+            result = applyPrivateDnsHostOnly(candidate)
             if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                dnsGuardPrefs().edit().putString(KEY_DNS_WANTED, candidate).apply()
+                DnsGuard.remember(context, candidate, autoFailover)
                 break
             }
             if (result != DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING) break
@@ -321,42 +328,10 @@ object DeviceOwnerRepository {
         return result
     }
 
-    private const val KEY_DNS_WANTED = "dns_wanted"
+    fun setAutoPrivateDNS(): Int = DnsGuard.connectBestCleanDns(context).second
 
-    private fun dnsGuardPrefs() = context.getSharedPreferences("private_dns_guard", Context.MODE_PRIVATE)
-
-    private val guardScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
-    )
-    private var guardJob: kotlinx.coroutines.Job? = null
-    private var dnsGuardStarted = false
-
-    /**
-     * Puts the chosen DNS host back if the system setting is changed from outside the app. The host
-     * is only remembered after the device accepted it, so a failed attempt never becomes the target.
-     * Work is debounced and runs off the main thread.
-     */
-    @Synchronized
     fun startPrivateDnsGuard() {
-        if (dnsGuardStarted) return
-        dnsGuardStarted = true
-        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                guardJob?.cancel()
-                guardJob = guardScope.launch {
-                    kotlinx.coroutines.delay(500)
-                    val wanted = dnsGuardPrefs().getString(KEY_DNS_WANTED, null) ?: return@launch
-                    if (!isDeviceOwner()) return@launch
-                    if (getPrivateDNS() != wanted) setPrivateDNS(wanted)
-                }
-            }
-        }
-        context.contentResolver.registerContentObserver(
-            android.provider.Settings.Global.getUriFor("private_dns_specifier"), false, observer
-        )
-        context.contentResolver.registerContentObserver(
-            android.provider.Settings.Global.getUriFor("private_dns_mode"), false, observer
-        )
+        DnsGuard.observe(context)
     }
 
     fun getPrivateDNS(): String? = runCatching {

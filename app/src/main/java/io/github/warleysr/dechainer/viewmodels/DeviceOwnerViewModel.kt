@@ -69,7 +69,10 @@ class DeviceOwnerViewModel : ViewModel() {
         }
     }
 
-    fun setPrivateDNS(host: String): Int = DeviceOwnerRepository.setPrivateDNS(host)
+    fun setPrivateDNS(host: String, autoFailover: Boolean = false): Int =
+        DeviceOwnerRepository.setPrivateDNS(host, autoFailover)
+
+    fun setAutoPrivateDNS(): Int = DeviceOwnerRepository.setAutoPrivateDNS()
 
     fun getPrivateDNS(): String? = DeviceOwnerRepository.getPrivateDNS()
 

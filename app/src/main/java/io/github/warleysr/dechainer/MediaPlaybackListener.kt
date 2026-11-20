@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
 import io.github.warleysr.dechainer.data.MusicLimitTracker
+import io.github.warleysr.dechainer.data.NotificationGuard
 import timber.log.Timber
 
 /**
@@ -44,6 +45,7 @@ class MediaPlaybackListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        NotificationGuard.setListenerWanted(applicationContext, true)
         try {
             val manager = getSystemService(MediaSessionManager::class.java) ?: return
             val component = ComponentName(this, MediaPlaybackListener::class.java)
@@ -59,6 +61,7 @@ class MediaPlaybackListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         cleanup()
+        NotificationGuard.ensureNotificationListenerEnabled(applicationContext)
     }
 
     override fun onDestroy() {

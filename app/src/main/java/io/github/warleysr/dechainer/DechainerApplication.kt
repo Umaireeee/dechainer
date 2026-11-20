@@ -9,7 +9,9 @@ import android.os.Build
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
+import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.DowntimeManager
+import io.github.warleysr.dechainer.data.NotificationGuard
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,19 +81,23 @@ class DechainerApplication : Application() {
             DeviceOwnerRepository.restoreStuckUserSetupComplete()
         }
 
-        // Catches up after a force stop, which also cancels the downtime alarm.
+        // Catches up after a force stop, which also cancels alarms.
         applicationScope.launch {
             DowntimeManager.sync(this@DechainerApplication)
+            AccessibilityWatchdog.cancelLegacyPeriodic(this@DechainerApplication)
             if (AccessibilityWatchdog.isWanted(this@DechainerApplication)) {
                 if (!AccessibilityWatchdog.hasPermission(this@DechainerApplication)) {
                     AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(this@DechainerApplication)
                 }
-                AccessibilityWatchdog.schedulePeriodic(this@DechainerApplication)
+                AccessibilityWatchdog.ensureEnabled(this@DechainerApplication)
             }
+            NotificationGuard.enforceAll(this@DechainerApplication)
+            DnsGuard.enforce(this@DechainerApplication)
         }
 
-        // Keeps the accessibility service and the private DNS choice from being switched off in system settings.
+        // Zero-polling instant observers for accessibility, notifications, and Clean DNS failover.
         AccessibilityWatchdog.startGuard(this)
-        DeviceOwnerRepository.startPrivateDnsGuard()
+        NotificationGuard.observe(this)
+        DnsGuard.observe(this)
     }
 }

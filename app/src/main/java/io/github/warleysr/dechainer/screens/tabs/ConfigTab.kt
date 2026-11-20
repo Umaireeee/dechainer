@@ -6,6 +6,8 @@ import android.provider.Settings
 import androidx.compose.material.icons.outlined.Dns
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
+import io.github.warleysr.dechainer.data.DnsFailoverRule
+import io.github.warleysr.dechainer.data.DnsGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,6 +85,13 @@ fun ConfigTab(
         while (true) {
             forcedRemovalRemaining = SecurityManager.getForcedRemovalRemainingTime(context)
             kotlinx.coroutines.delay(60000.milliseconds)
+        }
+    }
+
+    val dnsStatus by DnsGuard.status.collectAsState()
+    LaunchedEffect(viewModel.isDeviceOwner()) {
+        if (viewModel.isDeviceOwner()) {
+            DnsGuard.refreshReachabilityAsync(context)
         }
     }
 
@@ -198,9 +207,7 @@ fun ConfigTab(
             item {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.dns_settings)) },
-                    supportingContent = { 
-                        Text( stringResource(R.string.dns_description))
-                    },
+                    supportingContent = { Text(dnsSummaryText(dnsStatus)) },
                     leadingContent = { Icon(Icons.Outlined.Dns, "") },
                     modifier = Modifier.clickable {
                         if (!viewModel.isDeviceOwner()) {
@@ -408,21 +415,24 @@ fun ConfigTab(
 
     if (showDnsDialog) {
         val currentDns = viewModel.getPrivateDNS()
+        val currentAuto = DnsGuard.isAutoFailover(context)
         val externalScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         DnsSelectionDialog(
             currentDns = currentDns,
+            currentAutoFailover = currentAuto,
             errorRes = dnsErrorRes,
             isLoading = isApplyingDns,
             onDismiss = { if (!isApplyingDns) showDnsDialog = false },
-            onApply = { host ->
-                recoveryGate.run {
+            onApply = { host, autoFailover ->
+                val runApply = {
                     dnsErrorRes = null
                     isApplyingDns = true
                     scope.launch {
                         val result = withTimeoutOrNull(15000.milliseconds) {
                             val deferred = externalScope.async {
-                                viewModel.setPrivateDNS(host)
+                                if (host == DNS_AUTO) viewModel.setAutoPrivateDNS()
+                                else viewModel.setPrivateDNS(host, autoFailover)
                             }
                             deferred.await()
                         }
@@ -437,6 +447,7 @@ fun ConfigTab(
                         }
                     }
                 }
+                if (currentDns == null) runApply() else recoveryGate.run { runApply() }
             }
         )
     }
@@ -586,26 +597,63 @@ fun KeyboardTypeDialog(
     )
 }
 
+private const val DNS_AUTO = "auto"
+
+@Composable
+private fun dnsDisplayName(host: String): String =
+    DeviceOwnerRepository.CLEAN_DNS_PRESETS.firstOrNull { it.second.equals(host, ignoreCase = true) }?.first
+        ?: host
+
+@Composable
+private fun dnsSummaryText(status: DnsGuard.DnsStatus): String {
+    val active = status.activeHost ?: return stringResource(R.string.dns_description)
+    val base = if (status.autoFailover) {
+        stringResource(R.string.dns_status_auto_tag, dnsDisplayName(active))
+    } else {
+        dnsDisplayName(active)
+    }
+    return when (status.reachable[active]) {
+        true -> stringResource(R.string.dns_status_active_working, base)
+        false -> stringResource(R.string.dns_status_active_unreachable, base)
+        null -> stringResource(R.string.dns_status_active_checking, base)
+    }
+}
+
 @Composable
 fun DnsSelectionDialog(
     currentDns: String?,
+    currentAutoFailover: Boolean = false,
     errorRes: Int? = null,
     isLoading: Boolean = false,
     onDismiss: () -> Unit,
-    onApply: (String) -> Unit
+    onApply: (String, Boolean) -> Unit
 ) {
     val options = DeviceOwnerRepository.CLEAN_DNS_PRESETS
-    
-    var selectedOption by remember { 
+
+    var selectedOption by remember {
         mutableStateOf(
             when {
+                currentAutoFailover && DnsFailoverRule.isCleanHost(currentDns) -> DNS_AUTO
                 options.any { it.second == currentDns } -> currentDns
                 currentDns != null -> "custom"
-                else -> null
+                else -> DNS_AUTO
             }
         )
     }
+    var autoSwitch by remember { mutableStateOf(currentAutoFailover || currentDns == null) }
     var customHost by remember { mutableStateOf(if (selectedOption == "custom") currentDns ?: "" else "") }
+
+    var reachable by remember { mutableStateOf<Map<String, Boolean?>>(options.associate { it.second to null }) }
+    LaunchedEffect(Unit) {
+        options.forEach { (_, host) ->
+            launch {
+                val ok = withContext(Dispatchers.IO) { DnsGuard.canReachDoT(host) }
+                reachable = reachable + (host to ok)
+            }
+        }
+    }
+    val erroredChoice = remember(errorRes) { selectedOption }
+    var unreachableTapped by remember(selectedOption) { mutableStateOf(false) }
 
     val isCustomValid = remember(customHost) {
         customHost.matches(Regex("^([a-z0-9]+(-[a-z0-9]+)*\\.)+[a-z]{2,}\$"))
@@ -616,6 +664,30 @@ fun DnsSelectionDialog(
         title = { Text(stringResource(R.string.dns_settings)) },
         text = {
             Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isLoading) { selectedOption = DNS_AUTO }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedOption == DNS_AUTO,
+                        onClick = { selectedOption = DNS_AUTO },
+                        enabled = !isLoading
+                    )
+                    Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                        Text(stringResource(R.string.dns_auto), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.dns_auto_desc), style = MaterialTheme.typography.bodySmall)
+                    }
+                    val anyWorking = reachable.values.any { it == true }
+                    val allChecked = reachable.values.none { it == null }
+                    when {
+                        anyWorking -> Text("✓", color = Color(26, 163, 63), fontWeight = FontWeight.Bold)
+                        allChecked -> Text("✕", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        else -> Text("…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 options.forEach { (name, host) ->
                     Row(
                         modifier = Modifier
@@ -629,9 +701,26 @@ fun DnsSelectionDialog(
                             onClick = { selectedOption = host },
                             enabled = !isLoading
                         )
-                        Column(Modifier.padding(start = 8.dp)) {
-                            Text(name, fontWeight = FontWeight.Bold)
+                        Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                if (host.equals(currentDns, ignoreCase = true)) {
+                                    Text(
+                                        text = stringResource(R.string.dns_badge_connected),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                             Text(host, style = MaterialTheme.typography.bodySmall)
+                        }
+                        when (reachable[host]) {
+                            null -> Text("…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            true -> Text("✓", color = Color(26, 163, 63), fontWeight = FontWeight.Bold)
+                            false -> Text("✕", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -667,7 +756,43 @@ fun DnsSelectionDialog(
                         }
                     )
                 }
-                if (errorRes != null) {
+                if (selectedOption != DNS_AUTO) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isLoading) { autoSwitch = !autoSwitch }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = autoSwitch,
+                            onCheckedChange = { autoSwitch = it },
+                            enabled = !isLoading
+                        )
+                        Text(
+                            text = stringResource(R.string.dns_auto_switch_label),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
+                }
+                if (unreachableTapped) {
+                    Text(
+                        text = stringResource(R.string.dns_error_unreachable),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                if (reachable.values.all { it == false }) {
+                    Text(
+                        text = stringResource(R.string.dns_all_unreachable),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                if (errorRes != null && selectedOption == erroredChoice) {
                     Text(
                         text = stringResource(errorRes),
                         color = MaterialTheme.colorScheme.error,
@@ -681,12 +806,17 @@ fun DnsSelectionDialog(
             val canApply = selectedOption != null && (selectedOption != "custom" || isCustomValid) && !isLoading
             TextButton(
                 enabled = canApply,
-                onClick = { 
-                    val finalHost = when(selectedOption) {
+                onClick = {
+                    val finalHost = when (selectedOption) {
                         "custom" -> customHost
                         else -> selectedOption
+                    }!!
+                    val effectiveAuto = finalHost == DNS_AUTO || autoSwitch
+                    if (finalHost != DNS_AUTO && reachable[finalHost] == false) {
+                        unreachableTapped = true
+                    } else {
+                        onApply(finalHost, effectiveAuto)
                     }
-                    onApply(finalHost!!)
                 }
             ) {
                 if (isLoading) {
