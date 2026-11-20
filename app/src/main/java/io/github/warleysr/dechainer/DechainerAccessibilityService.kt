@@ -33,6 +33,7 @@ import io.github.warleysr.dechainer.data.AppTimeLimits
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BlockSuspensionManager
 import io.github.warleysr.dechainer.data.DowntimeManager
+import io.github.warleysr.dechainer.data.MusicLimitTracker
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.Span
@@ -97,10 +98,13 @@ class DechainerAccessibilityService : AccessibilityService() {
                     lastForegroundPackage = currentPackage
                     stopTrackingAndSave(screenOff = true)
                     currentPackage = null
+                    foregroundPackage = null
+                    MusicLimitTracker.onForegroundChanged(applicationContext)
                 }
 
-                Intent.ACTION_SCREEN_ON -> lastForegroundPackage?.let {
+                Intent.ACTION_USER_PRESENT -> lastForegroundPackage?.let {
                     currentPackage = it
+                    foregroundPackage = it
                     sessionStartTime = SystemClock.elapsedRealtime()
                     checkDateReset()
                     startTracking(it)
@@ -112,26 +116,17 @@ class DechainerAccessibilityService : AccessibilityService() {
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (prefs) {
             limitPrefs, weeklyLimitPrefs -> {
-                if (key == currentPackage) {
-                    handler.removeCallbacks(blockRunnable)
-                    currentPackage?.let { startTracking(it) }
-                }
+                if (key == currentPackage) retrackCurrent()
             }
 
             timeWindowPrefs -> {
                 BlockSuspensionManager.sync(applicationContext)
-                if (key == currentPackage) {
-                    handler.removeCallbacks(blockRunnable)
-                    handler.removeCallbacks(windowEndRunnable)
-                    currentPackage?.let { startTracking(it) }
-                }
+                if (key == currentPackage) retrackCurrent()
             }
 
             groupsPrefs -> {
                 BlockSuspensionManager.sync(applicationContext)
-                handler.removeCallbacks(blockRunnable)
-                handler.removeCallbacks(windowEndRunnable)
-                currentPackage?.let { startTracking(it) }
+                retrackCurrent()
             }
 
             securityPrefs -> {
@@ -142,7 +137,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private val blockRunnable = Runnable { executeBlocking() }
+    // Re-checks rather than blocking outright: the day may have changed, and usage must be saved first.
+    private val blockRunnable = Runnable { recheckWindows() }
 
     // The allowed span ending doesn't always mean "blocked": the next one may start right away
     // (midnight, or two windows that touch), so the whole check runs again.
@@ -153,11 +149,23 @@ class DechainerAccessibilityService : AccessibilityService() {
     private val checkpointRunnable = object : Runnable {
         override fun run() {
             saveSessionUsage()
+            // A session can run past midnight: the day's usage starts again, so re-arm the limit timer.
+            if (checkDateReset()) currentPackage?.let { pkg ->
+                handler.removeCallbacks(blockRunnable)
+                handler.removeCallbacks(windowEndRunnable)
+                startTracking(pkg)
+            }
+            // Removing first leaves exactly one pending checkpoint, even if startTracking just scheduled one.
+            handler.removeCallbacks(this)
             if (currentPackage != null) handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
         }
     }
 
     companion object {
+        /** The app in front right now, or null while the screen is off. Read by [MusicLimitTracker]. */
+        @Volatile
+        var foregroundPackage: String? = null
+
         private val CHECKPOINT_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
 
         var isRunning by mutableStateOf(false)
@@ -209,7 +217,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         val blockHeld = BlockSuspensionManager.heldPackages(applicationContext)
-        suspendPackages(getControlledPackages().filterNot { it in blockHeld }.toTypedArray(), false)
+        val manual = getSharedPreferences("manual_suspensions", MODE_PRIVATE).all.keys
+        suspendPackages(getControlledPackages().filterNot { it in blockHeld || it in manual }.toTypedArray(), false)
 
         // Must run after the un-suspend above, which would otherwise release a package that is
         // still serving an impulse block.
@@ -231,7 +240,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         })
         registerReceiver(screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
         })
 
         if (BuildConfig.DEBUG) {
@@ -311,6 +320,8 @@ class DechainerAccessibilityService : AccessibilityService() {
             stopTrackingAndSave()
             pendingLeaves.remove(newPackage)
             currentPackage = newPackage
+            foregroundPackage = newPackage
+            MusicLimitTracker.onForegroundChanged(applicationContext)
             sessionStartTime = SystemClock.elapsedRealtime()
             checkDateReset()
             startTracking(newPackage)
@@ -322,14 +333,14 @@ class DechainerAccessibilityService : AccessibilityService() {
             pendingLeaves.clear()
         }
 
-        if (className.contains("Activity", ignoreCase = true)) {
-            addLog(newPackage, className)
-            val blockedActivities = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
-                .getStringSet("blocked_activities", emptySet()) ?: emptySet()
+        // Every screen is logged, not only classes named "...Activity": Settings pages are often
+        // "...SubSettings", so the blocker has to see them too.
+        addLog(newPackage, className)
+        val blockedActivities = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
+            .getStringSet("blocked_activities", emptySet()) ?: emptySet()
 
-            if (blockedActivities.contains(className))
-                performGlobalAction(GLOBAL_ACTION_BACK)
-        }
+        if (blockedActivities.contains(className))
+            performGlobalAction(GLOBAL_ACTION_BACK)
     }
 
     /**
@@ -384,6 +395,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         val releasable = suspended - DowntimeManager.heldPackages(ctx) - BlockSuspensionManager.heldPackages(ctx)
         if (releasable.isNotEmpty()) suspendPackages(releasable.toTypedArray(), false)
         SecurityManager.clearActiveImpulseSuspension(ctx)
+        BlockSuspensionManager.sync(ctx)
         Timber.d("Impulse block: released ${releasable.size} app(s)")
     }
 
@@ -551,6 +563,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         stopTrackingAndSave()
         currentPackage = null
+        foregroundPackage = null
 
         val individualAppName = appLabel(pkg)
 
@@ -604,16 +617,31 @@ class DechainerAccessibilityService : AccessibilityService() {
         handler.removeCallbacks(windowEndRunnable)
         handler.removeCallbacks(checkpointRunnable)
         saveSessionUsage()
+        checkDateReset()
         startTracking(pkg)
     }
 
-    private fun checkDateReset() {
+    /** Clears the day's usage when the date has changed. Returns true when it did. */
+    private fun checkDateReset(): Boolean {
         val today = LocalDate.now().toString()
-        if (today != lastCheckDate) {
-            usagePrefs.edit { clear() }
-            groupUsagePrefs.edit { clear() }
-            lastCheckDate = today
-        }
+        if (today == lastCheckDate) return false
+        usagePrefs.edit { clear() }
+        groupUsagePrefs.edit { clear() }
+        lastCheckDate = today
+        return true
+    }
+
+    /**
+     * Re-applies the open app's limits after their settings change. Time already used in this
+     * stretch is saved first, so the new timer counts from the right place.
+     */
+    private fun retrackCurrent() {
+        handler.removeCallbacks(blockRunnable)
+        handler.removeCallbacks(windowEndRunnable)
+        handler.removeCallbacks(checkpointRunnable)
+        saveSessionUsage()
+        checkDateReset()
+        currentPackage?.let { startTracking(it) }
     }
 
     private fun getRemainingSecondsToReopen(pkg: String): Int {

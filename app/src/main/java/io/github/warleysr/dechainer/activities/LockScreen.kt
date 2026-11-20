@@ -125,7 +125,7 @@ fun LockScreen(onAuthenticated: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-            delay(1.seconds)
+            delay(if (impulseRemaining > 0) 1.seconds else 10.seconds)
         }
     }
 

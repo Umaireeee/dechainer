@@ -175,6 +175,9 @@ object AppRepository {
     fun setAppSuspended(packageName: String, suspended: Boolean) {
         dpm.setPackagesSuspended(adminName, arrayOf(packageName), suspended)
         updateCachedApp(packageName) { it.copy(isSuspended = suspended) }
+        context.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).edit {
+            if (suspended) putBoolean(packageName, true) else remove(packageName)
+        }
         if (suspended) {
             BlockSuspensionManager.forget(context, packageName)
             SuspensionLogRepository.log(context, packageName, SuspensionReason.MANUAL)
