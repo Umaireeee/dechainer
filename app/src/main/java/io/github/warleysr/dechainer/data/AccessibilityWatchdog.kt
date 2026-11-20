@@ -36,7 +36,8 @@ object AccessibilityWatchdog {
     const val ACTION_CHECK = "io.github.warleysr.dechainer.ACCESSIBILITY_WATCHDOG"
     private const val PERIODIC_REQUEST = 7301
     private const val SOON_REQUEST = 7302
-    private const val SOON_DELAY_MS = 15_000L
+    private const val SOON_DELAY_MS = 1_500L
+    private const val GUARD_SETTLE_DELAY_MS = 400L
     private const val REBIND_GAP_MS = 1_000L
 
     /** Pure helpers on the colon separated `enabled_accessibility_services` value. */
@@ -161,6 +162,10 @@ object AccessibilityWatchdog {
                 val globallyEnabled = Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
                 if (!listed || !globallyEnabled || !DechainerAccessibilityService.isRunning) {
                     ensureEnabled(app)
+                    // Re-check once after Android Settings finishes its toggle sequence.
+                    mainHandler.postDelayed({
+                        if (!rebinding && isWanted(app) && hasPermission(app)) ensureEnabled(app)
+                    }, GUARD_SETTLE_DELAY_MS)
                 }
             }
         }

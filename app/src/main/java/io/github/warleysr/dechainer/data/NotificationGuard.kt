@@ -170,25 +170,39 @@ object NotificationGuard {
 
     fun ensureNotificationListenerEnabled(context: Context) {
         val ctx = context.applicationContext
-        if (!isListenerWanted(ctx) || !AccessibilityWatchdog.hasPermission(ctx)) return
-        val serviceClass = MediaPlaybackListener::class.java.name
-        try {
-            val resolver = ctx.contentResolver
-            val current = Settings.Secure.getString(resolver, SETTING_ENABLED_LISTENERS)
-            if (!AccessibilityWatchdog.ServiceList.isListed(current, ctx.packageName, serviceClass)) {
-                Settings.Secure.putString(
-                    resolver,
-                    SETTING_ENABLED_LISTENERS,
-                    AccessibilityWatchdog.ServiceList.with(current, ctx.packageName, serviceClass)
-                )
-                NotificationListenerService.requestRebind(ComponentName(ctx, MediaPlaybackListener::class.java))
-                Timber.i("Notification guard: restored MediaPlaybackListener access")
-            }
-        } catch (e: SecurityException) {
-            Timber.w(e, "Notification guard: could not restore notification listener")
-        } catch (e: Exception) {
-            Timber.w(e, "Notification guard: notification listener check failed")
+        if (!isListenerWanted(ctx) || isListenerEnabled(ctx)) return
+
+        // Android 11+ stores notification listeners in NotificationManagerService rather than
+        // Settings.Secure.enabled_notification_listeners, so use Shizuku `cmd notification` first.
+        if (Shizuku.pingBinder() && DeviceOwnerRepository.checkShizukuPermission()) {
+            val component = "${ctx.packageName}/.${MediaPlaybackListener::class.java.simpleName}"
+            ShizukuRunner.exec("cmd", "notification", "allow_listener", component)
         }
+
+        if (AccessibilityWatchdog.hasPermission(ctx)) {
+            val serviceClass = MediaPlaybackListener::class.java.name
+            try {
+                val resolver = ctx.contentResolver
+                val current = Settings.Secure.getString(resolver, SETTING_ENABLED_LISTENERS)
+                if (!AccessibilityWatchdog.ServiceList.isListed(current, ctx.packageName, serviceClass)) {
+                    Settings.Secure.putString(
+                        resolver,
+                        SETTING_ENABLED_LISTENERS,
+                        AccessibilityWatchdog.ServiceList.with(current, ctx.packageName, serviceClass)
+                    )
+                }
+                NotificationListenerService.requestRebind(ComponentName(ctx, MediaPlaybackListener::class.java))
+            } catch (e: SecurityException) {
+                Timber.w(e, "Notification guard: could not restore notification listener")
+            } catch (e: Exception) {
+                Timber.w(e, "Notification guard: notification listener check failed")
+            }
+        }
+    }
+
+    fun restoreListenerAsync(context: Context) {
+        val ctx = context.applicationContext
+        worker.execute { ensureNotificationListenerEnabled(ctx) }
     }
 
     fun enforceAsync(context: Context) {

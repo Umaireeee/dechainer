@@ -449,8 +449,8 @@
     <string name="activity_blocker_unprotected">Active · Open Shizuku once to auto-restore if turned off</string>
     <string name="notification_access_title">Notification access</string>
     <string name="notification_access_desc">Reads background media playback for limits and protects alerts</string>
-    <string name="notification_access_protected">Active · Auto-restore guard on</string>
-    <string name="notification_access_manual">Active · Open Shizuku once to auto-restore if turned off</string>
+    <string name="notification_access_protected">Active · Auto-restore active (Shizuku)</string>
+    <string name="notification_access_manual">Active · Start Shizuku for auto-restore</string>
     <string name="get_owner_privileges_first">Get owner privileges first!</string>
 </resources>
 

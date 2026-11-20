@@ -61,7 +61,7 @@ class MediaPlaybackListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         cleanup()
-        NotificationGuard.ensureNotificationListenerEnabled(applicationContext)
+        NotificationGuard.restoreListenerAsync(applicationContext)
     }
 
     override fun onDestroy() {

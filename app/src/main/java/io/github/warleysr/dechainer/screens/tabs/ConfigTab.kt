@@ -85,17 +85,27 @@ fun ConfigTab(
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
     var hasSecureGuard by remember { mutableStateOf(AccessibilityWatchdog.hasPermission(context)) }
+    var hasShizuku by remember { mutableStateOf(DeviceOwnerRepository.checkShizukuPermission()) }
     var notificationAccess by remember { mutableStateOf(NotificationGuard.isListenerEnabled(context)) }
 
     DisposableEffect(context) {
         val activity = context as? ComponentActivity
         val refreshGuards = {
+            hasShizuku = DeviceOwnerRepository.checkShizukuPermission()
             hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
             notificationAccess = NotificationGuard.isListenerEnabled(context)
+            if (!hasSecureGuard && hasShizuku) {
+                scope.launch(Dispatchers.IO) {
+                    AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(context)
+                    val granted = AccessibilityWatchdog.hasPermission(context)
+                    withContext(Dispatchers.Main) { hasSecureGuard = granted }
+                }
+            }
         }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) refreshGuards()
         }
+        refreshGuards()
         activity?.lifecycle?.addObserver(observer)
         onDispose { activity?.lifecycle?.removeObserver(observer) }
     }
@@ -162,6 +172,15 @@ fun ConfigTab(
                     headlineContent = { Text(stringResource(R.string.activity_blocker)) },
                     supportingContent = { Text(accessibilityStatusText) },
                     leadingContent = { Icon(Icons.Outlined.Accessibility, "") },
+                    modifier = Modifier.clickable(enabled = advancedBlocking && !hasSecureGuard) {
+                        scope.launch {
+                            val granted = withContext(Dispatchers.IO) {
+                                AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(context)
+                            }
+                            hasSecureGuard = granted
+                            if (!granted) snackbarHostState.showSnackbar(shizukuNotRunningMsg)
+                        }
+                    },
                     trailingContent = {
                         Switch(
                             checked = advancedBlocking,
@@ -214,7 +233,7 @@ fun ConfigTab(
             }
             item {
                 val notifStatusText = when {
-                    notificationAccess && hasSecureGuard -> stringResource(R.string.notification_access_protected)
+                    notificationAccess && hasShizuku -> stringResource(R.string.notification_access_protected)
                     notificationAccess -> stringResource(R.string.notification_access_manual)
                     else -> stringResource(R.string.notification_access_desc)
                 }
@@ -238,6 +257,7 @@ fun ConfigTab(
                                         val enabledViaShizuku = withContext(Dispatchers.IO) {
                                             NotificationGuard.enableListenerViaShizuku(context)
                                         }
+                                        hasShizuku = DeviceOwnerRepository.checkShizukuPermission()
                                         hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
                                         notificationAccess = NotificationGuard.isListenerEnabled(context)
                                         if (!enabledViaShizuku) openListenerSettings()

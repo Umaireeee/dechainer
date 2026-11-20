@@ -406,8 +406,16 @@ class DechainerAccessibilityService : AccessibilityService() {
                 suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
             }
 
-            // Switched off outside the app: ask for it to be brought back.
-            AccessibilityWatchdog.scheduleSoon(applicationContext)
+            // Switched off outside the app: restore immediately if we hold WRITE_SECURE_SETTINGS,
+            // otherwise schedule watchdog check and prompt the user to re-enable.
+            if (AccessibilityWatchdog.hasPermission(applicationContext)) {
+                handler.postDelayed({
+                    AccessibilityWatchdog.ensureEnabled(applicationContext)
+                }, 300L)
+                AccessibilityWatchdog.scheduleSoon(applicationContext)
+            } else {
+                AccessibilityWatchdog.scheduleSoon(applicationContext)
+            }
 
             val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
@@ -424,10 +432,12 @@ class DechainerAccessibilityService : AccessibilityService() {
                 }.onFailure { Timber.e(it, "Could not add DISALLOW_INSTALL_APPS on unbind") }
             }
 
-            startActivity(
-                Intent(this@DechainerAccessibilityService, AccessibilityRequestActivity::class.java)
-                    .apply { flags = FLAG_ACTIVITY_NEW_TASK }
-            )
+            if (!AccessibilityWatchdog.hasPermission(applicationContext)) {
+                startActivity(
+                    Intent(this@DechainerAccessibilityService, AccessibilityRequestActivity::class.java)
+                        .apply { flags = FLAG_ACTIVITY_NEW_TASK }
+                )
+            }
         }
 
         return super.onUnbind(intent)

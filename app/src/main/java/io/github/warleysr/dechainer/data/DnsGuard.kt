@@ -112,10 +112,17 @@ object DnsGuard {
     fun canReachDoT(host: String): Boolean {
         val addresses = LinkedHashSet<InetAddress>()
         DnsFailoverRule.bootstrapIpsFor(host).forEach { ip ->
-            runCatching { addresses += InetAddress.getByName(ip) }
+            runCatching {
+                val raw = InetAddress.getByName(ip).address
+                // Bind the TLS peer hostname to the bootstrap IP bytes so HTTPS hostname
+                // verification checks the provider's hostname, not the numeric IP string.
+                addresses += InetAddress.getByAddress(host, raw)
+            }
         }
         runCatching {
-            addresses.addAll(InetAddress.getAllByName(host))
+            InetAddress.getAllByName(host).forEach { resolved ->
+                addresses += InetAddress.getByAddress(host, resolved.address)
+            }
         }
         if (addresses.isEmpty()) return false
 

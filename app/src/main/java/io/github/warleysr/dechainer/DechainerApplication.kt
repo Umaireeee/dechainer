@@ -87,10 +87,10 @@ class DechainerApplication : Application() {
             if (SettingsLock.isLocked()) SettingsLock.setLocked(false)
             DowntimeManager.sync(this@DechainerApplication)
             AccessibilityWatchdog.cancelLegacyPeriodic(this@DechainerApplication)
+            if (!AccessibilityWatchdog.hasPermission(this@DechainerApplication)) {
+                AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(this@DechainerApplication)
+            }
             if (AccessibilityWatchdog.isWanted(this@DechainerApplication)) {
-                if (!AccessibilityWatchdog.hasPermission(this@DechainerApplication)) {
-                    AccessibilityWatchdog.grantWriteSecureSettingsViaShizuku(this@DechainerApplication)
-                }
                 AccessibilityWatchdog.ensureEnabled(this@DechainerApplication)
             }
             NotificationGuard.enforceAll(this@DechainerApplication)
