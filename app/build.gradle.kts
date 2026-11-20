@@ -34,7 +34,7 @@ android {
     }
 
     androidResources {
-        localeFilters += listOf("en", "pt")
+        localeFilters += listOf("en")
     }
 
 

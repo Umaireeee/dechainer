@@ -1,4 +1,4 @@
-package io.github.warleysr.dechainer.screens.tabs
+﻿package io.github.warleysr.dechainer.screens.tabs
 import android.app.admin.DevicePolicyManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -297,24 +297,6 @@ fun ConfigTab(
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
-                    item {
-                Text(
-                    stringResource(R.string.config_section_general),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.language_settings)) },
-                    supportingContent = { Text(stringResource(R.string.language_description)) },
-                    leadingContent = { Icon(Icons.Outlined.Language, "") },
-                    modifier = Modifier.clickable { showLanguageDialog = true }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
         }
         SnackbarHost(
             hostState = snackbarHostState,
@@ -459,15 +441,6 @@ fun ConfigTab(
         )
     }
 
-    if (showLanguageDialog) {
-        LanguageSelectionDialog(
-            onDismiss = { showLanguageDialog = false },
-            onApply = { languageCode ->
-                LocaleUtils.setLocale(context, languageCode)
-                showLanguageDialog = false
-            }
-        )
-    }
 
     if (showKeyboardDialog) {
         KeyboardTypeDialog(
@@ -511,7 +484,7 @@ fun LanguageSelectionDialog(
     val currentLocale = LocaleUtils.getLocale(context)
     val options = listOf(
         "en" to "English",
-        "pt" to "Português"
+        "pt" to "PortuguÃªs"
     )
     
     var selectedOption by remember { 
