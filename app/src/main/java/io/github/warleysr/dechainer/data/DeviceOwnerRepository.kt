@@ -247,7 +247,7 @@ object DeviceOwnerRepository {
             DnsGuard.forget(ctx)
             LocalDnsShieldManager.releaseForDeviceOwnerRemoval(ctx)
             BrowserHardeningManager.releaseForDeviceOwnerRemoval(ctx)
-            PlayStoreUpdateManager.endPass(ctx)
+            PlayStoreUpdateManager.releaseForDeviceOwnerRemoval(ctx)
             AccessibilityWatchdog.setWanted(ctx, false)
             NotificationGuard.setListenerWanted(ctx, false)
             SecurityManager.cancelForcedRemoval(ctx)

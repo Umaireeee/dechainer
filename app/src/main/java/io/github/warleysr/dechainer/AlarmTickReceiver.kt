@@ -18,8 +18,8 @@ class AlarmTickReceiver : BroadcastReceiver() {
             MusicLimitTracker.ACTION_TICK -> MusicLimitTracker.onAlarmTick(app)
             DechainerAccessibilityService.ACTION_IMPULSE_RELEASE ->
                 DechainerAccessibilityService.releaseImpulseSuspensionIfExpired(app)
-            PlayStoreUpdateManager.ACTION_PASS_END ->
-                PlayStoreUpdateManager.endPass(app)
+            PlayStoreUpdateManager.ACTION_WINDOW_TICK ->
+                PlayStoreUpdateManager.sync(app)
         }
     }
 }

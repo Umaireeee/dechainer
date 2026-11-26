@@ -50,6 +50,7 @@ import io.github.warleysr.dechainer.screens.tabs.ConfigTab
 import io.github.warleysr.dechainer.screens.tabs.ImpulseLockScreen
 import io.github.warleysr.dechainer.screens.tabs.LocalDnsShieldScreen
 import io.github.warleysr.dechainer.screens.tabs.PendingUnlocksScreen
+import io.github.warleysr.dechainer.screens.tabs.PlayStoreUpdatesScreen
 import io.github.warleysr.dechainer.screens.tabs.RestrictionsTab
 import io.github.warleysr.dechainer.screens.tabs.ScheduleTab
 import io.github.warleysr.dechainer.screens.tabs.SuspensionLogsScreen
@@ -212,6 +213,7 @@ class MainActivity : ComponentActivity() {
                                 "pending_unlocks" -> PendingUnlocksScreen()
                                 "local_dns_shield" -> LocalDnsShieldScreen()
                                 "browser_hardening" -> BrowserHardeningScreen()
+                                "play_store_updates" -> PlayStoreUpdatesScreen()
                             }
                         }
                     }

@@ -16,6 +16,8 @@ import io.github.warleysr.dechainer.data.DeviceAdmin
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DowntimeRepository
 import io.github.warleysr.dechainer.data.NotificationGuard
+import io.github.warleysr.dechainer.data.PlayStoreUpdateConfig
+import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.vpn.LocalDnsConfig
 import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import rikka.shizuku.Shizuku
@@ -141,6 +143,11 @@ object PendingActionExecutor {
             is PendingAction.UpdateBrowserHardening -> {
                 val config = BrowserHardeningConfig.fromJsonString(action.configJson) ?: return false
                 BrowserHardeningManager.applyConfig(ctx, config)
+                true
+            }
+            is PendingAction.UpdatePlayStorePolicy -> {
+                val config = PlayStoreUpdateConfig.fromJsonString(action.configJson) ?: return false
+                PlayStoreUpdateManager.applyConfig(ctx, config)
                 true
             }
             is PendingAction.RemoveBlockedActivity -> {

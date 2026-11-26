@@ -81,7 +81,7 @@ object ApkUpdateInstaller {
         val admin = DeviceAdmin.component
         if (!runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) return false
 
-        if (PlayStoreUpdateManager.isPassActive(context)) return true
+        if (PlayStoreUpdateManager.isSilentWindowOpen(context)) return true
 
         val pending = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getStringSet(KEY_RESTORE_RESTRICTIONS, null)
@@ -422,7 +422,7 @@ object ApkUpdateInstaller {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val keys = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null) ?: return
 
-        val passActive = PlayStoreUpdateManager.isPassActive(context)
+        val passActive = PlayStoreUpdateManager.isSilentWindowOpen(context)
         val toRestore = if (passActive) keys - UserManager.DISALLOW_INSTALL_APPS else keys
         val keepDeferred = if (passActive && UserManager.DISALLOW_INSTALL_APPS in keys) {
             setOf(UserManager.DISALLOW_INSTALL_APPS)

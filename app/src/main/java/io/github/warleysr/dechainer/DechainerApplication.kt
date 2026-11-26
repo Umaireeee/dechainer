@@ -1,6 +1,7 @@
 package io.github.warleysr.dechainer
 
 import android.app.Application
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -55,6 +56,11 @@ class DechainerApplication : Application() {
                 if (pkg != null) {
                     PlayStoreUpdateManager.onPackageAdded(this@DechainerApplication, pkg, replacing)
                 }
+            } else if (intent?.action == Intent.ACTION_PACKAGE_CHANGED) {
+                val pkg = intent.data?.encodedSchemeSpecificPart
+                if (pkg != null) {
+                    PlayStoreUpdateManager.onPackageChanged(this@DechainerApplication, pkg)
+                }
             }
             applicationScope.launch {
                 AppRepository.getApps()
@@ -62,6 +68,25 @@ class DechainerApplication : Application() {
                     intent?.action == Intent.ACTION_PACKAGE_REPLACED
                 ) {
                     BrowserHardeningManager.reapplyIfEnabled(this@DechainerApplication)
+                }
+            }
+        }
+    }
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    PlayStoreUpdateManager.onScreenStateChanged(this@DechainerApplication, screenOff = true)
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    PlayStoreUpdateManager.onScreenStateChanged(this@DechainerApplication, screenOff = false)
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    val km = getSystemService(KeyguardManager::class.java)
+                    if (km == null || !km.isKeyguardLocked) {
+                        PlayStoreUpdateManager.onScreenStateChanged(this@DechainerApplication, screenOff = false)
+                    }
                 }
             }
         }
@@ -86,10 +111,17 @@ class DechainerApplication : Application() {
 
         registerReceiver(packageChangeReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_FULLY_REMOVED)
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
+        })
+
+        registerReceiver(screenStateReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
         })
 
         applicationScope.launch {

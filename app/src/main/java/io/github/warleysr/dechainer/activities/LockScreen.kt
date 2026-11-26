@@ -1,7 +1,6 @@
 package io.github.warleysr.dechainer.activities
 
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,17 +13,14 @@ import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.biometric.compose.rememberAuthenticationLauncher
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.HourglassBottom
 import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.Shop
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
@@ -43,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
-import io.github.warleysr.dechainer.data.UpdatePassState
 import io.github.warleysr.dechainer.screens.common.ApkUpdateDialog
 import io.github.warleysr.dechainer.screens.common.UsageLimitsOverview
 import io.github.warleysr.dechainer.security.SecurityManager
@@ -65,11 +60,7 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
     }
     var showingLimits by remember { mutableStateOf(false) }
 
-    val passState by PlayStoreUpdateManager.state.collectAsState()
-    val apkUpdatesAvailable = remember(passState.active) {
-        ApkUpdateInstaller.isInstallRestricted(context)
-    }
-    var showingUpdateHub by remember { mutableStateOf(false) }
+    val apkUpdatesAvailable = remember { ApkUpdateInstaller.isInstallRestricted(context) }
     var pickedApk by rememberSaveable { mutableStateOf<Uri?>(null) }
     val apkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         pickedApk = uri
@@ -155,11 +146,10 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
         }
     }
 
-    LaunchedEffect(impulseRemaining > 0, passState.active) {
+    LaunchedEffect(impulseRemaining > 0) {
         while (true) {
             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
-            PlayStoreUpdateManager.getRemainingMillis(context)
-            delay(if (impulseRemaining > 0 || passState.active) 1.seconds else 10.seconds)
+            delay(if (impulseRemaining > 0) 1.seconds else 10.seconds)
         }
     }
 
@@ -195,7 +185,7 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
                         QuietActionButton(
                             icon = Icons.Outlined.SystemUpdate,
                             title = stringResource(R.string.apk_update_button),
-                            onClick = { showingUpdateHub = true },
+                            onClick = { apkPicker.launch(arrayOf("*/*")) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -218,19 +208,6 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
                     Spacer(modifier = Modifier.height(16.dp))
                     secondaryButtons(false)
                 } else {
-                    if (isOwner && passState.active) {
-                        UpdatePassCard(
-                            state = passState,
-                            onOpenPlayStore = {
-                                if (!PlayStoreUpdateManager.openPlayStoreUpdates(context)) {
-                                    Toast.makeText(context, R.string.update_pass_play_store_missing, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onFinish = { PlayStoreUpdateManager.endPass(context) }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-
                     if (isOwner) {
                         BigActionButton(
                             icon = Icons.Filled.Warning,
@@ -240,7 +217,7 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
                             contentColor = MaterialTheme.colorScheme.onError,
                             height = 104.dp,
                             onClick = {
-                                PlayStoreUpdateManager.endPass(context)
+                                PlayStoreUpdateManager.closeSilentWindowNow(context)
                                 SecurityManager.startImpulseBlock(context)
                                 impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
                             }
@@ -264,152 +241,10 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
             }
         }
 
-        if (showingUpdateHub) {
-            UpdateAppsHubDialog(
-                onStartPlayStorePass = {
-                    showingUpdateHub = false
-                    if (PlayStoreUpdateManager.startPass(context)) {
-                        if (!PlayStoreUpdateManager.openPlayStoreUpdates(context)) {
-                            Toast.makeText(context, R.string.update_pass_play_store_missing, Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        Toast.makeText(context, R.string.apk_update_failed, Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onPickApk = {
-                    showingUpdateHub = false
-                    apkPicker.launch(arrayOf("*/*"))
-                },
-                onDismiss = { showingUpdateHub = false }
-            )
-        }
-
         pickedApk?.let { uri ->
             key(uri) { ApkUpdateDialog(uri = uri, onFinish = { pickedApk = null }) }
         }
     }
-}
-
-@Composable
-private fun UpdatePassCard(
-    state: UpdatePassState,
-    onOpenPlayStore: () -> Unit,
-    onFinish: () -> Unit
-) {
-    val totalSeconds = (state.remainingMs + 999L) / 1000L
-    val minutes = totalSeconds / 60L
-    val seconds = totalSeconds % 60L
-    val countdown = "%02d:%02d".format(minutes, seconds)
-
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.SystemUpdate, contentDescription = null)
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.update_pass_active_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        stringResource(R.string.update_pass_active_desc, countdown),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-            if (state.blockedNewInstalls > 0) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    stringResource(R.string.update_pass_blocked_count, state.blockedNewInstalls),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.update_pass_finish_relock), maxLines = 1)
-                }
-                Button(onClick = onOpenPlayStore, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.update_pass_open_play_store), maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UpdateAppsHubDialog(
-    onStartPlayStorePass: () -> Unit,
-    onPickApk: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.SystemUpdate, contentDescription = null) },
-        title = { Text(stringResource(R.string.update_hub_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onStartPlayStorePass)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Outlined.Shop, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                stringResource(R.string.update_hub_play_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                stringResource(R.string.update_hub_play_desc),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onPickApk)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Outlined.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                stringResource(R.string.update_hub_apk_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                stringResource(R.string.update_hub_apk_desc),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        }
-    )
 }
 
 @Composable

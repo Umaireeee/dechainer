@@ -158,6 +158,12 @@ sealed interface PendingAction {
         companion object { const val TYPE = "update_browser_hardening" }
     }
 
+    data class UpdatePlayStorePolicy(val configJson: String) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject().put("configJson", configJson)
+        companion object { const val TYPE = "update_play_store_policy" }
+    }
+
     data class RemoveBlockedActivity(val className: String) : PendingAction {
         override val type = TYPE
         override fun toPayload() = JSONObject().put("className", className)
@@ -238,6 +244,7 @@ sealed interface PendingAction {
                 )
                 UpdateLocalDnsShield.TYPE -> UpdateLocalDnsShield(payload.getString("configJson"))
                 UpdateBrowserHardening.TYPE -> UpdateBrowserHardening(payload.getString("configJson"))
+                UpdatePlayStorePolicy.TYPE -> UpdatePlayStorePolicy(payload.getString("configJson"))
                 RemoveBlockedActivity.TYPE -> RemoveBlockedActivity(payload.getString("className"))
                 UpdateImpulseLock.TYPE -> UpdateImpulseLock(
                     actionName = payload.getString("actionName"),

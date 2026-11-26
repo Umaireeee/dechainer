@@ -92,12 +92,18 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
-            val packageName = intent.data?.encodedSchemeSpecificPart ?: return
-            val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
-            PlayStoreUpdateManager.onPackageAdded(applicationContext, packageName, replacing)
-            if (!replacing) {
-                AppRepository.reapplyHiddenIfNeeded(packageName)
+            val packageName = intent?.data?.encodedSchemeSpecificPart ?: return
+            when (intent.action) {
+                Intent.ACTION_PACKAGE_ADDED -> {
+                    val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+                    PlayStoreUpdateManager.onPackageAdded(applicationContext, packageName, replacing)
+                    if (!replacing) {
+                        AppRepository.reapplyHiddenIfNeeded(packageName)
+                    }
+                }
+                Intent.ACTION_PACKAGE_CHANGED -> {
+                    PlayStoreUpdateManager.onPackageChanged(applicationContext, packageName)
+                }
             }
         }
     }
@@ -126,14 +132,19 @@ class DechainerAccessibilityService : AccessibilityService() {
                     currentPackage = null
                     foregroundPackage = null
                     MusicLimitTracker.onForegroundChanged(applicationContext)
+                    PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = true)
                 }
 
-                Intent.ACTION_USER_PRESENT -> restoreForegroundAfterUnlock()
+                Intent.ACTION_USER_PRESENT -> {
+                    restoreForegroundAfterUnlock()
+                    PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = false)
+                }
 
                 Intent.ACTION_SCREEN_ON -> {
                     val km = getSystemService(KeyguardManager::class.java)
                     if (km == null || !km.isKeyguardLocked) {
                         restoreForegroundAfterUnlock()
+                        PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = false)
                     }
                 }
             }
@@ -345,6 +356,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         registerReceiver(packageReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
         })
         registerReceiver(screenReceiver, IntentFilter().apply {
@@ -478,6 +490,11 @@ class DechainerAccessibilityService : AccessibilityService() {
             || className.contains("SoftInputWindow", ignoreCase = true)
         ) return
 
+        if (PlayStoreUpdateManager.shouldBlockUiForPackage(applicationContext, newPackage)) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            return
+        }
+
         if (newPackage != currentPackage) {
             stopTrackingAndSave()
             pendingLeaves.remove(newPackage)
@@ -525,6 +542,10 @@ class DechainerAccessibilityService : AccessibilityService() {
         }.getOrDefault(emptySet())
 
         for (pkg in visible) {
+            if (PlayStoreUpdateManager.shouldBlockUiForPackage(applicationContext, pkg)) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                return
+            }
             if (pkg == currentPackage || pkg == packageName || pkg == "com.android.systemui") continue
             val config = trackingConfigFor(pkg)
             if (config.allowed != null) {

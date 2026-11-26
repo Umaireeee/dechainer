@@ -10,6 +10,7 @@ import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsFailoverRule
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.NotificationGuard
+import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.security.CountdownStatus
 import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.security.TimelockManager
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,6 +85,7 @@ fun ConfigTab(
     val pendingRequests by TimelockManager.requests.collectAsState()
     val localDnsStatus by LocalDnsShieldManager.status.collectAsState()
     val browserConfig by BrowserHardeningManager.config.collectAsState()
+    val playUpdatesStatus by PlayStoreUpdateManager.status.collectAsState()
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
     var hasSecureGuard by remember { mutableStateOf(AccessibilityWatchdog.hasPermission(context)) }
@@ -95,6 +98,7 @@ fun ConfigTab(
             TimelockManager.syncAll(context)
             LocalDnsShieldManager.refreshState(context)
             BrowserHardeningManager.getConfig(context)
+            PlayStoreUpdateManager.refreshStatus(context)
             hasShizuku = DeviceOwnerRepository.checkShizukuPermission()
             hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
             notificationAccess = NotificationGuard.isListenerEnabled(context)
@@ -223,6 +227,34 @@ fun ConfigTab(
                             return@clickable
                         }
                         navViewModel.navigateTo("browser_hardening")
+                    }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
+                val playCfg = playUpdatesStatus.config
+                val playSummary = when {
+                    playUpdatesStatus.windowCurrentlyOpen ->
+                        stringResource(R.string.play_updates_config_window_open, playCfg.formatWindow())
+                    playCfg.blockPlayStoreUi && playCfg.silentAutoUpdateEnabled ->
+                        stringResource(R.string.play_updates_config_active, playCfg.formatWindow())
+                    playCfg.blockPlayStoreUi ->
+                        stringResource(R.string.play_updates_config_ui_blocked)
+                    playCfg.silentAutoUpdateEnabled ->
+                        stringResource(R.string.play_updates_config_window_only, playCfg.formatWindow())
+                    else ->
+                        stringResource(R.string.play_updates_config_off)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.play_updates_title)) },
+                    supportingContent = { Text(playSummary) },
+                    leadingContent = { Icon(Icons.Outlined.SystemUpdate, "") },
+                    modifier = Modifier.clickable {
+                        if (!viewModel.isDeviceOwner()) {
+                            scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
+                            return@clickable
+                        }
+                        navViewModel.navigateTo("play_store_updates")
                     }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

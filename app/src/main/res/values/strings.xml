@@ -502,6 +502,8 @@
     <string name="timelock_title_disable_browser_hardening">Turn off Browser Hardening</string>
     <string name="timelock_title_loosen_browser">Loosen Browser Hardening</string>
     <string name="timelock_title_unblock_url">Unblock URL %1$s</string>
+    <string name="timelock_title_disable_play_ui_block">Turn off Play Store UI block</string>
+    <string name="timelock_title_loosen_play_updates">Loosen Play Store silent updates</string>
 
     <!-- Local DNS Shield -->
     <string name="dns_shield_title">Local DNS Shield</string>
@@ -576,19 +578,35 @@
     <string name="browser_add_url_title">Block URL or path</string>
     <string name="browser_add_url_hint">Ex: reddit.com/r/popular or x.com</string>
 
-    <!-- Pass 2: Safe App Updates -->
-    <string name="update_hub_title">Update installed apps</string>
-    <string name="update_hub_play_title">Play Store updates (10-min pass)</string>
-    <string name="update_hub_play_desc">Updates existing Play Store apps only. Any newly installed app is automatically uninstalled.</string>
-    <string name="update_hub_apk_title">Sideloaded APK / Split APK</string>
-    <string name="update_hub_apk_desc">Pick a .apk, .apks, .xapk, or .apkm file to update an already-installed app.</string>
-    <string name="update_pass_active_title">Updates-Only Pass active</string>
-    <string name="update_pass_active_desc">%1$s left · Existing updates allowed, new installs auto-removed</string>
-    <string name="update_pass_blocked_count">Blocked %1$d new app install(s)</string>
-    <string name="update_pass_open_play_store">Open Play Store</string>
-    <string name="update_pass_finish_relock">Finish &amp; re-lock</string>
-    <string name="update_pass_blocked_new_app">New app installs are blocked during Updates-Only Pass — uninstalling automatically.</string>
-    <string name="update_pass_play_store_missing">Could not open Play Store</string>
+    <!-- Zero-UI Play Store Silent Auto-Updates -->
+    <string name="play_updates_title">Play Store silent updates</string>
+    <string name="play_updates_config_active">Armed · UI blocked 24/7, sync window %1$s</string>
+    <string name="play_updates_config_window_open">Syncing now · Screen-off window %1$s</string>
+    <string name="play_updates_config_ui_blocked">UI blocked 24/7 · Auto-update window off</string>
+    <string name="play_updates_config_window_only">Sync window %1$s (Play Store UI not blocked)</string>
+    <string name="play_updates_config_off">Off · Block Play Store UI &amp; allow overnight silent updates</string>
+    <string name="play_updates_card_desc">Blocks Play Store storefront UI 24/7 so you cannot browse or launch Instant Apps, while allowing background app updates only during your overnight screen-off window.</string>
+    <string name="play_updates_status_window_open">Silent update window OPEN now (%1$s) — re-locks the instant you unlock</string>
+    <string name="play_updates_status_armed">Armed · Play Store UI blocked 24/7 · Silent window %1$s</string>
+    <string name="play_updates_status_ui_blocked_only">Play Store UI blocked 24/7 · Overnight auto-updates off</string>
+    <string name="play_updates_status_window_only">Overnight window %1$s active (enable 24/7 UI block recommended)</string>
+    <string name="play_updates_status_off">Inactive</string>
+    <string name="play_updates_rolled_back_count">Blocked &amp; rolled back %1$d unauthorized install(s) / re-enabled stub(s)</string>
+    <string name="play_updates_accessibility_warning">Enable Advanced blocking (Accessibility) so Déchaîner can close Play Store UI immediately 24/7.</string>
+    <string name="play_updates_suspended_warning">Play Store is currently suspended, which stops background auto-updates too. Unsuspend it after enabling 24/7 UI block so updates run silently with zero UI access.</string>
+    <string name="play_updates_unsuspend_btn">Allow background sync (UI stays blocked)</string>
+    <string name="play_updates_setup_tip_title">One-time Play Store setup</string>
+    <string name="play_updates_setup_tip_desc">Open Play Store once, go to Settings → Network preferences → Auto-update apps (Over Wi-Fi only or Over any network), then turn on the 24/7 Play Store UI block below.</string>
+    <string name="play_updates_open_once_btn">Open Play Store settings once</string>
+    <string name="play_updates_open_failed">Could not open Play Store</string>
+    <string name="play_updates_block_ui_title">Block Play Store UI 24/7</string>
+    <string name="play_updates_block_ui_desc">Immediately exits Play Store whenever opened while leaving background updates intact</string>
+    <string name="play_updates_silent_window_title">Overnight silent auto-update window</string>
+    <string name="play_updates_silent_window_desc">Unlocks app updates only during the chosen hours, then re-locks and sweeps new or re-enabled apps</string>
+    <string name="play_updates_screen_off_title">Only while screen is off / locked</string>
+    <string name="play_updates_screen_off_desc">Instantly re-locks installs and sweeps unauthorized packages the moment you turn on or unlock the phone</string>
+    <string name="play_updates_window_schedule_title">Silent update window schedule</string>
+    <string name="play_updates_sideload_note">You can still update already-installed apps anytime using .apk, .apks, .xapk, or .apkm files via "Update apps" on the lock screen or "Open with Déchaîner".</string>
 </resources>
 
 
