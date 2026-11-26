@@ -3,6 +3,7 @@ package io.github.warleysr.dechainer.data
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Bundle
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.security.TimelockManager
@@ -10,13 +11,13 @@ import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import timber.log.Timber
 
 /**
- * One-time migration for v2.4.4 that wipes all previously applied restrictions, timelocks,
- * filters, suspensions, and hidden/uninstall-blocked app flags while preserving Device Owner
- * privileges so the user starts with a completely clean app.
+ * One-time migration for v2.4.5 that wipes every previously applied restriction, suspension,
+ * app restriction bundle, hidden/uninstall-blocked flag, VPN, Private DNS pin, timelock, and
+ * forced removal timer while preserving Device Owner privileges.
  */
 object CleanResetMigration {
     private const val PREFS = "dechainer_migrations"
-    private const val KEY_CLEAN_RESET_V244 = "clean_reset_v244_done"
+    private const val KEY_CLEAN_RESET_V245 = "clean_reset_v245_done"
     private val lock = Any()
 
     internal fun resetForTest(context: Context) {
@@ -30,7 +31,7 @@ object CleanResetMigration {
         val ctx = context.applicationContext
         synchronized(lock) {
             val migrationPrefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            if (migrationPrefs.getBoolean(KEY_CLEAN_RESET_V244, false)) {
+            if (migrationPrefs.getBoolean(KEY_CLEAN_RESET_V245, false)) {
                 return false
             }
 
@@ -52,6 +53,7 @@ object CleanResetMigration {
                         runCatching { dpm.clearUserRestriction(admin, key) }
                     }
                 }
+                runCatching { dpm.setAlwaysOnVpnPackage(admin, null, false) }
                 runCatching {
                     if (dpm.getGlobalPrivateDnsMode(admin) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME) {
                         dpm.setGlobalPrivateDnsModeOpportunistic(admin)
@@ -67,23 +69,32 @@ object CleanResetMigration {
                 val blockSuspended = ctx.getSharedPreferences("block_suspensions", Context.MODE_PRIVATE).all.keys
                 val downtimeHeld = runCatching { DowntimeRepository.getHeld(ctx) }.getOrDefault(emptySet())
                 val impulseHeld = runCatching { SecurityManager.getActiveImpulseSuspension(ctx) }.getOrDefault(emptySet())
-                val allSuspended = (manualSuspended + blockSuspended + downtimeHeld + impulseHeld)
-                    .filter { it != ctx.packageName }
-                    .distinct()
-                if (allSuspended.isNotEmpty()) {
-                    runCatching { dpm.setPackagesSuspended(admin, allSuspended.toTypedArray(), false) }
-                }
+                val suspendedCandidates = (manualSuspended + blockSuspended + downtimeHeld + impulseHeld)
+                    .toMutableSet()
 
                 runCatching {
                     ctx.packageManager.getInstalledPackages(PackageManager.MATCH_UNINSTALLED_PACKAGES)
                         .forEach { pkgInfo ->
                             val pkg = pkgInfo.packageName
-                            if (pkg != ctx.packageName &&
-                                runCatching { dpm.isUninstallBlocked(admin, pkg) }.getOrDefault(false)
-                            ) {
+                            if (pkg == ctx.packageName) return@forEach
+                            if (runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)) {
+                                suspendedCandidates.add(pkg)
+                            }
+                            if (runCatching { dpm.isUninstallBlocked(admin, pkg) }.getOrDefault(false)) {
                                 runCatching { dpm.setUninstallBlocked(admin, pkg, false) }
                             }
+                            val existingRestrictions = runCatching {
+                                dpm.getApplicationRestrictions(admin, pkg)
+                            }.getOrNull()
+                            if (existingRestrictions != null && !existingRestrictions.isEmpty) {
+                                runCatching { dpm.setApplicationRestrictions(admin, pkg, Bundle()) }
+                            }
                         }
+                }
+
+                val allSuspended = suspendedCandidates.filter { it != ctx.packageName }.distinct()
+                if (allSuspended.isNotEmpty()) {
+                    runCatching { dpm.setPackagesSuspended(admin, allSuspended.toTypedArray(), false) }
                 }
             }
 
@@ -94,6 +105,7 @@ object CleanResetMigration {
                 "security_prefs",
                 "activity_blocker_prefs",
                 "reopen_times",
+                "play_store_update_pass",
                 AppTimeLimits.PREFS_NAME,
                 AppTimeLimits.WEEKLY_PREFS_NAME,
                 AppTimeWindows.PREFS_NAME,
@@ -110,9 +122,9 @@ object CleanResetMigration {
             runCatching { AppRepository.invalidateCache() }
 
             migrationPrefs.edit(commit = true) {
-                putBoolean(KEY_CLEAN_RESET_V244, true)
+                putBoolean(KEY_CLEAN_RESET_V245, true)
             }
-            Timber.i("CleanResetMigration v2.4.4 completed cleanly")
+            Timber.i("CleanResetMigration v2.4.5 completed cleanly")
             return true
         }
     }
