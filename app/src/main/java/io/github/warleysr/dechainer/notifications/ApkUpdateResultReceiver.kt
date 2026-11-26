@@ -8,6 +8,7 @@ import android.widget.Toast
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.AppRepository
+import timber.log.Timber
 
 class ApkUpdateResultReceiver : BroadcastReceiver() {
     companion object {
@@ -51,8 +52,12 @@ class ApkUpdateResultReceiver : BroadcastReceiver() {
     private fun onInstallResult(context: Context, intent: Intent) {
         val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val statusMessage = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         val packageName = intent.getStringExtra(ApkUpdateInstaller.EXTRA_PACKAGE)
         val isDowngrade = intent.getBooleanExtra(ApkUpdateInstaller.EXTRA_IS_DOWNGRADE, false)
+        if (status != PackageInstaller.STATUS_SUCCESS) {
+            Timber.w("APK update result status=$status pkg=$packageName msg=$statusMessage")
+        }
 
         // Nobody is going to confirm it, so the session would otherwise stay open forever.
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION && sessionId != -1) {

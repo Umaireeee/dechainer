@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.UserManager
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.notifications.ApkUpdateResultReceiver
+import timber.log.Timber
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -209,6 +210,7 @@ object ApkUpdateInstaller {
     fun install(context: Context, update: Inspection.Update): Boolean {
         val installer = context.packageManager.packageInstaller
         var sessionId = -1
+        var committed = false
         return try {
             val installed = installedInfo(context, update.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
                 ?: return false
@@ -225,8 +227,16 @@ object ApkUpdateInstaller {
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
                 .apply {
                     setAppPackageName(update.packageName)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    }
                     if (update.isDowngrade) requestDowngrade(this)
                 }
+
+            // Lift DISALLOW_INSTALL_APPS & unknown sources BEFORE createSession(), since AOSP
+            // PackageInstallerService checks DISALLOW_INSTALL_APPS inside createSession().
+            liftInstallRestrictions(context, includeUninstall = uninstallFirst)
+
             sessionId = installer.createSession(params)
             recordActiveSession(context, sessionId)
 
@@ -246,13 +256,12 @@ object ApkUpdateInstaller {
                 }
                 if (uninstallFirst) {
                     savePreDowngradeState(context, update.packageName)
-                    liftInstallRestrictions(context, includeUninstall = true)
                     installer.uninstall(
                         update.packageName,
                         downgradeUninstallSender(context, sessionId, update.packageName)
                     )
+                    committed = true
                 } else {
-                    liftInstallRestrictions(context, includeUninstall = false)
                     session.commit(
                         resultSender(
                             context,
@@ -261,15 +270,19 @@ object ApkUpdateInstaller {
                             isDowngrade = update.isDowngrade
                         )
                     )
+                    committed = true
                 }
             }
             true
-        } catch (_: Exception) {
-            if (sessionId != -1) runCatching { installer.abandonSession(sessionId) }
-            restorePreDowngradeState(context, update.packageName)
-            restoreUnknownSourcesRestrictionsIfIdle(context, if (sessionId != -1) sessionId else null)
+        } catch (e: Exception) {
+            Timber.w(e, "APK update install failed for ${update.packageName}")
             false
         } finally {
+            if (!committed) {
+                if (sessionId != -1) runCatching { installer.abandonSession(sessionId) }
+                restorePreDowngradeState(context, update.packageName)
+                restoreUnknownSourcesRestrictionsIfIdle(context, if (sessionId != -1) sessionId else null)
+            }
             update.cleanup()
         }
     }
