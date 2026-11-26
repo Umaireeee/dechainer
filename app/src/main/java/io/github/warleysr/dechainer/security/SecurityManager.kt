@@ -169,10 +169,13 @@ class SecurityManager {
         fun startImpulseBlock(context: Context) {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             val duration = getImpulseDurationMinutes(context) * 60 * 1000L
+            val nowElapsed = SystemClock.elapsedRealtime()
             prefs.edit(commit = true) {
                 putLong("impulse_block_start_rtc", System.currentTimeMillis())
-                putLong("impulse_block_start_elapsed", SystemClock.elapsedRealtime())
+                putLong("impulse_block_start_elapsed", nowElapsed)
                 putLong("impulse_block_duration", duration)
+                putLong("impulse_block_accumulated_ms", 0L)
+                putLong("impulse_block_last_elapsed", nowElapsed)
                 putInt("impulse_block_boot_count", readBootCount(context))
                 putBoolean("impulse_block_active", true)
             }
@@ -182,29 +185,39 @@ class SecurityManager {
             val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
             if (!prefs.getBoolean("impulse_block_active", false)) return -1L
 
-            val startRtc = prefs.getLong("impulse_block_start_rtc", 0L)
-            val startElapsed = prefs.getLong("impulse_block_start_elapsed", 0L)
             val duration = prefs.getLong("impulse_block_duration", 0L)
+            val startElapsed = prefs.getLong("impulse_block_start_elapsed", 0L)
+            val lastElapsed = prefs.getLong("impulse_block_last_elapsed", startElapsed)
+            val accumulated = prefs.getLong("impulse_block_accumulated_ms", 0L).coerceAtLeast(0L)
             val storedBootCount = prefs.getInt("impulse_block_boot_count", -1)
             val currentBootCount = readBootCount(context)
 
-            val nowRtc = System.currentTimeMillis()
             val nowElapsed = SystemClock.elapsedRealtime()
-
-            val remainingElapsed = (startElapsed + duration) - nowElapsed
-            val remainingRtc = (startRtc + duration) - nowRtc
             val rebooted = (storedBootCount != -1 && currentBootCount != -1 && currentBootCount != storedBootCount) ||
-                nowElapsed < startElapsed
+                nowElapsed < lastElapsed
 
-            val remaining = if (rebooted) {
-                remainingRtc.coerceAtMost(duration)
-            } else {
-                remainingElapsed
+            // On same boot, advance by monotonic elapsed delta; across reboot, only credit monotonic
+            // uptime since boot (never forward wall-clock RTC, which is trivial to fast-forward).
+            val delta = if (rebooted) nowElapsed.coerceAtLeast(0L) else (nowElapsed - lastElapsed).coerceAtLeast(0L)
+            val nextAccumulated = (accumulated + delta).coerceAtMost(duration)
+            val remaining = duration - nextAccumulated
+
+            if (remaining <= 0L) {
+                prefs.edit(commit = true) {
+                    putBoolean("impulse_block_active", false)
+                    putLong("impulse_block_accumulated_ms", duration)
+                    putLong("impulse_block_last_elapsed", nowElapsed)
+                    putInt("impulse_block_boot_count", currentBootCount)
+                }
+                return -1L
             }
 
-            if (remaining <= 0) {
-                prefs.edit { putBoolean("impulse_block_active", false) }
-                return -1L
+            if (rebooted || delta >= 1_000L) {
+                prefs.edit {
+                    putLong("impulse_block_accumulated_ms", nextAccumulated)
+                    putLong("impulse_block_last_elapsed", nowElapsed)
+                    putInt("impulse_block_boot_count", currentBootCount)
+                }
             }
             return remaining
         }

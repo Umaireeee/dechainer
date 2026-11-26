@@ -129,16 +129,10 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
                 packageName = key.removePrefix("app:"),
                 windowsEncoded = AppTimeWindows.encode(preview)
             )
-            key.startsWith("group:") -> {
-                val grp = viewModel.groups.firstOrNull { it.id == key.removePrefix("group:") }
-                PendingAction.UpdateGroup(
-                    groupId = key.removePrefix("group:"),
-                    name = grp?.name ?: targetName,
-                    limitEncoded = TimelockManager.encodeTimeLimit(grp?.timeLimit ?: io.github.warleysr.dechainer.models.TimeLimit.NONE),
-                    windowsEncoded = AppTimeWindows.encode(preview),
-                    packageNames = grp?.packageNames?.sorted().orEmpty()
-                )
-            }
+            key.startsWith("group:") -> PendingAction.SetGroupTimeWindows(
+                groupId = key.removePrefix("group:"),
+                windowsEncoded = AppTimeWindows.encode(preview)
+            )
             else -> return
         }
         gate.change(

@@ -77,6 +77,33 @@ object AppGroupRepository {
         DowntimeManager.sync(context)
     }
 
+    /** Updates a group's name and membership atomically, keeping each app in at most one group. */
+    fun updateGroupDetails(groupId: String, name: String, packageNames: Set<String>) {
+        synchronized(lock) {
+            val updated = getGroups().map { group ->
+                if (group.id == groupId) group.copy(name = name, packageNames = packageNames)
+                else group.copy(packageNames = group.packageNames - packageNames)
+            }
+            persistLocked(updated)
+        }
+        DowntimeManager.sync(context)
+    }
+
+    /** Assigns multiple [packageNames] to [groupId] (or removes them from all groups when null). */
+    fun setPackagesGroup(packageNames: Set<String>, groupId: String?) {
+        if (packageNames.isEmpty()) return
+        synchronized(lock) {
+            val updated = getGroups().map { group ->
+                when {
+                    group.id == groupId -> group.copy(packageNames = group.packageNames + packageNames)
+                    else -> group.copy(packageNames = group.packageNames - packageNames)
+                }
+            }
+            persistLocked(updated)
+        }
+        DowntimeManager.sync(context)
+    }
+
     /** Assigns [packageName] to [groupId] (or removes it from any group when null), keeping the one-group-per-app invariant. */
     fun setPackageGroup(packageName: String, groupId: String?) {
         synchronized(lock) {

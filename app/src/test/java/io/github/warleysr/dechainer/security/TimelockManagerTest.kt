@@ -217,4 +217,38 @@ class TimelockManagerTest {
         assertFalse(TimelockManager.hasActiveApkDowngradePass(context, "com.example.app", 1_000L + 16L * 60 * 1000L))
         assertNotNull(TimelockManager.formatRemaining(CountdownState.SEVEN_DAYS_MS))
     }
+
+    @Test
+    fun `monotonic countdown caps total RTC reboot credit across repeated reboots`() {
+        var cur = CountdownState(
+            durationMs = CountdownState.SEVEN_DAYS_MS,
+            claimWindowMs = CountdownState.TWENTY_FOUR_HOURS_MS,
+            lastSyncRtcMs = 1_700_000_000_000L,
+            lastSyncElapsedMs = 10_000L,
+            lastBootCount = 1
+        )
+        // Simulate 30 reboots each jumping wall clock by 2 hours with almost zero uptime:
+        // Total RTC credit must be capped at 24h (MAX_TOTAL_REBOOT_CREDIT_MS), not 60h!
+        var rtc = 1_700_000_000_000L
+        for (boot in 2..31) {
+            rtc += 2L * 3_600_000L
+            cur = cur.advance(nowRtc = rtc, nowElapsed = 5_000L, currentBootCount = boot)
+        }
+        assertTrue(cur.accumulatedMs <= 24L * 3_600_000L + 200_000L)
+        val status = cur.status() as CountdownStatus.Waiting
+        assertTrue(status.remainingMs >= CountdownState.SEVEN_DAYS_MS - 25L * 3_600_000L)
+    }
+
+    @Test
+    fun `encodeBundle and decodeBundle preserve nested bundle arrays`() {
+        val item = android.os.Bundle().apply { putString("pattern", "https://example.com") }
+        val root = android.os.Bundle().apply {
+            putParcelableArray("ManagedBookmarks", arrayOf(item))
+        }
+        val decoded = TimelockManager.decodeBundle(TimelockManager.encodeBundle(root))
+        val items = decoded.getParcelableArray("ManagedBookmarks")
+        assertNotNull(items)
+        assertEquals(1, items!!.size)
+        assertEquals("https://example.com", (items[0] as android.os.Bundle).getString("pattern"))
+    }
 }

@@ -44,10 +44,10 @@ import kotlinx.coroutines.withContext
 
 /** Checks the APK at [uri] and, when it updates an installed app, asks before installing it. */
 @Composable
-fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
+fun ApkUpdateDialog(uri: Uri, showToastOnQueue: Boolean = false, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val gate = rememberTimelockGate()
+    val gate = rememberTimelockGate(showToastOnQueue = showToastOnQueue)
     var inspection by remember(uri) { mutableStateOf<Inspection?>(null) }
     var installing by remember(uri) { mutableStateOf(false) }
 
@@ -119,15 +119,20 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onFinish,
-        icon = if (current.icon != null) {
+        icon = current.icon?.let { iconDrawable ->
             {
-                Image(
-                    bitmap = remember(current.icon) { current.icon.toBitmap().asImageBitmap() },
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp)
-                )
+                val bitmap = remember(iconDrawable) {
+                    runCatching { iconDrawable.toBitmap(144, 144).asImageBitmap() }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
             }
-        } else null,
+        },
         title = { Text(stringResource(R.string.apk_update_confirm_title, current.label)) },
         text = {
             Column {

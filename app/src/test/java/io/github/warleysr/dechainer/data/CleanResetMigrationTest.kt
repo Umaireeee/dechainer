@@ -3,8 +3,6 @@ package io.github.warleysr.dechainer.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.github.warleysr.dechainer.security.TimelockManager
-import io.github.warleysr.dechainer.vpn.LocalDnsConfig
-import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,10 +30,6 @@ class CleanResetMigrationTest {
 
     @Test
     fun `runIfNeeded wipes old policies once and never resets user choices afterwards`() {
-        LocalDnsShieldManager.applyConfig(
-            context,
-            LocalDnsConfig(enabled = true, blockAdultDomains = true)
-        )
         BrowserHardeningManager.applyConfig(
             context,
             BrowserHardeningConfig(enabled = true, blockYouTubeShorts = true)
@@ -44,6 +38,9 @@ class CleanResetMigrationTest {
             context,
             PlayStoreUpdateConfig(blockPlayStoreUi = true, silentAutoUpdateEnabled = true)
         )
+        context.getSharedPreferences("local_dns_shield_prefs", Context.MODE_PRIVATE).edit()
+            .putString("config_json", "{\"enabled\":true}")
+            .commit()
         context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE).edit()
             .putStringSet("apk_update_restore_restrictions", setOf("no_install_apps"))
             .commit()
@@ -53,9 +50,12 @@ class CleanResetMigrationTest {
 
         assertTrue(CleanResetMigration.runIfNeeded(context))
 
-        assertFalse(LocalDnsShieldManager.getConfig(context).enabled)
         assertFalse(BrowserHardeningManager.getConfig(context).enabled)
         assertFalse(PlayStoreUpdateManager.getConfig(context).blockPlayStoreUi)
+        assertTrue(
+            context.getSharedPreferences("local_dns_shield_prefs", Context.MODE_PRIVATE)
+                .all.isEmpty()
+        )
         assertTrue(
             context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
                 .getStringSet("apk_update_restore_restrictions", emptySet())!!.isEmpty()

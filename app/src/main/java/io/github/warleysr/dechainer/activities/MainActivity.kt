@@ -48,7 +48,6 @@ import io.github.warleysr.dechainer.screens.tabs.AppsTab
 import io.github.warleysr.dechainer.screens.tabs.BrowserHardeningScreen
 import io.github.warleysr.dechainer.screens.tabs.ConfigTab
 import io.github.warleysr.dechainer.screens.tabs.ImpulseLockScreen
-import io.github.warleysr.dechainer.screens.tabs.LocalDnsShieldScreen
 import io.github.warleysr.dechainer.screens.tabs.PendingUnlocksScreen
 import io.github.warleysr.dechainer.screens.tabs.PlayStoreUpdatesScreen
 import io.github.warleysr.dechainer.screens.tabs.RestrictionsTab
@@ -66,17 +65,35 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val STATE_AUTHENTICATED = "authenticated"
+        private const val STATE_LAST_STOP_ELAPSED = "last_stop_elapsed"
+        private const val STATE_BOOT_COUNT = "boot_count"
+        private const val STATE_CONFIG_CHANGE = "config_change"
         private const val AUTH_GRACE_MS = 30_000L
     }
 
     private val authenticated = mutableStateOf(false)
     private var lastStopElapsed = 0L
 
+    private fun currentBootCount(): Int = runCatching {
+        android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT, 0)
+    }.getOrDefault(0)
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val wasAuthenticated = savedInstanceState?.getBoolean(STATE_AUTHENTICATED, false) == true
-        authenticated.value = wasAuthenticated && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L
+        val wasConfigChange = savedInstanceState?.getBoolean(STATE_CONFIG_CHANGE, false) == true
+        val savedStopElapsed = savedInstanceState?.getLong(STATE_LAST_STOP_ELAPSED, 0L) ?: 0L
+        val savedBootCount = savedInstanceState?.getInt(STATE_BOOT_COUNT, -1) ?: -1
+        val sameBoot = savedBootCount >= 0 && savedBootCount == currentBootCount()
+        val withinGrace = wasConfigChange ||
+            (savedStopElapsed > 0L &&
+                SystemClock.elapsedRealtime() >= savedStopElapsed &&
+                SystemClock.elapsedRealtime() - savedStopElapsed <= AUTH_GRACE_MS)
+        authenticated.value = wasAuthenticated &&
+            sameBoot &&
+            withinGrace &&
+            SecurityManager.getImpulseBlockRemainingTime(this) <= 0L
         TimelockManager.syncAll(this)
         SecurityManager.consumeDebugRestoreUnknownSourcesRestriction(this)
         lifecycleScope.launch(Dispatchers.IO) {
@@ -200,7 +217,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     } else {
-                        Box(modifier = Modifier.padding(innerPadding)) {
+                        Box(
+                            modifier = Modifier
+                                .padding(innerPadding)
+                                .consumeWindowInsets(innerPadding)
+                        ) {
                             when (currentScreen) {
                                 "restrictions" -> RestrictionsTab()
                                 "apps" -> AppsTab()
@@ -211,7 +232,6 @@ class MainActivity : ComponentActivity() {
                                 "impulse_lock" -> ImpulseLockScreen()
                                 "suspension_logs" -> SuspensionLogsScreen()
                                 "pending_unlocks" -> PendingUnlocksScreen()
-                                "local_dns_shield" -> LocalDnsShieldScreen()
                                 "browser_hardening" -> BrowserHardeningScreen()
                                 "play_store_updates" -> PlayStoreUpdatesScreen()
                             }
@@ -224,10 +244,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        val activeStopElapsed = if (lastStopElapsed > 0L) lastStopElapsed else SystemClock.elapsedRealtime()
         outState.putBoolean(
             STATE_AUTHENTICATED,
             authenticated.value && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L
         )
+        outState.putLong(STATE_LAST_STOP_ELAPSED, activeStopElapsed)
+        outState.putInt(STATE_BOOT_COUNT, currentBootCount())
+        outState.putBoolean(STATE_CONFIG_CHANGE, isChangingConfigurations)
     }
 
     override fun onStop() {

@@ -1,13 +1,14 @@
 package io.github.warleysr.dechainer.data
 
 import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.core.content.edit
+import io.github.warleysr.dechainer.DechainerDeviceAdminReceiver
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.security.TimelockManager
-import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import timber.log.Timber
 
 /**
@@ -36,24 +37,37 @@ object CleanResetMigration {
             }
 
             runCatching { SettingsLock.setLocked(false) }
-            runCatching { LocalDnsShieldManager.releaseForDeviceOwnerRemoval(ctx) }
             runCatching { BrowserHardeningManager.releaseForDeviceOwnerRemoval(ctx) }
             runCatching { PlayStoreUpdateManager.releaseForDeviceOwnerRemoval(ctx) }
+            runCatching { InstallRestrictionCoordinator.clearAll(ctx) }
             runCatching { DnsGuard.forget(ctx) }
             runCatching { TimelockManager.cancelAll(ctx) }
             runCatching { SecurityManager.cancelForcedRemoval(ctx) }
 
-            val dpm = DeviceAdmin.policyManager
-            val admin = DeviceAdmin.component
-            val isOwner = runCatching { dpm.isDeviceOwnerApp(ctx.packageName) }.getOrDefault(false)
+            val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+            val admin = ComponentName(ctx, DechainerDeviceAdminReceiver::class.java)
+            val isOwner = if (dpm == null) {
+                false
+            } else {
+                val isOwnerResult = runCatching { dpm.isDeviceOwnerApp(ctx.packageName) }
+                if (isOwnerResult.isFailure) {
+                    Timber.w(isOwnerResult.exceptionOrNull(), "CleanResetMigration deferred: DPM unavailable")
+                    return false
+                }
+                isOwnerResult.getOrDefault(false)
+            }
 
-            if (isOwner) {
+            if (isOwner && dpm != null) {
                 runCatching {
                     dpm.getUserRestrictions(admin).keySet().toList().forEach { key ->
                         runCatching { dpm.clearUserRestriction(admin, key) }
                     }
                 }
-                runCatching { dpm.setAlwaysOnVpnPackage(admin, null, false) }
+                runCatching {
+                    if (dpm.getAlwaysOnVpnPackage(admin) == ctx.packageName) {
+                        dpm.setAlwaysOnVpnPackage(admin, null, false)
+                    }
+                }
                 runCatching {
                     if (dpm.getGlobalPrivateDnsMode(admin) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME) {
                         dpm.setGlobalPrivateDnsModeOpportunistic(admin)
@@ -77,6 +91,9 @@ object CleanResetMigration {
                         .forEach { pkgInfo ->
                             val pkg = pkgInfo.packageName
                             if (pkg == ctx.packageName) return@forEach
+                            if (runCatching { dpm.isApplicationHidden(admin, pkg) }.getOrDefault(false)) {
+                                runCatching { dpm.setApplicationHidden(admin, pkg, false) }
+                            }
                             if (runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)) {
                                 suspendedCandidates.add(pkg)
                             }
@@ -106,6 +123,7 @@ object CleanResetMigration {
                 "activity_blocker_prefs",
                 "reopen_times",
                 "play_store_update_pass",
+                "local_dns_shield_prefs",
                 AppTimeLimits.PREFS_NAME,
                 AppTimeLimits.WEEKLY_PREFS_NAME,
                 AppTimeWindows.PREFS_NAME,
@@ -116,6 +134,7 @@ object CleanResetMigration {
                 }
             }
 
+            runCatching { AppGroupRepository.getGroups(forceRefresh = true) }
             runCatching { DowntimeRepository.save(emptyList(), ctx) }
             runCatching { DowntimeRepository.setHeld(ctx, emptySet()) }
             runCatching { DowntimeManager.sync(ctx) }

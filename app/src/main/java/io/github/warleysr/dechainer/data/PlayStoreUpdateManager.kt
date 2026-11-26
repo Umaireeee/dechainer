@@ -73,18 +73,22 @@ data class PlayStoreUpdateConfig(
             return true
         }
         if (silentAutoUpdateEnabled && old.screenOffOnly && !screenOffOnly) return true
-        if (old.silentAutoUpdateEnabled && silentAutoUpdateEnabled &&
-            windowDurationMinutes() > old.windowDurationMinutes()
-        ) {
-            return true
-        }
-        if (old.silentAutoUpdateEnabled && silentAutoUpdateEnabled && !screenOffOnly &&
-            (normalizeMinute(windowStartMinute) != normalizeMinute(old.windowStartMinute) ||
-                normalizeMinute(windowEndMinute) != normalizeMinute(old.windowEndMinute))
-        ) {
-            return true
+        if (old.silentAutoUpdateEnabled && silentAutoUpdateEnabled) {
+            val oldMinutes = windowMinutes(old.windowStartMinute, old.windowEndMinute)
+            val newMinutes = windowMinutes(windowStartMinute, windowEndMinute)
+            if ((newMinutes - oldMinutes).isNotEmpty()) return true
         }
         return false
+    }
+
+    private fun windowMinutes(startMinute: Int, endMinute: Int): Set<Int> {
+        val s = normalizeMinute(startMinute)
+        val e = normalizeMinute(endMinute)
+        return when {
+            s < e -> (s until e).toSet()
+            s > e -> ((s until 1440) + (0 until e)).toSet()
+            else -> emptySet()
+        }
     }
 
     fun toJsonString(): String = JSONObject()
@@ -264,6 +268,13 @@ object PlayStoreUpdateManager {
         if (!getConfig(ctx).blockPlayStoreUi || !DechainerAccessibilityService.isRunning) return false
 
         val ok = synchronized(SuspensionCoordinator.lock) {
+            if (PLAY_STORE_PACKAGE in SecurityManager.getActiveImpulseSuspension(ctx) ||
+                PLAY_STORE_PACKAGE in BlockSuspensionManager.heldPackages(ctx) ||
+                PLAY_STORE_PACKAGE in DowntimeManager.heldPackages(ctx) ||
+                PLAY_STORE_PACKAGE in DowntimeManager.activePackages(ctx)
+            ) {
+                return@synchronized false
+            }
             ctx.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).edit(commit = true) {
                 remove(PLAY_STORE_PACKAGE)
             }
@@ -345,19 +356,28 @@ object PlayStoreUpdateManager {
         }
     }
 
+    private val rollbackInFlight = mutableSetOf<String>()
+
     fun onPackageAdded(context: Context, packageName: String, isReplacing: Boolean) {
         val ctx = context.applicationContext
         synchronized(lock) {
             val p = prefs(ctx)
             if (!p.getBoolean(KEY_WINDOW_OPEN, false)) return
             val preWindow = p.getStringSet(KEY_PRE_WINDOW_PACKAGES, emptySet()) ?: emptySet()
+            if (preWindow.isEmpty()) return
+            if (ApkUpdateInstaller.hasActiveDowngradeForPackage(ctx, packageName)) return
             if (!isUnauthorizedPackageInstall(packageName, preWindow, isReplacing, ctx.packageName)) {
                 return
             }
-            Timber.w("PlayStore silent window: rolling back unauthorized install $packageName (replacing=$isReplacing)")
-            rollbackUnauthorizedPackage(ctx, packageName)
-            incrementRolledBackCountLocked(ctx)
-            emitStatusLocked(ctx)
+            if (!rollbackInFlight.add(packageName)) return
+            try {
+                Timber.w("PlayStore silent window: rolling back unauthorized install $packageName (replacing=$isReplacing)")
+                rollbackUnauthorizedPackage(ctx, packageName)
+                incrementRolledBackCountLocked(ctx)
+                emitStatusLocked(ctx)
+            } finally {
+                rollbackInFlight.remove(packageName)
+            }
         }
     }
 
@@ -369,13 +389,18 @@ object PlayStoreUpdateManager {
             val p = prefs(ctx)
             if (!p.getBoolean(KEY_WINDOW_OPEN, false)) return
             val preWindow = p.getStringSet(KEY_PRE_WINDOW_PACKAGES, emptySet()) ?: emptySet()
-            if (packageName in preWindow) return
+            if (preWindow.isEmpty() || packageName in preWindow) return
+            if (ApkUpdateInstaller.hasActiveDowngradeForPackage(ctx, packageName)) return
             if (!isPackageCurrentlyEnabledAndVisible(ctx, packageName)) return
-
-            Timber.w("PlayStore silent window: rolling back newly enabled package $packageName")
-            rollbackUnauthorizedPackage(ctx, packageName)
-            incrementRolledBackCountLocked(ctx)
-            emitStatusLocked(ctx)
+            if (!rollbackInFlight.add(packageName)) return
+            try {
+                Timber.w("PlayStore silent window: rolling back newly enabled package $packageName")
+                rollbackUnauthorizedPackage(ctx, packageName)
+                incrementRolledBackCountLocked(ctx)
+                emitStatusLocked(ctx)
+            } finally {
+                rollbackInFlight.remove(packageName)
+            }
         }
     }
 
@@ -469,42 +494,42 @@ object PlayStoreUpdateManager {
     }
 
     private fun openSilentWindowLocked(context: Context) {
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
         val snapshot = snapshotEnabledPackages(context)
-        val wasDisallowInstall = runCatching {
-            dpm.getUserRestrictions(admin).getBoolean(UserManager.DISALLOW_INSTALL_APPS)
-        }.getOrDefault(false)
+        if (snapshot.isEmpty()) {
+            Timber.w("Skipping silent Play Store window: package snapshot is empty")
+            return
+        }
 
-        // Persist snapshot and restore flag BEFORE lifting DISALLOW_INSTALL_APPS.
+        // Persist snapshot BEFORE lifting DISALLOW_INSTALL_APPS.
         prefs(context).edit(commit = true) {
             putBoolean(KEY_WINDOW_OPEN, true)
             putStringSet(KEY_PRE_WINDOW_PACKAGES, snapshot)
-            putBoolean(KEY_RESTORE_DISALLOW_INSTALL, wasDisallowInstall)
+            remove(KEY_RESTORE_DISALLOW_INSTALL)
         }
 
-        if (wasDisallowInstall) {
-            runCatching { dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS) }
-                .onFailure { Timber.w(it, "Could not clear DISALLOW_INSTALL_APPS for silent window") }
-        }
+        InstallRestrictionCoordinator.acquireLiftLease(
+            context,
+            InstallRestrictionCoordinator.LEASE_PLAY_STORE_WINDOW
+        )
     }
 
     private fun closeSilentWindowLocked(context: Context, isOwner: Boolean) {
         val p = prefs(context)
         val preWindow = p.getStringSet(KEY_PRE_WINDOW_PACKAGES, emptySet()) ?: emptySet()
-        val restoreDisallowInstall = p.getBoolean(KEY_RESTORE_DISALLOW_INSTALL, false)
+        val legacyRestore = p.getBoolean(KEY_RESTORE_DISALLOW_INSTALL, false)
 
         if (isOwner && preWindow.isNotEmpty()) {
             val current = snapshotEnabledPackages(context)
             val unauthorized = findUnauthorizedPackages(current, preWindow, context.packageName)
             unauthorized.forEach { pkg ->
-                Timber.w("PlayStore silent window close sweep: rolling back $pkg")
-                rollbackUnauthorizedPackage(context, pkg)
-                incrementRolledBackCountLocked(context)
+                if (!ApkUpdateInstaller.hasActiveDowngradeForPackage(context, pkg)) {
+                    Timber.w("PlayStore silent window close sweep: rolling back $pkg")
+                    rollbackUnauthorizedPackage(context, pkg)
+                    incrementRolledBackCountLocked(context)
+                }
             }
         }
 
-        // Clear open flag before re-applying DISALLOW_INSTALL_APPS so ApkUpdateInstaller doesn't defer it.
         p.edit(commit = true) {
             putBoolean(KEY_WINDOW_OPEN, false)
             remove(KEY_PRE_WINDOW_PACKAGES)
@@ -512,15 +537,14 @@ object PlayStoreUpdateManager {
             putLong(KEY_LAST_SWEEP_RTC, System.currentTimeMillis())
         }
 
-        if (isOwner && restoreDisallowInstall) {
-            if (ApkUpdateInstaller.hasActiveSessions(context)) {
-                ApkUpdateInstaller.enqueueRestoreRestriction(context, UserManager.DISALLOW_INSTALL_APPS)
-            } else {
-                val dpm = DeviceAdmin.policyManager
-                val admin = DeviceAdmin.component
-                runCatching { dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS) }
-                    .onFailure { Timber.w(it, "Could not restore DISALLOW_INSTALL_APPS after silent window") }
+        if (isOwner) {
+            if (legacyRestore) {
+                InstallRestrictionCoordinator.setUserBaseline(context, true)
             }
+            InstallRestrictionCoordinator.releaseLiftLease(
+                context,
+                InstallRestrictionCoordinator.LEASE_PLAY_STORE_WINDOW
+            )
         }
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.viewmodels.ActivityBlockerViewModel
 import io.github.warleysr.dechainer.viewmodels.GroupedActivityLog
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,62 +39,60 @@ fun ActivityBlockerScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     val gate = rememberTimelockGate()
 
-    Scaffold { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        stringResource(R.string.blocked_activities),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.blocked_activities),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                IconButton(onClick = { showAddDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = null)
                 }
             }
+        }
 
-            items(viewModel.blockedActivities) { className ->
-                ListItem(
-                    headlineContent = { Text(className) },
-                    trailingContent = {
-                        IconButton(onClick = {
-                            gate.requestUnlock(
-                                title = context.getString(R.string.timelock_title_unblock_activity, className),
-                                description = className,
-                                dedupeKey = "unblock_activity:$className",
-                                pendingAction = PendingAction.RemoveBlockedActivity(className)
-                            )
-                        }) {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                        }
+        items(viewModel.blockedActivities, key = { "blocked_$it" }) { className ->
+            ListItem(
+                headlineContent = { Text(className) },
+                trailingContent = {
+                    IconButton(onClick = {
+                        gate.requestUnlock(
+                            title = context.getString(R.string.timelock_title_unblock_activity, className),
+                            description = className,
+                            dedupeKey = "unblock_activity:$className",
+                            pendingAction = PendingAction.RemoveBlockedActivity(className)
+                        )
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
                     }
-                )
-                HorizontalDivider()
-            }
+                }
+            )
+            HorizontalDivider()
+        }
 
-            item {
-                Text(
-                    stringResource(R.string.accessed_activities),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
-            }
+        item {
+            Text(
+                stringResource(R.string.accessed_activities),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        }
 
-            val groupedLogs = viewModel.getGroupedAccessedActivities()
-            items(groupedLogs) { groupedLog ->
-                ActivityLogAccordion(groupedLog)
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+        val groupedLogs = viewModel.getGroupedAccessedActivities()
+        items(groupedLogs, key = { "group_${it.packageName}" }) { groupedLog ->
+            ActivityLogAccordion(groupedLog)
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 
@@ -111,11 +111,12 @@ fun ActivityBlockerScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (activityName.isNotBlank()) {
+                    val clean = activityName.trim()
+                    if (clean.isNotEmpty()) {
                         PendingChange.schedule(
                             message = context.getString(R.string.restriction_pending),
                             undoLabel = context.getString(R.string.undo),
-                            action = { viewModel.addBlockedActivity(activityName) }
+                            action = { viewModel.addBlockedActivity(clean) }
                         )
                     }
                     showAddDialog = false
@@ -134,9 +135,14 @@ fun ActivityBlockerScreen(
 
 @Composable
 fun ActivityLogAccordion(groupedLog: GroupedActivityLog) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(groupedLog.packageName) { mutableStateOf(false) }
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
-    
+    val iconPx = with(LocalDensity.current) { 32.dp.toPx().roundToInt().coerceAtLeast(1) }
+    val iconBitmap = remember(groupedLog.packageName, iconPx) {
+        runCatching { groupedLog.icon.toBitmap(width = iconPx, height = iconPx).asImageBitmap() }.getOrNull()
+    }
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -148,11 +154,13 @@ fun ActivityLogAccordion(groupedLog: GroupedActivityLog) {
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Image(
-                    bitmap = groupedLog.icon.toBitmap().asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp)
-                )
+                if (iconBitmap != null) {
+                    Image(
+                        bitmap = iconBitmap,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(groupedLog.appName, style = MaterialTheme.typography.titleMedium)
@@ -163,22 +171,23 @@ fun ActivityLogAccordion(groupedLog: GroupedActivityLog) {
                     contentDescription = null
                 )
             }
-            
+
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     HorizontalDivider()
                     groupedLog.activities.forEach { log ->
+                        val scopedRule = "${log.packageName}/${log.className}"
                         ListItem(
-                            headlineContent = { 
+                            headlineContent = {
                                 Text(
-                                    log.className, 
+                                    log.className,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(vertical = 4.dp)
-                                ) 
+                                )
                             },
                             trailingContent = {
                                 TextButton(onClick = {
-                                    clipboardManager.setText(AnnotatedString(log.className))
+                                    clipboardManager.setText(AnnotatedString(scopedRule))
                                 }) {
                                     Text(stringResource(R.string.copy))
                                 }

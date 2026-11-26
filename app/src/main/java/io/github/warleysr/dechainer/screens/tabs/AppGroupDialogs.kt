@@ -244,11 +244,17 @@ fun EditGroupDialog(
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Image(
-                                    bitmap = app.icon.toBitmap().asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp)
-                                )
+                                val iconPx = 96
+                                val memberBitmap = remember(app.packageName) {
+                                    runCatching { app.icon.toBitmap(iconPx, iconPx).asImageBitmap() }.getOrNull()
+                                }
+                                if (memberBitmap != null) {
+                                    Image(
+                                        bitmap = memberBitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
                                 Text(
                                     app.name,
                                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp)

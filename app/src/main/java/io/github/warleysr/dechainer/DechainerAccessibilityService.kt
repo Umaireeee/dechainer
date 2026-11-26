@@ -1,6 +1,7 @@
 package io.github.warleysr.dechainer
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.KeyguardManager
@@ -13,17 +14,19 @@ import android.content.Intent
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.os.UserManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.activities.AccessibilityRequestActivity
 import io.github.warleysr.dechainer.activities.OutsideTimeWindowActivity
@@ -36,9 +39,13 @@ import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.AppTimeLimits
 import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.data.BlockSuspensionManager
+import io.github.warleysr.dechainer.data.BrowserHardeningConfig
+import io.github.warleysr.dechainer.data.BrowserHardeningManager
+import io.github.warleysr.dechainer.data.ContentBlockerEngine
 import io.github.warleysr.dechainer.data.DailyUsageStore
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.DowntimeRepository
+import io.github.warleysr.dechainer.data.InstallRestrictionCoordinator
 import io.github.warleysr.dechainer.data.MusicLimitTracker
 import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.data.SuspensionCoordinator
@@ -58,10 +65,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 /**
- * Listens to window-state changes only (an app or screen coming to the front), never to content
- * changes, so it stays idle while an app is in use. Everything it does hangs off that one event:
- * per-app/group time limits, allowed time windows, the reopen cooldown, blocked screens and the
- * impulse-lock suspensions.
+ * Monitors window-state changes for usage limits, time windows, reopen cooldowns, blocked screens,
+ * and impulse-lock suspensions, and dynamically enables window-content / scroll / click inspection
+ * only when browser DNS lock, URL blocking, or social short-form rules are active.
  */
 @SuppressLint("AccessibilityPolicy")
 class DechainerAccessibilityService : AccessibilityService() {
@@ -84,9 +90,29 @@ class DechainerAccessibilityService : AccessibilityService() {
     private lateinit var groupsPrefs: SharedPreferences
     private lateinit var securityPrefs: SharedPreferences
     private lateinit var activityBlockerPrefs: SharedPreferences
+    private lateinit var browserHardeningPrefs: SharedPreferences
 
     @Volatile
     private var cachedBlockedActivities: Set<String> = emptySet()
+
+    @Volatile
+    private var cachedBrowserConfig: BrowserHardeningConfig = BrowserHardeningConfig()
+
+    @Volatile
+    private var cachedBrowserPackages: Set<String> = ContentBlockerEngine.KNOWN_BROWSER_PACKAGES
+
+    @Volatile
+    private var cachedWatchedPackages: Set<String> = emptySet()
+
+    private var lastContentCheckElapsed: Long = 0L
+    private var pendingContentCheckPkg: String? = null
+    private var pendingContentCheckRunnable: Runnable? = null
+    private var postBackVerifyRunnable: Runnable? = null
+
+    private var lastEnforcementElapsed: Long = 0L
+    private var lastEnforcedRuleKey: String? = null
+    private var consecutiveRuleHits: Int = 0
+    private val lastClassNameByPackage = HashMap<String, String>()
 
     private var receiversRegistered = false
     private var debugReceiver: BroadcastReceiver? = null
@@ -96,17 +122,14 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val packageName = intent?.data?.encodedSchemeSpecificPart ?: return
-            when (intent.action) {
-                Intent.ACTION_PACKAGE_ADDED -> {
-                    val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
-                    PlayStoreUpdateManager.onPackageAdded(applicationContext, packageName, replacing)
-                    if (!replacing) {
-                        AppRepository.reapplyHiddenIfNeeded(packageName)
-                    }
-                }
-                Intent.ACTION_PACKAGE_CHANGED -> {
-                    PlayStoreUpdateManager.onPackageChanged(applicationContext, packageName)
+            when (intent?.action) {
+                Intent.ACTION_PACKAGE_ADDED,
+                Intent.ACTION_PACKAGE_CHANGED,
+                Intent.ACTION_PACKAGE_REMOVED,
+                Intent.ACTION_PACKAGE_REPLACED -> {
+                    homeScreenDetector.invalidateCache()
+                    cachedBrowserPackages = BrowserHardeningManager.getInstalledBrowserPackages(applicationContext)
+                    refreshContentBlockerState()
                 }
             }
         }
@@ -131,24 +154,21 @@ class DechainerAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_OFF -> {
-                    if (currentPackage != null) lastForegroundPackage = currentPackage
+                    lastForegroundPackage = currentPackage
                     stopTrackingAndSave(screenOff = true)
                     currentPackage = null
                     foregroundPackage = null
                     MusicLimitTracker.onForegroundChanged(applicationContext)
-                    PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = true)
                 }
 
                 Intent.ACTION_USER_PRESENT -> {
                     restoreForegroundAfterUnlock()
-                    PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = false)
                 }
 
                 Intent.ACTION_SCREEN_ON -> {
                     val km = getSystemService(KeyguardManager::class.java)
                     if (km == null || !km.isKeyguardLocked) {
                         restoreForegroundAfterUnlock()
-                        PlayStoreUpdateManager.onScreenStateChanged(applicationContext, screenOff = false)
                     }
                 }
             }
@@ -158,30 +178,36 @@ class DechainerAccessibilityService : AccessibilityService() {
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when (prefs) {
             limitPrefs, weeklyLimitPrefs -> {
-                BlockSuspensionManager.sync(applicationContext)
-                MusicLimitTracker.onLimitsChanged(applicationContext)
-                if (key == currentPackage) retrackCurrent()
+                handler.post {
+                    BlockSuspensionManager.sync(applicationContext)
+                    MusicLimitTracker.onLimitsChanged(applicationContext)
+                    if (key == currentPackage) retrackCurrent()
+                }
             }
 
             timeWindowPrefs -> {
-                BlockSuspensionManager.sync(applicationContext)
-                MusicLimitTracker.onLimitsChanged(applicationContext)
-                if (key == currentPackage) retrackCurrent()
+                handler.post {
+                    BlockSuspensionManager.sync(applicationContext)
+                    MusicLimitTracker.onLimitsChanged(applicationContext)
+                    if (key == currentPackage) retrackCurrent()
+                }
             }
 
             groupsPrefs -> {
-                BlockSuspensionManager.sync(applicationContext)
-                MusicLimitTracker.onLimitsChanged(applicationContext)
-                retrackCurrent()
+                // Post onto handler so we never acquire SuspensionCoordinator.lock while holding AppGroupRepository.lock.
+                handler.post {
+                    BlockSuspensionManager.sync(applicationContext)
+                    MusicLimitTracker.onLimitsChanged(applicationContext)
+                    retrackCurrent()
+                }
             }
 
             securityPrefs -> {
                 if (key == "impulse_block_active" ||
-                    key == "impulse_block_start_elapsed" ||
                     key == "impulse_suspended_apps" ||
                     key == "impulse_action"
                 ) {
-                    syncImpulseSuspension()
+                    handler.post { syncImpulseSuspension() }
                 }
             }
 
@@ -189,28 +215,24 @@ class DechainerAccessibilityService : AccessibilityService() {
                 cachedBlockedActivities = activityBlockerPrefs.getStringSet("blocked_activities", emptySet())
                     ?.toSet().orEmpty()
             }
+
+            browserHardeningPrefs -> {
+                refreshContentBlockerState()
+            }
         }
     }
 
-    // Re-checks rather than blocking outright: the day may have changed, and usage must be saved first.
     private val blockRunnable = Runnable { recheckWindows() }
-
-    // The allowed span ending doesn't always mean "blocked": the next one may start right away
-    // (midnight, or two windows that touch), so the whole check runs again.
     private val windowEndRunnable = Runnable { recheckWindows() }
 
-    // Saves the running session every few minutes so a killed service loses at most that much usage.
-    // Only scheduled while a limited app is open, so it adds no wake-ups the rest of the time.
     private val checkpointRunnable = object : Runnable {
         override fun run() {
             val rolledOver = saveSessionUsage()
-            // A session can run past midnight: the day's usage starts again, so re-arm the limit timer.
             if (rolledOver || checkDateReset()) currentPackage?.let { pkg ->
                 handler.removeCallbacks(blockRunnable)
                 handler.removeCallbacks(windowEndRunnable)
                 startTracking(pkg)
             }
-            // Removing first leaves exactly one pending checkpoint, even if startTracking just scheduled one.
             handler.removeCallbacks(this)
             if (currentPackage != null) handler.postDelayed(this, CHECKPOINT_INTERVAL_MS)
         }
@@ -219,13 +241,18 @@ class DechainerAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_IMPULSE_RELEASE = "io.github.warleysr.dechainer.IMPULSE_RELEASE"
         private const val IMPULSE_ALARM_REQUEST = 7309
-        private const val KEY_SERVICE_ADDED_DISALLOW_INSTALL = "service_added_disallow_install_apps"
 
         /** The app in front right now, or null while the screen is off. Read by [MusicLimitTracker]. */
         @Volatile
         var foregroundPackage: String? = null
 
         private val CHECKPOINT_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
+        private const val CONTENT_CHECK_THROTTLE_MS = 250L
+        private const val ENFORCEMENT_COOLDOWN_MS = 550L
+        private const val POST_BACK_VERIFY_DELAY_MS = ENFORCEMENT_COOLDOWN_MS + 120L
+        private const val RULE_ESCALATION_WINDOW_MS = 3_000L
+        private const val MAX_WALK_NODES = 350
+        private const val MAX_WALK_DEPTH = 18
 
         var isRunning by mutableStateOf(false)
             private set
@@ -275,14 +302,22 @@ class DechainerAccessibilityService : AccessibilityService() {
             }
         }
 
-        fun releaseImpulseSuspensionIfExpired(context: Context) {
+        fun releaseImpulseSuspensionIfExpired(context: Context, force: Boolean = false) {
             val ctx = context.applicationContext
-            if (SecurityManager.getImpulseBlockRemainingTime(ctx) > 0L) return
+            val remaining = SecurityManager.getImpulseBlockRemainingTime(ctx)
+            if (!force && remaining > 0L) {
+                val suspended = ctx.getSharedPreferences("security_prefs", MODE_PRIVATE)
+                    .getStringSet("impulse_active_suspension", emptySet()).orEmpty()
+                if (suspended.isNotEmpty()) {
+                    scheduleImpulseAlarm(ctx, remaining)
+                }
+                return
+            }
             synchronized(SuspensionCoordinator.lock) {
                 cancelImpulseAlarm(ctx)
                 val prefs = ctx.getSharedPreferences("security_prefs", MODE_PRIVATE)
                 val suspended = prefs.getStringSet("impulse_active_suspension", emptySet()) ?: emptySet()
-                if (prefs.getBoolean("impulse_block_active", false)) {
+                if (!force && prefs.getBoolean("impulse_block_active", false)) {
                     prefs.edit { putBoolean("impulse_block_active", false) }
                 }
                 if (suspended.isEmpty()) return
@@ -316,8 +351,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isRunning = true
         disablingService = false
-        // The service is on and the user wants it on: from here on the watchdog keeps it that way.
-        AccessibilityWatchdog.setWanted(applicationContext, true)
+        if (!AccessibilityWatchdog.isIntentionalDisableActive(applicationContext)) {
+            AccessibilityWatchdog.setWanted(applicationContext, true)
+        }
         AccessibilityWatchdog.schedulePeriodic(applicationContext)
 
         limitPrefs = getSharedPreferences(AppTimeLimits.PREFS_NAME, MODE_PRIVATE)
@@ -329,6 +365,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         activityBlockerPrefs = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
         cachedBlockedActivities = activityBlockerPrefs.getStringSet("blocked_activities", emptySet())
             ?.toSet().orEmpty()
+        browserHardeningPrefs = getSharedPreferences(BrowserHardeningManager.PREFS, MODE_PRIVATE)
+        cachedBrowserPackages = BrowserHardeningManager.getInstalledBrowserPackages(applicationContext)
+        refreshContentBlockerState()
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         weeklyLimitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
@@ -336,6 +375,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         groupsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         activityBlockerPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        browserHardeningPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         synchronized(SuspensionCoordinator.lock) {
             val blockHeld = BlockSuspensionManager.heldPackages(applicationContext)
@@ -343,41 +383,56 @@ class DechainerAccessibilityService : AccessibilityService() {
             val downtimeHeld = DowntimeManager.heldPackages(applicationContext)
             val downtimeActive = DowntimeManager.activePackages(applicationContext)
             val impulseActive = SecurityManager.getActiveImpulseSuspension(applicationContext)
-            val toRelease = getControlledPackages().filterNot {
+            val controlled = getControlledPackages()
+            // Hand off any controlled app that entered Downtime while suspended by onUnbind.
+            val handoffToDowntime = controlled.filter {
+                it in downtimeActive &&
+                    it !in downtimeHeld &&
+                    it !in blockHeld &&
+                    it !in manual &&
+                    it !in impulseActive
+            }.toSet()
+            if (handoffToDowntime.isNotEmpty()) {
+                DowntimeRepository.addHeld(applicationContext, handoffToDowntime)
+            }
+            val toRelease = controlled.filterNot {
                 it in blockHeld || it in manual || it in downtimeHeld || it in downtimeActive || it in impulseActive
             }.toTypedArray()
             if (toRelease.isNotEmpty()) suspendPackages(toRelease, false)
         }
 
-        // Must run after the un-suspend above, which would otherwise release a package that is
-        // still serving an impulse block.
         syncImpulseSuspension()
-        // DowntimeManager.sync also reconciles BlockSuspensionManager.
         DowntimeManager.sync(applicationContext)
         PlayStoreUpdateManager.sync(applicationContext)
 
-        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
-        if (dpm.isDeviceOwnerApp(packageName) &&
-            securityPrefs.getBoolean(KEY_SERVICE_ADDED_DISALLOW_INSTALL, false)
-        ) {
-            runCatching {
-                dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
-                securityPrefs.edit { remove(KEY_SERVICE_ADDED_DISALLOW_INSTALL) }
-            }.onFailure { Timber.e(it, "Could not clear service-added DISALLOW_INSTALL_APPS") }
-        }
+        InstallRestrictionCoordinator.releaseEnforceLease(
+            applicationContext,
+            InstallRestrictionCoordinator.LEASE_ACCESSIBILITY_UNBIND
+        )
         ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(applicationContext)
 
-        registerReceiver(packageReceiver, IntentFilter().apply {
-            addAction(Intent.ACTION_PACKAGE_ADDED)
-            addAction(Intent.ACTION_PACKAGE_CHANGED)
-            addDataScheme("package")
-        })
-        registerReceiver(screenReceiver, IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_USER_PRESENT)
-        })
+        ContextCompat.registerReceiver(
+            this,
+            packageReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addDataScheme("package")
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         receiversRegistered = true
 
         if (BuildConfig.DEBUG) {
@@ -391,13 +446,7 @@ class DechainerAccessibilityService : AccessibilityService() {
                 }
             }
             debugReceiver = receiver
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(receiver, filter, RECEIVER_EXPORTED)
-            } else {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                registerReceiver(receiver, filter)
-            }
+            ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
         }
     }
 
@@ -417,9 +466,16 @@ class DechainerAccessibilityService : AccessibilityService() {
         if (::groupsPrefs.isInitialized) groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         if (::securityPrefs.isInitialized) securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         if (::activityBlockerPrefs.isInitialized) activityBlockerPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        if (::browserHardeningPrefs.isInitialized) browserHardeningPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
 
+        pendingContentCheckRunnable?.let { handler.removeCallbacks(it) }
+        pendingContentCheckRunnable = null
+        pendingContentCheckPkg = null
+        postBackVerifyRunnable?.let { handler.removeCallbacks(it) }
+        postBackVerifyRunnable = null
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
+
         stopTrackingAndSave()
         currentPackage = null
         foregroundPackage = null
@@ -430,11 +486,11 @@ class DechainerAccessibilityService : AccessibilityService() {
             if (::limitPrefs.isInitialized && ::weeklyLimitPrefs.isInitialized &&
                 ::reopenPrefs.isInitialized && ::timeWindowPrefs.isInitialized
             ) {
-                suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
+                synchronized(SuspensionCoordinator.lock) {
+                    suspendPackages(getControlledPackages(), reason = SuspensionReason.ACCESSIBILITY_DISABLED)
+                }
             }
 
-            // Switched off outside the app: restore immediately if we hold WRITE_SECURE_SETTINGS,
-            // otherwise schedule watchdog check and prompt the user to re-enable.
             if (AccessibilityWatchdog.hasPermission(applicationContext)) {
                 handler.postDelayed({
                     AccessibilityWatchdog.ensureEnabled(applicationContext)
@@ -444,20 +500,10 @@ class DechainerAccessibilityService : AccessibilityService() {
                 AccessibilityWatchdog.scheduleSoon(applicationContext)
             }
 
-            val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
-            if (dpm.isDeviceOwnerApp(packageName)) {
-                runCatching {
-                    val alreadyRestricted = dpm.getUserRestrictions(admin)
-                        .getBoolean(UserManager.DISALLOW_INSTALL_APPS)
-                    if (!alreadyRestricted) {
-                        dpm.addUserRestriction(admin, UserManager.DISALLOW_INSTALL_APPS)
-                        if (::securityPrefs.isInitialized) {
-                            securityPrefs.edit { putBoolean(KEY_SERVICE_ADDED_DISALLOW_INSTALL, true) }
-                        }
-                    }
-                }.onFailure { Timber.e(it, "Could not add DISALLOW_INSTALL_APPS on unbind") }
-            }
+            InstallRestrictionCoordinator.acquireEnforceLease(
+                applicationContext,
+                InstallRestrictionCoordinator.LEASE_ACCESSIBILITY_UNBIND
+            )
 
             if (!AccessibilityWatchdog.hasPermission(applicationContext)) {
                 startActivity(
@@ -478,7 +524,20 @@ class DechainerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val type = event.eventType
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            type == AccessibilityEvent.TYPE_VIEW_SCROLLED ||
+            type == AccessibilityEvent.TYPE_VIEW_CLICKED
+        ) {
+            val pkg = event.packageName?.toString() ?: return
+            if (pkg == packageName || pkg !in cachedWatchedPackages) return
+            scheduleTrailingContentCheck(pkg)
+            return
+        }
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+
+        lastForegroundPackage = null
+
         if (event.packageName == packageName) {
             if (currentPackage != null) {
                 stopTrackingAndSave()
@@ -491,7 +550,13 @@ class DechainerAccessibilityService : AccessibilityService() {
 
         val source = event.source
         val windowType = try {
-            source?.window?.type
+            val win = source?.window
+            try {
+                win?.type
+            } finally {
+                @Suppress("DEPRECATION")
+                runCatching { win?.recycle() }
+            }
         } finally {
             @Suppress("DEPRECATION")
             runCatching { source?.recycle() }
@@ -501,8 +566,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         val newPackage = event.packageName?.toString() ?: return
         val className = event.className?.toString() ?: return
         if (newPackage == "com.android.systemui") return
-        if (className.contains("InputMethodService", ignoreCase = true)
-            || className.contains("SoftInputWindow", ignoreCase = true)
+        if (className.contains("InputMethodService", ignoreCase = true) ||
+            className.contains("SoftInputWindow", ignoreCase = true)
         ) return
 
         if (PlayStoreUpdateManager.shouldBlockUiForPackage(applicationContext, newPackage)) {
@@ -523,42 +588,377 @@ class DechainerAccessibilityService : AccessibilityService() {
             enforceSplitScreenWindows()
         }
 
-        // Checked on every launcher event, not just on a package change: going from recents to home stays in the launcher.
-        if (pendingLeaves.isNotEmpty() && homeScreenDetector.isHomeScreen(event, rootInActiveWindow)) {
-            pendingLeaves.forEach { (pkg, leftAt) -> lastClosedTimes[pkg] = leftAt }
-            pendingLeaves.clear()
+        if (pendingLeaves.isNotEmpty()) {
+            val rootForHome = runCatching { rootInActiveWindow }.getOrNull()
+            try {
+                if (homeScreenDetector.isHomeScreen(event, rootForHome)) {
+                    pendingLeaves.forEach { (pkg, leftAt) -> lastClosedTimes[pkg] = leftAt }
+                    pendingLeaves.clear()
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                runCatching { rootForHome?.recycle() }
+            }
         }
 
-        // Every screen is logged, not only classes named "...Activity": Settings pages are often
-        // "...SubSettings", so the blocker has to see them too.
         addLog(newPackage, className)
-        if (cachedBlockedActivities.contains(className))
-            performGlobalAction(GLOBAL_ACTION_BACK)
+        val scopedRule = "$newPackage/$className"
+        if (cachedBlockedActivities.contains(scopedRule) || cachedBlockedActivities.contains(className)) {
+            applyContentEnforcement(
+                ContentBlockerEngine.BlockMatch(
+                    rule = "blocked_activity:$scopedRule",
+                    action = ContentBlockerEngine.EnforcementAction.PRESS_BACK
+                ),
+                verifyPkg = newPackage
+            )
+            return
+        }
+
+        if (!ContentBlockerEngine.isTransientViewClassName(className)) {
+            lastClassNameByPackage[newPackage] = className
+        }
+        if (newPackage in cachedWatchedPackages) {
+            pendingContentCheckRunnable?.let { handler.removeCallbacks(it) }
+            pendingContentCheckRunnable = null
+            lastContentCheckElapsed = SystemClock.elapsedRealtime()
+            evaluateAndEnforceContentBlock(newPackage, lastClassNameByPackage[newPackage].orEmpty())
+        }
     }
 
-    /** Enforces schedules/exhausted limits on secondary visible windows (split-screen / PiP). */
+    private fun scheduleTrailingContentCheck(pkg: String) {
+        val now = SystemClock.elapsedRealtime()
+        val elapsedSince = now - lastContentCheckElapsed
+        if (elapsedSince >= CONTENT_CHECK_THROTTLE_MS && pendingContentCheckRunnable == null) {
+            lastContentCheckElapsed = now
+            evaluateAndEnforceContentBlock(pkg, lastClassNameByPackage[pkg].orEmpty())
+            return
+        }
+        // Trailing-edge debounce: ensure the final settled frame is always evaluated.
+        pendingContentCheckPkg = pkg
+        if (pendingContentCheckRunnable == null) {
+            val delay = (CONTENT_CHECK_THROTTLE_MS - elapsedSince).coerceIn(30L, CONTENT_CHECK_THROTTLE_MS)
+            val runnable = Runnable {
+                pendingContentCheckRunnable = null
+                val targetPkg = pendingContentCheckPkg ?: return@Runnable
+                pendingContentCheckPkg = null
+                lastContentCheckElapsed = SystemClock.elapsedRealtime()
+                if (targetPkg in cachedWatchedPackages) {
+                    evaluateAndEnforceContentBlock(targetPkg, lastClassNameByPackage[targetPkg].orEmpty())
+                }
+            }
+            pendingContentCheckRunnable = runnable
+            handler.postDelayed(runnable, delay)
+        }
+    }
+
+    private fun refreshContentBlockerState() {
+        val cfg = BrowserHardeningManager.getConfig(applicationContext)
+        cachedBrowserConfig = cfg
+        val watched = ContentBlockerEngine.activeWatchedPackages(cfg, cachedBrowserPackages)
+        cachedWatchedPackages = watched
+        runCatching {
+            val info = serviceInfo ?: return
+            val wantedEvents = if (watched.isEmpty()) {
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            } else {
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                    AccessibilityEvent.TYPE_VIEW_CLICKED
+            }
+            var wantedFlags = info.flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            wantedFlags = if (watched.isEmpty()) {
+                wantedFlags and AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS.inv()
+            } else {
+                wantedFlags or AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            }
+            if (info.eventTypes != wantedEvents || info.flags != wantedFlags) {
+                info.eventTypes = wantedEvents
+                info.flags = wantedFlags
+                serviceInfo = info
+            }
+        }
+    }
+
+    private fun findWindowRootForPackage(pkg: String): AccessibilityNodeInfo? {
+        val active = runCatching { rootInActiveWindow }.getOrNull()
+        if (active != null) {
+            val activePkg = active.packageName?.toString()
+            if (activePkg == null || activePkg == pkg) return active
+            @Suppress("DEPRECATION")
+            runCatching { active.recycle() }
+        }
+        val appWindows = runCatching { windows.orEmpty() }.getOrDefault(emptyList())
+        for (win in appWindows) {
+            if (win.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+            val root = runCatching { win.root }.getOrNull() ?: continue
+            if (root.packageName?.toString() == pkg) {
+                return root
+            }
+            @Suppress("DEPRECATION")
+            runCatching { root.recycle() }
+        }
+        return null
+    }
+
+    private fun evaluateAndEnforceContentBlock(pkg: String, className: String) {
+        val cfg = cachedBrowserConfig
+        if (!cfg.enabled) return
+        if (cfg.blockTikTok && pkg in ContentBlockerEngine.TIKTOK_PACKAGES) {
+            applyContentEnforcement(
+                ContentBlockerEngine.BlockMatch(
+                    rule = "tiktok_app",
+                    action = ContentBlockerEngine.EnforcementAction.GO_HOME
+                ),
+                verifyPkg = pkg
+            )
+            return
+        }
+
+        val root = findWindowRootForPackage(pkg) ?: return
+        try {
+            evaluateRootForContentBlock(root, pkg, className, cfg)
+        } finally {
+            @Suppress("DEPRECATION")
+            runCatching { root.recycle() }
+        }
+    }
+
+    private fun evaluateRootForContentBlock(
+        root: AccessibilityNodeInfo,
+        pkg: String,
+        className: String,
+        cfg: BrowserHardeningConfig
+    ): Boolean {
+        val isBrowser = pkg in cachedBrowserPackages || pkg in ContentBlockerEngine.KNOWN_BROWSER_PACKAGES
+        val urlBarText = if (isBrowser) readBrowserUrlBar(root, pkg) else null
+        if (isBrowser && ContentBlockerEngine.isWebPageUrl(urlBarText) &&
+            ContentBlockerEngine.isSettingsClassName(className)
+        ) {
+            lastClassNameByPackage.remove(pkg)
+        }
+
+        val matchedViewIds = findMatchedViewIds(
+            root,
+            ContentBlockerEngine.viewIdsToProbeFor(pkg, cfg, cachedBrowserPackages)
+        )
+
+        val isSocialTarget = (cfg.blockYouTubeShorts && pkg in ContentBlockerEngine.YOUTUBE_PACKAGES) ||
+            ((cfg.blockInstagramReels || cfg.blockInstagramExplore) && pkg in ContentBlockerEngine.INSTAGRAM_PACKAGES) ||
+            (cfg.blockFacebookReels && pkg in ContentBlockerEngine.FACEBOOK_PACKAGES) ||
+            (cfg.blockSnapchatSpotlight && pkg in ContentBlockerEngine.SNAPCHAT_PACKAGES)
+        val needsBrowserTextWalk = isBrowser &&
+            cfg.lockBrowserDnsSettings &&
+            !ContentBlockerEngine.isWebPageUrl(urlBarText)
+
+        val selectedTabs = LinkedHashSet<String>()
+        val visibleTexts = ArrayList<String>()
+        val contentDescriptions = ArrayList<String>()
+        if (matchedViewIds.isEmpty() && (isSocialTarget || needsBrowserTextWalk)) {
+            collectShallowTextAndTabs(root, selectedTabs, visibleTexts, contentDescriptions)
+        }
+
+        val snapshot = ContentBlockerEngine.ScreenSnapshot(
+            packageName = pkg,
+            className = className,
+            urlBarText = urlBarText,
+            matchedViewIds = matchedViewIds,
+            visibleTexts = visibleTexts,
+            selectedTabLabels = selectedTabs,
+            contentDescriptions = contentDescriptions
+        )
+        val match = ContentBlockerEngine.evaluate(snapshot, cfg, cachedBrowserPackages) ?: return false
+        applyContentEnforcement(match, verifyPkg = pkg)
+        return true
+    }
+
+    private fun readBrowserUrlBar(root: AccessibilityNodeInfo, pkg: String): String? {
+        for (viewId in ContentBlockerEngine.browserUrlBarViewIds(pkg)) {
+            val nodes = runCatching { root.findAccessibilityNodeInfosByViewId(viewId) }.getOrNull().orEmpty()
+            var found: String? = null
+            for (node in nodes) {
+                if (found == null && node.isVisibleToUser) {
+                    val candidate = node.text?.toString()?.trim()
+                    val hint = node.hintText?.toString()?.trim()
+                    if (!candidate.isNullOrEmpty() && candidate != hint) {
+                        found = candidate
+                    }
+                }
+                @Suppress("DEPRECATION")
+                runCatching { node.recycle() }
+            }
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun hasNonEmptyScreenBounds(node: AccessibilityNodeInfo): Boolean {
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+        return !rect.isEmpty && rect.width() > 4 && rect.height() > 4
+    }
+
+    private fun findMatchedViewIds(root: AccessibilityNodeInfo, viewIds: List<String>): Set<String> {
+        if (viewIds.isEmpty()) return emptySet()
+        val matched = LinkedHashSet<String>()
+        for (viewId in viewIds) {
+            val nodes = runCatching { root.findAccessibilityNodeInfosByViewId(viewId) }.getOrNull().orEmpty()
+            var anyVisible = false
+            for (node in nodes) {
+                if (!anyVisible && (node.isVisibleToUser || hasNonEmptyScreenBounds(node))) {
+                    anyVisible = true
+                }
+                @Suppress("DEPRECATION")
+                runCatching { node.recycle() }
+            }
+            if (anyVisible) matched.add(viewId)
+        }
+        return matched
+    }
+
+    private fun collectShallowTextAndTabs(
+        root: AccessibilityNodeInfo,
+        selectedTabs: MutableSet<String>,
+        visibleTexts: MutableList<String>,
+        contentDescriptions: MutableList<String>
+    ) {
+        val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+        var visited = 0
+
+        fun recordNode(node: AccessibilityNodeInfo) {
+            val text = node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length <= 120 }
+            val desc = node.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length <= 120 }
+            if (text != null) visibleTexts.add(text)
+            if (desc != null) contentDescriptions.add(desc)
+            if (node.isSelected) {
+                if (text != null) selectedTabs.add(text)
+                if (desc != null) selectedTabs.add(desc)
+            }
+        }
+
+        recordNode(root)
+        visited = 1
+        // Enqueue root's direct children from last to first so bottom nav bars are scanned first.
+        val rootCount = root.childCount
+        for (i in rootCount - 1 downTo 0) {
+            val child = runCatching { root.getChild(i) }.getOrNull() ?: continue
+            if (child.isVisibleToUser) {
+                queue.addLast(child to 1)
+            } else {
+                @Suppress("DEPRECATION")
+                runCatching { child.recycle() }
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            val (node, depth) = queue.removeFirst()
+            try {
+                if (visited >= MAX_WALK_NODES) continue
+                visited += 1
+                recordNode(node)
+
+                if (depth < MAX_WALK_DEPTH && visited < MAX_WALK_NODES) {
+                    val count = node.childCount
+                    for (i in 0 until count) {
+                        if (visited + queue.size >= MAX_WALK_NODES) break
+                        val child = runCatching { node.getChild(i) }.getOrNull() ?: continue
+                        if (child.isVisibleToUser) {
+                            queue.addLast(child to (depth + 1))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            runCatching { child.recycle() }
+                        }
+                    }
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                runCatching { node.recycle() }
+            }
+        }
+    }
+
+    private fun applyContentEnforcement(match: ContentBlockerEngine.BlockMatch, verifyPkg: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (match.action == ContentBlockerEngine.EnforcementAction.GO_HOME) {
+            if (now - lastEnforcementElapsed < ENFORCEMENT_COOLDOWN_MS) return
+            lastEnforcementElapsed = now
+            lastEnforcedRuleKey = match.rule
+            consecutiveRuleHits = 1
+            Timber.d("Content blocker GO_HOME for rule=%s", match.rule)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            return
+        }
+
+        if (now - lastEnforcementElapsed < ENFORCEMENT_COOLDOWN_MS) return
+        if (lastEnforcedRuleKey == match.rule && now - lastEnforcementElapsed <= RULE_ESCALATION_WINDOW_MS) {
+            consecutiveRuleHits += 1
+        } else {
+            lastEnforcedRuleKey = match.rule
+            consecutiveRuleHits = 1
+        }
+        lastEnforcementElapsed = now
+
+        if (consecutiveRuleHits >= 3) {
+            consecutiveRuleHits = 0
+            postBackVerifyRunnable?.let { handler.removeCallbacks(it) }
+            postBackVerifyRunnable = null
+            Timber.d("Content blocker escalating to GO_HOME for sticky rule=%s", match.rule)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        } else {
+            Timber.d("Content blocker PRESS_BACK for rule=%s (hit=%d)", match.rule, consecutiveRuleHits)
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            schedulePostBackVerification(verifyPkg)
+        }
+    }
+
+    private fun schedulePostBackVerification(pkg: String) {
+        postBackVerifyRunnable?.let { handler.removeCallbacks(it) }
+        val verify = Runnable {
+            postBackVerifyRunnable = null
+            if (!isRunning) return@Runnable
+            if (pkg in cachedWatchedPackages) {
+                evaluateAndEnforceContentBlock(pkg, lastClassNameByPackage[pkg].orEmpty())
+            }
+        }
+        postBackVerifyRunnable = verify
+        handler.postDelayed(verify, POST_BACK_VERIFY_DELAY_MS)
+    }
+
+    /** Enforces schedules, exhausted limits, and content/TikTok rules on secondary visible windows. */
     private fun enforceSplitScreenWindows() {
         if (!PlayStoreUpdateManager.isBlockUiEnabledCached(applicationContext) &&
-            getControlledPackages().isEmpty()
+            getControlledPackages().isEmpty() &&
+            cachedWatchedPackages.isEmpty()
         ) {
             return
         }
-        val visible = runCatching {
-            windows.orEmpty()
-                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-                .mapNotNull { win ->
-                    val root = win.root ?: return@mapNotNull null
-                    try {
-                        root.packageName?.toString()
-                    } finally {
-                        @Suppress("DEPRECATION")
-                        runCatching { root.recycle() }
+        val appWindows = runCatching {
+            windows.orEmpty().filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        }.getOrDefault(emptyList())
+
+        val visiblePackages = LinkedHashSet<String>()
+        val cfg = cachedBrowserConfig
+        for (win in appWindows) {
+            val root = runCatching { win.root }.getOrNull() ?: continue
+            try {
+                val pkg = root.packageName?.toString() ?: continue
+                visiblePackages.add(pkg)
+                if (pkg != currentPackage && pkg in cachedWatchedPackages && cfg.enabled) {
+                    if (cfg.blockTikTok && pkg in ContentBlockerEngine.TIKTOK_PACKAGES) {
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        return
+                    }
+                    if (evaluateRootForContentBlock(root, pkg, lastClassNameByPackage[pkg].orEmpty(), cfg)) {
+                        return
                     }
                 }
-                .toSet()
-        }.getOrDefault(emptySet())
+            } finally {
+                @Suppress("DEPRECATION")
+                runCatching { root.recycle() }
+            }
+        }
 
-        for (pkg in visible) {
+        for (pkg in visiblePackages) {
             if (PlayStoreUpdateManager.shouldBlockUiForPackage(applicationContext, pkg)) {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 return
@@ -585,14 +985,6 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Brings the app suspensions in line with the current state of the impulse block: suspends the
-     * configured list while a block is running with [SecurityManager.ImpulseAction.TIMER_AND_SUSPEND]
-     * selected, and releases whatever was suspended once it isn't.
-     *
-     * Called both from the prefs listener (the panic button, and the block expiring) and from
-     * [onServiceConnected], which is what re-applies a block that outlived this service.
-     */
     private fun syncImpulseSuspension() {
         synchronized(SuspensionCoordinator.lock) {
             val ctx = applicationContext
@@ -603,11 +995,10 @@ class DechainerAccessibilityService : AccessibilityService() {
                 targets.isNotEmpty()
 
             if (!shouldSuspend) {
-                releaseImpulseSuspension()
+                releaseImpulseSuspension(force = true)
                 return
             }
 
-            // Leave apps held by downtime, blocks, or manual suspension untouched when dropping items.
             val alreadySuspended = SecurityManager.getActiveImpulseSuspension(ctx)
             val dropped = (alreadySuspended - targets) -
                 DowntimeManager.heldPackages(ctx) -
@@ -616,13 +1007,16 @@ class DechainerAccessibilityService : AccessibilityService() {
                 SuspensionCoordinator.manualSuspensions(ctx)
             if (dropped.isNotEmpty()) suspendPackages(dropped.toTypedArray(), false)
 
-            suspendPackages(targets.toTypedArray(), true, reason = SuspensionReason.IMPULSE_LOCK)
+            val toSuspend = (targets - alreadySuspended).toTypedArray()
+            if (toSuspend.isNotEmpty()) {
+                suspendPackages(toSuspend, true, reason = SuspensionReason.IMPULSE_LOCK)
+            }
             SecurityManager.setActiveImpulseSuspension(ctx, targets)
 
             impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
             val release = Runnable {
                 impulseReleaseRunnable = null
-                releaseImpulseSuspension()
+                releaseImpulseSuspension(force = false)
             }
             impulseReleaseRunnable = release
             handler.postDelayed(release, remaining)
@@ -631,10 +1025,10 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun releaseImpulseSuspension() {
+    private fun releaseImpulseSuspension(force: Boolean = false) {
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
-        releaseImpulseSuspensionIfExpired(applicationContext)
+        releaseImpulseSuspensionIfExpired(applicationContext, force = force)
     }
 
     private fun suspendPackages(
@@ -644,8 +1038,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         details: String? = null
     ) {
         if (packages.isEmpty()) return
-        val dpm =
-            applicationContext.getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val dpm = applicationContext.getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(applicationContext, DechainerDeviceAdminReceiver::class.java)
         if (!dpm.isDeviceOwnerApp(packageName)) return
         val failed = runCatching { dpm.setPackagesSuspended(admin, packages, suspend).toSet() }
@@ -662,18 +1055,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun suspendPackage(
-        packageName: String,
-        suspend: Boolean = true,
-        reason: SuspensionReason? = null,
-        details: String? = null
-    ) = suspendPackages(
-        arrayOf(packageName), suspend, reason, details
-    )
-
     private fun getControlledPackages(): Array<String> {
         val restrictedGroupPackages = AppGroupRepository.getGroups()
-            .filter { it.timeLimit.isSet || it.timeWindows.isNotEmpty() }
+            .filter { it.timeLimit.isSet || it.timeWindows.any { w -> w.enabled } }
             .flatMap { it.packageNames }
 
         return limitPrefs.all.keys
@@ -684,18 +1068,11 @@ class DechainerAccessibilityService : AccessibilityService() {
             .toTypedArray()
     }
 
-    /**
-     * The app's own settings plus its group's, when it belongs to one. A group does not replace
-     * the app's individual limit/windows — it adds another cap alongside them, and whichever of
-     * the two is more restrictive is the one that actually applies (see [startTracking]).
-     * Limits that vary by weekday are resolved to today's value here.
-     */
     private data class TrackingConfig(
         val group: AppGroup?,
         val appLimitMinutes: Int,
         val groupLimitMinutes: Int,
         val hasAnyVaryingOrSetLimit: Boolean,
-        /** What is allowed today, or null when neither the app nor its group has windows. */
         val allowed: List<Span>?
     )
 
@@ -735,22 +1112,25 @@ class DechainerAccessibilityService : AccessibilityService() {
         val config = trackingConfigFor(pkg)
 
         if (config.allowed != null) {
-            val nowSecond = currentSecondOfDay()
+            val nowZoned = ZonedDateTime.now()
+            val nowSecond = nowZoned.hour * 3600 + nowZoned.minute * 60 + nowZoned.second
             val activeSpan = config.allowed.firstOrNull { nowSecond in it.start * 60 until it.end * 60 }
             if (activeSpan == null) {
                 executeBlocking(outsideWindow = true)
                 return
             }
-            handler.postDelayed(
-                windowEndRunnable,
-                ((activeSpan.end * 60 - nowSecond) * 1000L).coerceAtLeast(1000L)
-            )
+            val endTime = if (activeSpan.end >= 1440) {
+                nowZoned.toLocalDate().plusDays(1).atStartOfDay(nowZoned.zone)
+            } else {
+                nowZoned.toLocalDate().atTime(activeSpan.end / 60, activeSpan.end % 60).atZone(nowZoned.zone)
+            }
+            val delayMs = Duration.between(nowZoned.toInstant(), endTime.toInstant()).toMillis().coerceAtLeast(1000L)
+            handler.postDelayed(windowEndRunnable, delayMs)
         }
 
         val remainingSecondsReopening = getRemainingSecondsToReopen(pkg)
         if (config.appLimitMinutes <= 0 && config.groupLimitMinutes <= 0) {
             if (config.hasAnyVaryingOrSetLimit) {
-                // Keep watching across midnight so a weekday-varying limit activates at 00:00.
                 handler.postDelayed(windowEndRunnable, millisUntilNextMidnight())
             }
             if (remainingSecondsReopening > 0) {
@@ -779,7 +1159,6 @@ class DechainerAccessibilityService : AccessibilityService() {
             executeBlocking()
             return
         }
-        // One timer per open app: no polling while the app is in use.
         val remainingMillis = listOfNotNull(appRemaining, groupRemaining).minOrNull()
         if (remainingMillis != null) {
             handler.postDelayed(blockRunnable, remainingMillis)
@@ -792,7 +1171,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun appLabel(pkg: String): String = try {
         packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         pkg
     }
 
@@ -808,7 +1187,6 @@ class DechainerAccessibilityService : AccessibilityService() {
         sessionStartTime = 0
     }
 
-    /** Adds the time since the session (or the last checkpoint) started to the app's and its group's usage. */
     private fun saveSessionUsage(): Boolean {
         val pkg = currentPackage ?: return false
         if (sessionStartTime == 0L) return false
@@ -818,7 +1196,6 @@ class DechainerAccessibilityService : AccessibilityService() {
         val today = LocalDate.now()
         var rolledOver = false
         if (today.isAfter(sessionDate)) {
-            // Roll over the day cleanly before accruing post-midnight usage.
             val millisSinceMidnight = LocalTime.now().toSecondOfDay() * 1000L
             val midnightElapsed = (now - millisSinceMidnight).coerceIn(sessionStartTime, now)
             DailyUsageStore.ensureCurrentDate(applicationContext, today)
@@ -841,6 +1218,7 @@ class DechainerAccessibilityService : AccessibilityService() {
 
     private fun executeBlocking(reopening: Boolean = false, remainingSeconds: Int = 0, outsideWindow: Boolean = false) {
         val pkg = currentPackage ?: return
+        lastForegroundPackage = null
         stopTrackingAndSave()
         currentPackage = null
         foregroundPackage = null
@@ -857,8 +1235,6 @@ class DechainerAccessibilityService : AccessibilityService() {
         val config = trackingConfigFor(pkg)
         val individualAppName = appLabel(pkg)
 
-        // For a plain limit block, name and blame whichever cap actually ran out: the app's own,
-        // or (when both are exhausted) the shared group cap, since that's the one still binding.
         var displayName = individualAppName
         var displayLimit = config.appLimitMinutes
         if (!reopening && !outsideWindow && config.group != null && config.groupLimitMinutes > 0) {
@@ -873,7 +1249,6 @@ class DechainerAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Schedule and time-limit blocks suspend the app silently unless suspension fails/non-DO.
         if (!reopening) {
             val suspended = BlockSuspensionManager.suspend(applicationContext, pkg, outsideWindow)
             if (suspended) return
@@ -891,7 +1266,6 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
 
         if (outsideWindow) {
-            // Empty when nothing is allowed today.
             intent.putStringArrayListExtra("windows", ArrayList(config.allowed.orEmpty().map { it.formatted() }))
         } else {
             intent.putExtra("limit", if (reopening) remainingSeconds else displayLimit)
@@ -912,13 +1286,8 @@ class DechainerAccessibilityService : AccessibilityService() {
         startTracking(pkg)
     }
 
-    /** Clears the day's usage when the date has changed. Returns true when it did. */
     private fun checkDateReset(): Boolean = DailyUsageStore.ensureCurrentDate(applicationContext)
 
-    /**
-     * Re-applies the open app's limits after their settings change. Time already used in this
-     * stretch is saved first, so the new timer counts from the right place.
-     */
     private fun retrackCurrent() {
         handler.removeCallbacks(blockRunnable)
         handler.removeCallbacks(windowEndRunnable)
@@ -939,5 +1308,4 @@ class DechainerAccessibilityService : AccessibilityService() {
         }
         return 0
     }
-
 }

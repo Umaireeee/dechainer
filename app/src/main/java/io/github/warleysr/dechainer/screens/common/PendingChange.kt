@@ -1,5 +1,7 @@
 package io.github.warleysr.dechainer.screens.common
 
+import android.os.Bundle
+import android.os.Parcelable
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -27,8 +29,6 @@ object PendingChange {
     private var activeAction: (() -> Unit)? = null
 
     fun schedule(message: String, undoLabel: String, onUndo: (() -> Unit)? = null, action: () -> Unit) {
-        // Commit any in-flight restriction immediately before replacing it so rapid calls don't
-        // race on SnackbarHostState's mutex or drop an undo window.
         activeJob?.cancel()
         val displaced = activeAction
         activeJob = null
@@ -47,6 +47,14 @@ object PendingChange {
                 if (result == SnackbarResult.ActionPerformed) onUndo?.invoke() else action()
             }
         }
+    }
+
+    /** Cancels any pending un-committed [schedule] action (e.g. when a slider returns to saved value). */
+    fun cancelPending() {
+        activeJob?.cancel()
+        activeJob = null
+        activeAction = null
+        snackbarHost.currentSnackbarData?.dismiss()
     }
 
     /**
@@ -94,11 +102,45 @@ fun isLooserWindows(old: List<TimeWindow>, new: List<TimeWindow>): Boolean =
 
 private fun isPermissiveKey(key: String): Boolean {
     val lower = key.lowercase()
-    return lower.startsWith("allow") || "allowlist" in lower || "whitelist" in lower || "exception" in lower
+    return lower.startsWith("allow") ||
+        "allowlist" in lower ||
+        "whitelist" in lower ||
+        "exception" in lower ||
+        (lower.endsWith("enabled") && !lower.contains("safebrowsing") && !lower.contains("verify"))
 }
 
 @Suppress("DEPRECATION")
-fun isLooserRestrictions(current: android.os.Bundle, new: android.os.Bundle): Boolean {
+internal fun bundlesEqual(a: Bundle, b: Bundle): Boolean {
+    val aKeys = a.keySet()
+    val bKeys = b.keySet()
+    if (aKeys != bKeys) return false
+    for (k in aKeys) {
+        val va = a.get(k)
+        val vb = b.get(k)
+        when {
+            va === vb -> continue
+            va == null || vb == null -> return false
+            va is Bundle && vb is Bundle -> if (!bundlesEqual(va, vb)) return false
+            va is Array<*> && vb is Array<*> -> {
+                if (va.size != vb.size) return false
+                for (i in va.indices) {
+                    val ea = va[i]
+                    val eb = vb[i]
+                    if (ea is Bundle && eb is Bundle) {
+                        if (!bundlesEqual(ea, eb)) return false
+                    } else if (ea != eb) {
+                        return false
+                    }
+                }
+            }
+            else -> if (va != vb) return false
+        }
+    }
+    return true
+}
+
+@Suppress("DEPRECATION")
+fun isLooserRestrictions(current: Bundle, new: Bundle): Boolean {
     val currentKeys = current.keySet()
     for (key in new.keySet()) {
         if (key !in currentKeys && isPermissiveKey(key)) return true
@@ -109,7 +151,7 @@ fun isLooserRestrictions(current: android.os.Bundle, new: android.os.Bundle): Bo
         when (oldVal) {
             is Boolean -> {
                 if (isPermissiveKey(key)) {
-                    if (!oldVal && newVal == true) return true
+                    if (!oldVal && (newVal == true || newVal == null)) return true
                 } else {
                     if (oldVal && newVal != true) return true
                 }
@@ -121,16 +163,29 @@ fun isLooserRestrictions(current: android.os.Bundle, new: android.os.Bundle): Bo
                 if (oldVal.toLong() != (newVal as? Number)?.toLong()) return true
             }
             is Array<*> -> {
-                val oldSet = oldVal.toSet()
-                val newSet = (newVal as? Array<*>)?.toSet() ?: emptySet()
-                if (isPermissiveKey(key)) {
-                    if (!oldSet.containsAll(newSet)) return true
+                val newArr = newVal as? Array<*>
+                if (oldVal.any { it is Bundle } || newArr?.any { it is Bundle } == true) {
+                    val oldBundles = oldVal.filterIsInstance<Bundle>()
+                    val newBundles = newArr?.filterIsInstance<Bundle>().orEmpty()
+                    if (isPermissiveKey(key)) {
+                        val allOldCoverNew = newBundles.all { nb -> oldBundles.any { ob -> bundlesEqual(ob, nb) } }
+                        if (!allOldCoverNew) return true
+                    } else {
+                        val allNewCoverOld = oldBundles.all { ob -> newBundles.any { nb -> bundlesEqual(ob, nb) } }
+                        if (!allNewCoverOld) return true
+                    }
                 } else {
-                    if (!newSet.containsAll(oldSet)) return true
+                    val oldSet = oldVal.toSet()
+                    val newSet = newArr?.toSet() ?: emptySet()
+                    if (isPermissiveKey(key)) {
+                        if (!oldSet.containsAll(newSet)) return true
+                    } else {
+                        if (!newSet.containsAll(oldSet)) return true
+                    }
                 }
             }
-            is android.os.Bundle -> {
-                if (newVal !is android.os.Bundle || isLooserRestrictions(oldVal, newVal)) return true
+            is Bundle -> {
+                if (newVal !is Bundle || isLooserRestrictions(oldVal, newVal)) return true
             }
         }
     }

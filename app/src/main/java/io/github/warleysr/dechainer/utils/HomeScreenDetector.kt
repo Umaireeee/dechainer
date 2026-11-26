@@ -15,30 +15,52 @@ import java.util.Locale
 class HomeScreenDetector(private val context: Context) {
     private var recentsLabelCache: Pair<String, String?>? = null
 
+    @Volatile
+    private var cachedHomePackages: Set<String>? = null
+
+    fun invalidateCache() {
+        cachedHomePackages = null
+    }
+
     fun isHomeScreen(event: AccessibilityEvent, root: AccessibilityNodeInfo?): Boolean {
         val pkg = event.packageName?.toString() ?: return false
         if (pkg !in homePackages()) return false
 
-        if (event.className?.toString()?.contains("Recents", ignoreCase = true) == true) return false
+        val cls = event.className?.toString().orEmpty()
+        if (RECENTS_CLASS_TOKENS.any { cls.contains(it, ignoreCase = true) }) return false
 
-        // Launcher3 fills its window events with the current state's description.
         val recentsLabel = recentsLabel(pkg)
         if (recentsLabel != null && event.text.any { it?.toString() == recentsLabel }) return false
 
-        val overview = root?.takeIf { it.packageName == pkg }
-            ?.findAccessibilityNodeInfosByViewId("$pkg:id/overview_panel")
-        return overview.orEmpty().none { it.isVisibleToUser }
+        if (root != null && root.packageName == pkg) {
+            for (suffix in RECENTS_VIEW_IDS) {
+                val nodes = runCatching {
+                    root.findAccessibilityNodeInfosByViewId("$pkg:id/$suffix")
+                }.getOrNull().orEmpty()
+                var anyVisible = false
+                for (node in nodes) {
+                    if (!anyVisible && node.isVisibleToUser) {
+                        anyVisible = true
+                    }
+                    @Suppress("DEPRECATION")
+                    runCatching { node.recycle() }
+                }
+                if (anyVisible) return false
+            }
+        }
+        return true
     }
 
-    // With no default launcher chosen the resolver comes back, so every launcher counts then.
-    // Settings is left out: its FallbackHome only covers the moments before the user unlocks.
     private fun homePackages(): Set<String> {
+        cachedHomePackages?.let { return it }
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val pm = context.packageManager
-        pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+        val resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
             ?.takeIf { it != "android" }
-            ?.let { return setOf(it) }
-        return pm.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.toSet() - SETTINGS_PACKAGE
+            ?.let { setOf(it) }
+            ?: pm.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.toSet() - SETTINGS_PACKAGE
+        cachedHomePackages = resolved
+        return resolved
     }
 
     @SuppressLint("DiscouragedApi")
@@ -56,5 +78,7 @@ class HomeScreenDetector(private val context: Context) {
 
     private companion object {
         const val SETTINGS_PACKAGE = "com.android.settings"
+        val RECENTS_CLASS_TOKENS = listOf("Recents", "Overview", "Quickstep")
+        val RECENTS_VIEW_IDS = listOf("overview_panel", "recents_view", "task_view", "snapshot")
     }
 }

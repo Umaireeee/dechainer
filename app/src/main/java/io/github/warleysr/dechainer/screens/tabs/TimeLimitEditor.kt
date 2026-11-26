@@ -202,8 +202,8 @@ private fun shortDuration(minutes: Int): String {
 /** Hours and minutes wheels spanning the available width. */
 @Composable
 fun DurationWheels(minutes: Int, onChange: (Int) -> Unit, maxHours: Int = 23) {
-    var hours by remember { mutableIntStateOf(minutes / 60) }
-    var mins by remember { mutableIntStateOf(minutes % 60) }
+    var hours by remember(minutes) { mutableIntStateOf(minutes / 60) }
+    var mins by remember(minutes) { mutableIntStateOf(minutes % 60) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),

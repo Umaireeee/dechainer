@@ -2,7 +2,6 @@
 
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.security.TimelockManager
-import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 
 import android.accounts.AccountManager
 import android.annotation.SuppressLint
@@ -15,7 +14,8 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.IInterface
 import android.os.Process
-import android.util.Log
+import android.provider.Settings
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import io.github.warleysr.dechainer.DechainerApplication
 import io.github.warleysr.dechainer.DechainerAccessibilityService
@@ -29,11 +29,11 @@ import timber.log.Timber
 object DeviceOwnerRepository {
     private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
-    private val context = DechainerApplication.getInstance()
+    private val context get() = DechainerApplication.getInstance()
     private val dpm get() = DeviceAdmin.policyManager
     private val adminName get() = DeviceAdmin.component
-    private val packageName = context.packageName
-    private val serviceComponent = "$packageName/.DechainerAccessibilityService"
+    private val packageName get() = context.packageName
+    private val serviceComponent get() = "$packageName/.DechainerAccessibilityService"
 
     fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(packageName)
 
@@ -72,44 +72,31 @@ object DeviceOwnerRepository {
     fun getUserId(): Int = Process.myUid() / 100000
 
     @SuppressLint("PrivateApi")
-    private val shizukuDpmLock = Any()
-
-    fun <T> withShizukuDevicePolicyManager(action: (DevicePolicyManager) -> T): T = synchronized(shizukuDpmLock) {
+    private fun getShizukuDevicePolicyProxy(): Any {
         val manager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val field = manager.javaClass.getDeclaredField("mService").apply { isAccessible = true }
         val originalService = field.get(manager) as IInterface
         val wrappedBinder = ShizukuBinderWrapper(originalService.asBinder())
         val stubClass = Class.forName("android.app.admin.IDevicePolicyManager\$Stub")
         val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
-        val proxiedService = asInterface.invoke(null, wrappedBinder)
-
-        field.set(manager, proxiedService)
-        try {
-            action(manager)
-        } finally {
-            try {
-                field.set(manager, originalService)
-            } catch (_: Throwable) {
-            }
-        }
+        return asInterface.invoke(null, wrappedBinder)!!
     }
 
     @SuppressLint("PrivateApi")
-    private fun DevicePolicyManager.forceUpdateUserSetupComplete(userId: Int) {
+    private fun Any.forceUpdateUserSetupCompleteProxy(userId: Int) {
         val clazz = this::class.java
         runCatching {
-            clazz.getDeclaredMethod("forceUpdateUserSetupComplete", Int::class.javaPrimitiveType!!)
-                .also { it.isAccessible = true }.invoke(this, userId)
+            clazz.getMethod("forceUpdateUserSetupComplete", Int::class.javaPrimitiveType!!)
+                .invoke(this, userId)
         }.onFailure {
             runCatching {
-                clazz.getDeclaredMethod("forceUpdateUserSetupComplete")
-                    .also { it.isAccessible = true }.invoke(this)
+                clazz.getMethod("forceUpdateUserSetupComplete").invoke(this)
             }
         }
     }
 
     @SuppressLint("PrivateApi")
-    private fun DevicePolicyManager.setActiveAdminCompat(receiver: ComponentName, refreshing: Boolean, userId: Int) {
+    private fun Any.setActiveAdminCompat(receiver: ComponentName, refreshing: Boolean, userId: Int) {
         val clazz = this::class.java
         val method3 = clazz.methods.firstOrNull {
             it.name == "setActiveAdmin" && it.parameterTypes.size == 3 &&
@@ -142,8 +129,20 @@ object DeviceOwnerRepository {
     }
 
     @SuppressLint("PrivateApi")
-    private fun DevicePolicyManager.setDeviceOwnerCompat(who: ComponentName, ownerName: String?, userId: Int): Boolean {
+    private fun Any.setDeviceOwnerCompat(who: ComponentName, ownerName: String?, userId: Int): Boolean {
         val clazz = this::class.java
+
+        // IDevicePolicyManager.setDeviceOwner(ComponentName, int userId, boolean setProfileOwnerOnCurrentUserIfNecessary) or (ComponentName, int) or (ComponentName, String, int)
+        val method3Bool = clazz.methods.firstOrNull {
+            it.name == "setDeviceOwner" && it.parameterTypes.size == 3 &&
+                    it.parameterTypes[0] == ComponentName::class.java &&
+                    it.parameterTypes[1] == java.lang.Integer.TYPE &&
+                    it.parameterTypes[2] == java.lang.Boolean.TYPE
+        }
+        if (method3Bool != null) {
+            val res = method3Bool.invoke(this, who, userId, false)
+            return (res as? Boolean) ?: false
+        }
 
         val method2 = clazz.methods.firstOrNull {
             it.name == "setDeviceOwner" && it.parameterTypes.size == 2 &&
@@ -205,57 +204,95 @@ object DeviceOwnerRepository {
     }
 
     fun restoreUserSetupComplete(userId: Int = getUserId()) {
-        ShizukuRunner.exec("settings", "--user", "$userId", "put", "secure", "user_setup_complete", "1")
-        refreshUserSetupComplete(userId)
+        if (isDeviceOwner()) {
+            @Suppress("DEPRECATION")
+            runCatching { dpm.setSecureSetting(adminName, "user_setup_complete", "1") }
+        }
+        if (AccessibilityWatchdog.hasPermission(context)) {
+            runCatching {
+                Settings.Secure.putInt(context.contentResolver, "user_setup_complete", 1)
+            }
+        }
+        if (Shizuku.pingBinder() && checkShizukuPermission()) {
+            ShizukuRunner.exec("settings", "--user", "$userId", "put", "secure", "user_setup_complete", "1")
+            refreshUserSetupComplete(userId)
+        }
     }
 
     fun refreshUserSetupComplete(userId: Int = getUserId()) {
         runCatching {
-            withShizukuDevicePolicyManager { manager ->
-                manager.forceUpdateUserSetupComplete(userId)
-            }
+            getShizukuDevicePolicyProxy().forceUpdateUserSetupCompleteProxy(userId)
         }.onFailure {
             Timber.w(it, "forceUpdateUserSetupComplete failed (may not be supported on this Android version)")
         }
     }
 
     fun restoreStuckUserSetupComplete() {
-        if (!Shizuku.pingBinder() || !checkShizukuPermission()) return
-        val userId = getUserId()
-        val setup = ShizukuRunner.exec("settings", "--user", "$userId", "get", "secure", "user_setup_complete")?.output?.trim()
-        if (setup != "0") return
-        val provisioned = ShizukuRunner.exec("settings", "--user", "$userId", "get", "global", "device_provisioned")?.output?.trim()
-        if (provisioned != "1") return
-        restoreUserSetupComplete(userId)
+        val resolver = context.contentResolver
+        val setup = runCatching {
+            Settings.Secure.getInt(resolver, "user_setup_complete", 1)
+        }.getOrDefault(1)
+        if (setup != 0) return
+        val provisioned = runCatching {
+            Settings.Global.getInt(resolver, Settings.Global.DEVICE_PROVISIONED, 0)
+        }.getOrDefault(0)
+        if (provisioned != 1) return
+        restoreUserSetupComplete(getUserId())
     }
 
 
     /** Gives the phone back before device owner is removed: unhides Settings/hidden apps and unsuspends everything Dechainer holds. */
     private fun releaseHeldApps() {
-        try {
-            SettingsLock.setLocked(false)
-            val ctx = DechainerApplication.getInstance()
-            val hiddenPrefs = ctx.getSharedPreferences("hidden_apps_prefs", Context.MODE_PRIVATE)
-            hiddenPrefs.getStringSet("hidden_packages", emptySet()).orEmpty().forEach { pkg ->
-                runCatching { dpm.setApplicationHidden(adminName, pkg, false) }
-            }
-            hiddenPrefs.edit().clear().apply()
-            val manual = ctx.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).all.keys
-            val held = BlockSuspensionManager.heldPackages(ctx) + DowntimeRepository.getHeld(ctx) +
-                SecurityManager.getActiveImpulseSuspension(ctx) + manual
-            if (held.isNotEmpty()) dpm.setPackagesSuspended(adminName, held.toTypedArray(), false)
-            DnsGuard.forget(ctx)
-            LocalDnsShieldManager.releaseForDeviceOwnerRemoval(ctx)
-            BrowserHardeningManager.releaseForDeviceOwnerRemoval(ctx)
-            PlayStoreUpdateManager.releaseForDeviceOwnerRemoval(ctx)
-            AccessibilityWatchdog.setWanted(ctx, false)
-            NotificationGuard.setListenerWanted(ctx, false)
-            SecurityManager.cancelForcedRemoval(ctx)
-            TimelockManager.cancelAll(ctx)
-            AppRepository.invalidateCache()
-        } catch (e: Exception) {
-            Timber.e(e, "Could not release held apps")
+        SettingsLock.setLocked(false)
+        val ctx = DechainerApplication.getInstance()
+        val hiddenPrefs = ctx.getSharedPreferences("hidden_apps_prefs", Context.MODE_PRIVATE)
+        hiddenPrefs.getStringSet("hidden_packages", emptySet()).orEmpty().forEach { pkg ->
+            runCatching { dpm.setApplicationHidden(adminName, pkg, false) }
         }
+        runCatching { hiddenPrefs.edit(commit = true) { clear() } }
+
+        val manual = ctx.getSharedPreferences("manual_suspensions", Context.MODE_PRIVATE).all.keys
+        val held = (BlockSuspensionManager.heldPackages(ctx) +
+            DowntimeRepository.getHeld(ctx) +
+            SecurityManager.getActiveImpulseSuspension(ctx) +
+            manual).toMutableSet()
+
+        runCatching {
+            ctx.packageManager.getInstalledPackages(PackageManager.MATCH_UNINSTALLED_PACKAGES)
+                .forEach { pkgInfo ->
+                    val pkg = pkgInfo.packageName
+                    if (pkg == ctx.packageName) return@forEach
+                    if (runCatching { dpm.isApplicationHidden(adminName, pkg) }.getOrDefault(false)) {
+                        runCatching { dpm.setApplicationHidden(adminName, pkg, false) }
+                    }
+                    if (runCatching { dpm.isPackageSuspended(adminName, pkg) }.getOrDefault(false)) {
+                        held.add(pkg)
+                    }
+                }
+        }
+        if (held.isNotEmpty()) {
+            runCatching { dpm.setPackagesSuspended(adminName, held.toTypedArray(), false) }
+        }
+
+        runCatching { DnsGuard.forget(ctx) }
+        runCatching {
+            if (dpm.getGlobalPrivateDnsMode(adminName) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME) {
+                dpm.setGlobalPrivateDnsModeOpportunistic(adminName)
+            }
+        }
+        runCatching {
+            if (dpm.getAlwaysOnVpnPackage(adminName) == packageName) {
+                dpm.setAlwaysOnVpnPackage(adminName, null, false)
+            }
+        }
+        runCatching { BrowserHardeningManager.releaseForDeviceOwnerRemoval(ctx) }
+        runCatching { PlayStoreUpdateManager.releaseForDeviceOwnerRemoval(ctx) }
+        runCatching { InstallRestrictionCoordinator.clearAll(ctx) }
+        runCatching { AccessibilityWatchdog.setWanted(ctx, false) }
+        runCatching { NotificationGuard.setListenerWanted(ctx, false) }
+        runCatching { SecurityManager.cancelForcedRemoval(ctx) }
+        runCatching { TimelockManager.cancelAll(ctx) }
+        runCatching { AppRepository.invalidateCache() }
     }
 
     /** Removes device-owner status, or requests it via Shizuku with setup bypass — returns the command output. */
@@ -263,6 +300,7 @@ object DeviceOwnerRepository {
         if (remove) {
             if (isDeviceOwner()) {
                 releaseHeldApps()
+                @Suppress("DEPRECATION")
                 dpm.clearDeviceOwnerApp(packageName)
             }
             return ""
@@ -275,10 +313,9 @@ object DeviceOwnerRepository {
         try {
             var success = false
             runCatching {
-                withShizukuDevicePolicyManager { wrappedDpm ->
-                    wrappedDpm.setActiveAdminCompat(adminName, true, userId)
-                    success = wrappedDpm.setDeviceOwnerCompat(adminName, null, userId)
-                }
+                val proxy = getShizukuDevicePolicyProxy()
+                proxy.setActiveAdminCompat(adminName, true, userId)
+                success = proxy.setDeviceOwnerCompat(adminName, null, userId)
             }.onFailure {
                 Timber.w(it, "Direct binder setDeviceOwner failed, trying shell command")
             }
@@ -404,8 +441,7 @@ object DeviceOwnerRepository {
         getAccessibilityServices(), packageName, DechainerAccessibilityService::class.java.name
     )
 
-    fun changeAccessibilityPermission(grant: Boolean) {
-        // Remember what the user chose: only a deliberate "off" stops the watchdog from bringing it back.
+    fun changeAccessibilityPermission(grant: Boolean): Boolean {
         AccessibilityWatchdog.setWanted(context, grant)
         val serviceClass = DechainerAccessibilityService::class.java.name
         val current = getAccessibilityServices()
@@ -416,10 +452,10 @@ object DeviceOwnerRepository {
         } else {
             AccessibilityWatchdog.ServiceList.without(current, packageName, serviceClass)
         }
-        // Only Dechainer's own entry changes: other accessibility services (e.g. TalkBack) are kept.
         ShizukuRunner.exec(
             "settings", "put", "secure", "enabled_accessibility_services", updated.ifEmpty { "null" }
         )
         if (grant) ShizukuRunner.exec("settings", "put", "secure", "accessibility_enabled", "1")
+        return isAccessibilityGranted() == grant
     }
 }

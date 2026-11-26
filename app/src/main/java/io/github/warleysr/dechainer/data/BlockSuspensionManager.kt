@@ -55,7 +55,17 @@ object BlockSuspensionManager {
                     Timber.w("Block suspension refused by DPM for $pkg")
                     return false
                 }
-                val marker = if (outsideWindow) KIND_SCHEDULE else "$KIND_LIMIT:${LocalDate.now()}"
+                val today = LocalDate.now()
+                val prev = prefs(context).getString(pkg, null)
+                val marker = when {
+                    outsideWindow && prev?.startsWith("$KIND_LIMIT:") == true ->
+                        "${prev.substringBefore('|')}|$KIND_SCHEDULE"
+                    outsideWindow && prev?.contains("|$KIND_SCHEDULE") == true -> prev
+                    outsideWindow -> KIND_SCHEDULE
+                    prev == KIND_SCHEDULE || prev?.endsWith("|$KIND_SCHEDULE") == true ->
+                        "$KIND_LIMIT:$today|$KIND_SCHEDULE"
+                    else -> "$KIND_LIMIT:$today"
+                }
                 prefs(context).edit { putString(pkg, marker) }
                 SuspensionLogRepository.log(
                     context, pkg,
@@ -89,21 +99,23 @@ object BlockSuspensionManager {
                 if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
                 val p = prefs(context)
-                val today = LocalDate.now()
-                val nowMinute = LocalTime.now().let { it.hour * 60 + it.minute }
+                val now = ZonedDateTime.now()
+                val today = now.toLocalDate()
+                val nowMinute = now.hour * 60 + now.minute
 
                 val decodedWindows = HashMap<String, List<TimeWindow>>()
                 val due = p.all.mapNotNull { (pkg, value) ->
                     val marker = value as? String ?: return@mapNotNull null
-                    val release = when {
-                        marker == KIND_SCHEDULE -> inAllowedSpan(context, pkg, today.dayOfWeek.value, nowMinute, decodedWindows)
-                        marker.startsWith("$KIND_LIMIT:") -> {
-                            val storedDate = runCatching { LocalDate.parse(marker.substringAfter(':')) }.getOrNull()
-                            (storedDate != null && today.isAfter(storedDate)) || isWithinCurrentLimits(context, pkg)
-                        }
-                        else -> true
+                    val parts = marker.split('|')
+                    val scheduleBlocked = KIND_SCHEDULE in parts
+                    val limitPart = parts.firstOrNull { it.startsWith("$KIND_LIMIT:") }
+                    val scheduleClear = !scheduleBlocked ||
+                        inAllowedSpan(context, pkg, today.dayOfWeek.value, nowMinute, decodedWindows)
+                    val limitClear = limitPart == null || run {
+                        val storedDate = runCatching { LocalDate.parse(limitPart.substringAfter(':')) }.getOrNull()
+                        (storedDate != null && today.isAfter(storedDate)) || isWithinCurrentLimits(context, pkg)
                     }
-                    if (release) pkg else null
+                    if (scheduleClear && limitClear) pkg else null
                 }.toSet()
 
                 // Leave apps held by downtime, impulse lock, or manual suspension untouched.
@@ -121,7 +133,7 @@ object BlockSuspensionManager {
                         AppRepository.invalidateCache()
                     }
                 }
-                scheduleNext(context, decodedWindows)
+                scheduleNext(context, decodedWindows, now)
             } catch (e: Exception) {
                 Timber.e(e, "Block suspension sync failed")
             }
@@ -184,7 +196,8 @@ object BlockSuspensionManager {
      */
     private fun scheduleNext(
         context: Context,
-        cache: MutableMap<String, List<TimeWindow>> = HashMap()
+        cache: MutableMap<String, List<TimeWindow>> = HashMap(),
+        now: ZonedDateTime = ZonedDateTime.now()
     ) {
         val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val all = prefs(context).all
@@ -193,16 +206,17 @@ object BlockSuspensionManager {
             return
         }
 
-        val now = ZonedDateTime.now()
         val today = now.toLocalDate()
         val candidates = mutableListOf<LocalDateTime>()
         var hasLimitHold = false
 
         for ((pkg, value) in all) {
             val marker = value as? String ?: continue
-            if (marker.startsWith("$KIND_LIMIT:")) {
+            val parts = marker.split('|')
+            if (parts.any { it.startsWith("$KIND_LIMIT:") }) {
                 hasLimitHold = true
-            } else if (marker == KIND_SCHEDULE) {
+            }
+            if (KIND_SCHEDULE in parts) {
                 for (offset in 0..7) {
                     val date = today.plusDays(offset.toLong())
                     val spans = allowedOnDay(context, pkg, date.dayOfWeek.value, cache)

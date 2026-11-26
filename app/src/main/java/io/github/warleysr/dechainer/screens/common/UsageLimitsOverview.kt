@@ -236,7 +236,8 @@ private fun loadOverview(context: Context): LimitsOverview {
             key = pkg,
             name = info.loadLabel(pm).toString(),
             detail = AppGroupRepository.getGroupForPackage(pkg)?.let { context.getString(R.string.group_label, it.name) },
-            icon = info.loadIcon(pm).toBitmap().asImageBitmap(),
+            icon = runCatching { info.loadIcon(pm).toBitmap(120, 120).asImageBitmap() }.getOrNull()
+                ?: android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap(),
             limitMinutes = limit,
             usedMinutes = AppRepository.getAppUsage(pkg, inMinutes = true)
         )

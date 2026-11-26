@@ -36,7 +36,7 @@ object DowntimeManager {
         ).filterTo(mutableSetOf()) { it != context.packageName }
     }
 
-    fun sync(context: Context) {
+    fun sync(context: Context, isRetry: Boolean = false) {
         synchronized(SuspensionCoordinator.lock) {
             try {
                 val dpm = DeviceAdmin.policyManager
@@ -51,22 +51,20 @@ object DowntimeManager {
 
                 val groups = AppGroupRepository.getGroups()
                 val now = ZonedDateTime.now()
-                val day = now.dayOfWeek.value
-                val minute = now.hour * 60 + now.minute
-                val activeRules = rules.filter { rule ->
-                    rule.windows.any { w -> w.spansOn(day).any { it.contains(minute) } }
-                }
+                val activeRules = activeRulesAt(rules, now)
                 val rulePackages = activeRules.associateWith { Downtime.packagesOf(it, groups) }
                 val should = rulePackages.values.flatten().filterTo(mutableSetOf()) { it != context.packageName }
-
-                val suspendedNow = should.filterTo(mutableSetOf()) { isSuspended(dpm, admin, it) }
-                val plan = Downtime.plan(should, held, suspendedNow)
 
                 // Leave apps held by impulse lock, active blocks, or manual suspension untouched.
                 val impulse = SecurityManager.getActiveImpulseSuspension(context)
                 val blocked = BlockSuspensionManager.heldPackages(context)
                 val manual = SuspensionCoordinator.manualSuspensions(context)
-                val release = plan.release.filterNot { it in impulse || it in blocked || it in manual }
+                val otherOwners = impulse + blocked + manual
+
+                val suspendedByOther = should.filterTo(mutableSetOf()) { it in otherOwners && isSuspended(dpm, admin, it) }
+                val plan = Downtime.plan(should, held, suspendedByOther)
+
+                val release = plan.release.filterNot { it in otherOwners }
 
                 val failedRelease = if (release.isNotEmpty()) {
                     dpm.setPackagesSuspended(admin, release.toTypedArray(), false).toSet()
@@ -91,11 +89,26 @@ object DowntimeManager {
                 if (actualRelease.isNotEmpty() || actualSuspend.isNotEmpty()) {
                     AppRepository.invalidateCache()
                 }
-                scheduleNext(context, rules, groups, now)
+                val scheduled = scheduleNext(context, rules, groups, ZonedDateTime.now())
+                if (!scheduled && !isRetry && rules.isNotEmpty()) {
+                    sync(context, isRetry = true)
+                    return
+                }
                 BlockSuspensionManager.sync(context)
             } catch (e: Exception) {
                 Timber.e(e, "Downtime sync failed")
             }
+        }
+    }
+
+    private fun activeRulesAt(
+        rules: List<io.github.warleysr.dechainer.models.DowntimeRule>,
+        now: ZonedDateTime
+    ): List<io.github.warleysr.dechainer.models.DowntimeRule> {
+        val day = now.dayOfWeek.value
+        val minute = now.hour * 60 + now.minute
+        return rules.filter { rule ->
+            rule.windows.any { w -> w.spansOn(day).any { it.contains(minute) } }
         }
     }
 
@@ -117,17 +130,18 @@ object DowntimeManager {
         rules: List<io.github.warleysr.dechainer.models.DowntimeRule>,
         groups: List<AppGroup>,
         now: ZonedDateTime
-    ) {
+    ): Boolean {
         val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val at = Downtime.nextBoundaryMillis(rules, now, groups)
         if (at == null || at <= System.currentTimeMillis()) {
             cancelAlarm(context)
-            return
+            return at == null
         }
         val pending = alarmIntent(context)
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()
         if (exact) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
         Timber.d("Downtime: next change at $at (exact=$exact)")
+        return true
     }
 }

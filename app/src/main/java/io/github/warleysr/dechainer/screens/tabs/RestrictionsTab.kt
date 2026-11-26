@@ -87,11 +87,11 @@ fun RestrictionsTab(
                             message = context.getString(R.string.restriction_pending),
                             undoLabel = context.getString(R.string.undo),
                             onUndo = { restrictionsViewModel.revertKeysToApplied(added) },
-                            action = { restrictionsViewModel.addRestrictions(added) }
+                            action = { restrictionsViewModel.addRestrictions(context, added) }
                         )
                     } else if (removed.isNotEmpty()) {
                         if (added.isNotEmpty()) {
-                            restrictionsViewModel.addRestrictions(added)
+                            restrictionsViewModel.revertKeysToApplied(added)
                         }
                         gate.requestUnlock(
                             title = context.getString(R.string.timelock_title_clear_restrictions, removed.size),
@@ -172,10 +172,12 @@ private fun RestrictionAccordion(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
-                    checked = isAllEnabled,
-                    onCheckedChange = { viewModel.toggleAllDrafts(filteredKeys, it) }
-                )
+                if (!showSearch) {
+                    Checkbox(
+                        checked = isAllEnabled,
+                        onCheckedChange = { viewModel.toggleAllDrafts(filteredKeys, it) }
+                    )
+                }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,

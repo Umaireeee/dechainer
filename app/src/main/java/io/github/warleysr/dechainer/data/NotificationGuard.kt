@@ -107,7 +107,7 @@ object NotificationGuard {
         if (AccessibilityWatchdog.ServiceList.isListed(current, ctx.packageName, serviceClass)) {
             val updated = AccessibilityWatchdog.ServiceList.without(current, ctx.packageName, serviceClass)
             runCatching {
-                Settings.Secure.putString(resolver, SETTING_ENABLED_LISTENERS, updated.ifEmpty { "null" })
+                Settings.Secure.putString(resolver, SETTING_ENABLED_LISTENERS, updated.ifEmpty { null })
             }
         }
         return !isListenerEnabled(ctx)

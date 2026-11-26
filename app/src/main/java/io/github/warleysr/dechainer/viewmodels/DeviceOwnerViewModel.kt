@@ -41,6 +41,10 @@ class DeviceOwnerViewModel : ViewModel() {
 
     fun isDeviceOwner() = isDeviceOwner.value
 
+    fun refreshStatus() {
+        isDeviceOwner.value = DeviceOwnerRepository.isDeviceOwner()
+    }
+
     fun isShizukuInstalled() = DeviceOwnerRepository.isShizukuInstalled()
 
     fun installShizuku() = DeviceOwnerRepository.installShizuku()

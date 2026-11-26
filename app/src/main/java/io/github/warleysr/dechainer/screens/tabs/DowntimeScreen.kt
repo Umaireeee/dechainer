@@ -51,19 +51,23 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
     var rules by remember { mutableStateOf(DowntimeRepository.getRules()) }
     var editing by remember { mutableStateOf<DowntimeRule?>(null) }
 
-    fun saveTransform(transform: (List<DowntimeRule>) -> List<DowntimeRule>) {
+    fun saveRule(saved: DowntimeRule) {
         val current = DowntimeRepository.getRules()
-        val preview = transform(current)
+        val preview = if (current.none { it.id == saved.id }) current + saved
+        else current.map { if (it.id == saved.id) saved else it }
         val loosening = Downtime.isLooser(current, preview, viewModel.groups)
+        val encodedRule = DowntimeRepository.encode(listOf(saved)).removePrefix("[").removeSuffix("]")
+        val ruleTitle = saved.name.ifBlank { context.getString(R.string.downtime_default_name) }
         gate.change(
             loosening = loosening,
             title = context.getString(R.string.timelock_title_loosen_downtime),
-            description = context.getString(R.string.schedule_tab_downtime),
-            dedupeKey = "downtime_rules",
-            pendingAction = PendingAction.SaveDowntimeRules(DowntimeRepository.encode(preview))
+            description = ruleTitle,
+            dedupeKey = "downtime_rule:${saved.id}",
+            pendingAction = PendingAction.UpdateDowntimeRule(encodedRule)
         ) {
             val latest = DowntimeRepository.getRules()
-            val updated = transform(latest)
+            val updated = if (latest.none { it.id == saved.id }) latest + saved
+            else latest.map { if (it.id == saved.id) saved else it }
             if (!loosening && Downtime.isLooser(latest, updated, viewModel.groups)) {
                 return@change
             }
@@ -105,13 +109,12 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
                         groups = viewModel.groups,
                         onOpen = { editing = rule },
                         onToggle = { index, enabled ->
-                            saveTransform { list ->
-                                list.map { r ->
-                                    if (r.id == rule.id) r.copy(
-                                        windows = r.windows.mapIndexed { i, w -> if (i == index) w.copy(enabled = enabled) else w }
-                                    ) else r
+                            val updated = rule.copy(
+                                windows = rule.windows.mapIndexed { i, w ->
+                                    if (i == index) w.copy(enabled = enabled) else w
                                 }
-                            }
+                            )
+                            saveRule(updated)
                         }
                     )
                 }
@@ -135,10 +138,7 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
             groups = viewModel.groups,
             onDismiss = { editing = null },
             onSave = { saved ->
-                saveTransform { list ->
-                    if (list.none { it.id == saved.id }) list + saved
-                    else list.map { if (it.id == saved.id) saved else it }
-                }
+                saveRule(saved)
                 editing = null
             },
             onDelete = {

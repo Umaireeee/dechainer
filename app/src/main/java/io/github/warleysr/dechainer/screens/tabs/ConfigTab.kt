@@ -14,7 +14,6 @@ import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.security.CountdownStatus
 import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.security.TimelockManager
-import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,7 +82,6 @@ fun ConfigTab(
     val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
 
     val pendingRequests by TimelockManager.requests.collectAsState()
-    val localDnsStatus by LocalDnsShieldManager.status.collectAsState()
     val browserConfig by BrowserHardeningManager.config.collectAsState()
     val playUpdatesStatus by PlayStoreUpdateManager.status.collectAsState()
 
@@ -96,7 +94,6 @@ fun ConfigTab(
         val activity = context as? ComponentActivity
         val refreshGuards = {
             TimelockManager.syncAll(context)
-            LocalDnsShieldManager.refreshState(context)
             BrowserHardeningManager.getConfig(context)
             PlayStoreUpdateManager.refreshStatus(context)
             hasShizuku = DeviceOwnerRepository.checkShizukuPermission()
@@ -128,9 +125,8 @@ fun ConfigTab(
     }
 
     val dnsStatus by DnsGuard.status.collectAsState()
-    LaunchedEffect(viewModel.isDeviceOwner(), localDnsStatus.config.enabled) {
+    LaunchedEffect(viewModel.isDeviceOwner()) {
         if (viewModel.isDeviceOwner() &&
-            !localDnsStatus.config.enabled &&
             (DnsGuard.pinnedHost(context) != null || DnsGuard.isAutoFailover(context))
         ) {
             DnsGuard.refreshReachabilityAsync(context)
@@ -189,29 +185,6 @@ fun ConfigTab(
                         }
                     } else null,
                     modifier = Modifier.clickable { navViewModel.navigateTo("pending_unlocks") }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                val shieldSummary = when {
-                    localDnsStatus.isRunning -> stringResource(
-                        R.string.dns_shield_config_active,
-                        localDnsStatus.blockedCount
-                    )
-                    localDnsStatus.config.enabled -> stringResource(R.string.dns_shield_config_starting)
-                    else -> stringResource(R.string.dns_shield_config_off)
-                }
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.dns_shield_title)) },
-                    supportingContent = { Text(shieldSummary) },
-                    leadingContent = { Icon(Icons.Outlined.Shield, "") },
-                    modifier = Modifier.clickable {
-                        if (!viewModel.isDeviceOwner()) {
-                            scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
-                            return@clickable
-                        }
-                        navViewModel.navigateTo("local_dns_shield")
-                    }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -552,8 +525,6 @@ fun ConfigTab(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    SecurityManager.cancelForcedRemoval(context)
-                    forcedRemovalStatus = null
                     showFinishForcedRemovalDialog = false
                     confirmForcedRemoval = false
                 }) {
@@ -564,52 +535,60 @@ fun ConfigTab(
     }
 
     if (showDnsDialog) {
-        val currentDns = viewModel.getPrivateDNS()
-        val currentAuto = DnsGuard.isAutoFailover(context)
-        val externalScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        var currentDns by remember { mutableStateOf<String?>(null) }
+        var dnsLoaded by remember { mutableStateOf(false) }
+        val currentAuto = remember { DnsGuard.isAutoFailover(context) }
 
-        DnsSelectionDialog(
-            currentDns = currentDns,
-            currentAutoFailover = currentAuto,
-            errorRes = dnsErrorRes,
-            isLoading = isApplyingDns,
-            onDismiss = { if (!isApplyingDns) showDnsDialog = false },
-            onApply = { host, autoFailover ->
-                val runApply = {
-                    dnsErrorRes = null
-                    isApplyingDns = true
-                    scope.launch {
-                        val result = withTimeoutOrNull(15000.milliseconds) {
-                            val deferred = externalScope.async {
-                                if (host == DNS_AUTO) viewModel.setAutoPrivateDNS()
-                                else viewModel.setPrivateDNS(host, autoFailover)
+        LaunchedEffect(Unit) {
+            currentDns = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                viewModel.getPrivateDNS()
+            }
+            dnsLoaded = true
+        }
+
+        if (dnsLoaded) {
+            DnsSelectionDialog(
+                currentDns = currentDns,
+                currentAutoFailover = currentAuto,
+                errorRes = dnsErrorRes,
+                isLoading = isApplyingDns,
+                onDismiss = { if (!isApplyingDns) showDnsDialog = false },
+                onApply = { host, autoFailover ->
+                    val runApply = {
+                        dnsErrorRes = null
+                        isApplyingDns = true
+                        scope.launch {
+                            val result = withTimeoutOrNull(15000.milliseconds) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    if (host == DNS_AUTO) viewModel.setAutoPrivateDNS()
+                                    else viewModel.setPrivateDNS(host, autoFailover)
+                                }
                             }
-                            deferred.await()
-                        }
-                        isApplyingDns = false
-                        if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
-                            showDnsDialog = false
-                        } else {
-                            dnsErrorRes = when (result) {
-                                DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING -> R.string.dns_error_not_serving
-                                else -> R.string.dns_error_failure
+                            isApplyingDns = false
+                            if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
+                                showDnsDialog = false
+                            } else {
+                                dnsErrorRes = when (result) {
+                                    DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING -> R.string.dns_error_not_serving
+                                    else -> R.string.dns_error_failure
+                                }
                             }
                         }
                     }
+                    if (currentDns == null) {
+                        runApply()
+                    } else {
+                        showDnsDialog = false
+                        gate.requestUnlock(
+                            title = context.getString(R.string.timelock_title_change_dns),
+                            description = host,
+                            dedupeKey = "change_private_dns",
+                            pendingAction = PendingAction.ChangePrivateDns(host, autoFailover)
+                        )
+                    }
                 }
-                if (currentDns == null) {
-                    runApply()
-                } else {
-                    showDnsDialog = false
-                    gate.requestUnlock(
-                        title = context.getString(R.string.timelock_title_change_dns),
-                        description = host,
-                        dedupeKey = "change_private_dns",
-                        pendingAction = PendingAction.ChangePrivateDns(host, autoFailover)
-                    )
-                }
-            }
-        )
+            )
+        }
     }
 
     TimelockGateDialog(gate)

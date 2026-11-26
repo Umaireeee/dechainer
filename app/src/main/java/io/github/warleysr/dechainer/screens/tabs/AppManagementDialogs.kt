@@ -203,22 +203,41 @@ fun AppManagementDialogs(
                 val stolenFromOtherGroup = (packageNames - group.packageNames).any { pkg ->
                     viewModel.groupFor(pkg)?.let { it.id != group.id } == true
                 }
-                val loosening = isLooserLimit(group.timeLimit, limit) ||
-                    isLooserWindows(group.timeWindows, windows) ||
-                    !packageNames.containsAll(group.packageNames) ||
-                    stolenFromOtherGroup
-                gate.change(
-                    loosening = loosening,
-                    title = context.getString(R.string.timelock_title_loosen_group, group.name),
-                    description = name,
-                    dedupeKey = "edit_group:${group.id}",
-                    pendingAction = PendingAction.UpdateGroup(
+                val limitLoosened = isLooserLimit(group.timeLimit, limit)
+                val windowsLoosened = isLooserWindows(group.timeWindows, windows)
+                val membersLoosened = !packageNames.containsAll(group.packageNames) || stolenFromOtherGroup
+                val loosenedCount = listOf(limitLoosened, windowsLoosened, membersLoosened).count { it }
+                if (!limitLoosened && limit != group.timeLimit && loosenedCount > 0) {
+                    viewModel.setGroupTimeLimit(group.id, limit)
+                }
+                if (!windowsLoosened && windows != group.timeWindows && loosenedCount > 0) {
+                    viewModel.setGroupTimeWindows(group.id, windows)
+                }
+                if (!membersLoosened && (name != group.name || packageNames != group.packageNames) && loosenedCount > 0) {
+                    if (name != group.name) viewModel.renameGroup(group.id, name)
+                    viewModel.setGroupPackages(group.id, packageNames)
+                }
+                val (dedupeKey, pendingAction) = when {
+                    loosenedCount == 1 && limitLoosened ->
+                        "group_limit:${group.id}" to PendingAction.SetGroupTimeLimit(group.id, TimelockManager.encodeTimeLimit(limit))
+                    loosenedCount == 1 && windowsLoosened ->
+                        "group_windows:${group.id}" to PendingAction.SetGroupTimeWindows(group.id, AppTimeWindows.encode(windows))
+                    loosenedCount == 1 && membersLoosened ->
+                        "group_members:${group.id}" to PendingAction.SetGroupMembers(group.id, name, packageNames.sorted())
+                    else -> "edit_group:${group.id}" to PendingAction.UpdateGroup(
                         groupId = group.id,
                         name = name,
                         limitEncoded = TimelockManager.encodeTimeLimit(limit),
                         windowsEncoded = AppTimeWindows.encode(windows),
                         packageNames = packageNames.sorted()
                     )
+                }
+                gate.change(
+                    loosening = loosenedCount > 0,
+                    title = context.getString(R.string.timelock_title_loosen_group, group.name),
+                    description = name,
+                    dedupeKey = dedupeKey,
+                    pendingAction = pendingAction
                 ) {
                     if (name != group.name) viewModel.renameGroup(group.id, name)
                     viewModel.setGroupTimeLimit(group.id, limit)

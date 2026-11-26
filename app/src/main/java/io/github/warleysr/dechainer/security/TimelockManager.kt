@@ -2,6 +2,7 @@ package io.github.warleysr.dechainer.security
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Parcelable
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.edit
@@ -104,6 +105,41 @@ sealed interface PendingAction {
         companion object { const val TYPE = "update_group" }
     }
 
+    data class SetGroupTimeLimit(
+        val groupId: String,
+        val limitEncoded: String
+    ) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject()
+            .put("groupId", groupId)
+            .put("limitEncoded", limitEncoded)
+        companion object { const val TYPE = "set_group_time_limit" }
+    }
+
+    data class SetGroupTimeWindows(
+        val groupId: String,
+        val windowsEncoded: String
+    ) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject()
+            .put("groupId", groupId)
+            .put("windowsEncoded", windowsEncoded)
+        companion object { const val TYPE = "set_group_time_windows" }
+    }
+
+    data class SetGroupMembers(
+        val groupId: String,
+        val name: String,
+        val packageNames: List<String>
+    ) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject()
+            .put("groupId", groupId)
+            .put("name", name)
+            .put("packageNames", JSONArray(packageNames))
+        companion object { const val TYPE = "set_group_members" }
+    }
+
     data class DeleteGroup(val groupId: String) : PendingAction {
         override val type = TYPE
         override fun toPayload() = JSONObject().put("groupId", groupId)
@@ -114,6 +150,12 @@ sealed interface PendingAction {
         override val type = TYPE
         override fun toPayload() = JSONObject().put("rulesJson", rulesJson)
         companion object { const val TYPE = "save_downtime_rules" }
+    }
+
+    data class UpdateDowntimeRule(val ruleJson: String) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject().put("ruleJson", ruleJson)
+        companion object { const val TYPE = "update_downtime_rule" }
     }
 
     data class DeleteDowntimeRule(val ruleId: String) : PendingAction {
@@ -144,12 +186,6 @@ sealed interface PendingAction {
             .put("host", host)
             .put("autoFailover", autoFailover)
         companion object { const val TYPE = "change_private_dns" }
-    }
-
-    data class UpdateLocalDnsShield(val configJson: String) : PendingAction {
-        override val type = TYPE
-        override fun toPayload() = JSONObject().put("configJson", configJson)
-        companion object { const val TYPE = "update_local_dns_shield" }
     }
 
     data class UpdateBrowserHardening(val configJson: String) : PendingAction {
@@ -185,6 +221,12 @@ sealed interface PendingAction {
             .put("tetrisUnlock", tetrisUnlock)
             .put("tetrisMinutes", tetrisMinutes)
         companion object { const val TYPE = "update_impulse_lock" }
+    }
+
+    data class UpdateImpulsePatch(val patchJson: String) : PendingAction {
+        override val type = TYPE
+        override fun toPayload() = JSONObject().put("patchJson", patchJson)
+        companion object { const val TYPE = "update_impulse_patch" }
     }
 
     data object RemoveDeviceOwner : PendingAction {
@@ -232,8 +274,22 @@ sealed interface PendingAction {
                     windowsEncoded = payload.getString("windowsEncoded"),
                     packageNames = payload.getJSONArray("packageNames").toStringList()
                 )
+                SetGroupTimeLimit.TYPE -> SetGroupTimeLimit(
+                    groupId = payload.getString("groupId"),
+                    limitEncoded = payload.getString("limitEncoded")
+                )
+                SetGroupTimeWindows.TYPE -> SetGroupTimeWindows(
+                    groupId = payload.getString("groupId"),
+                    windowsEncoded = payload.getString("windowsEncoded")
+                )
+                SetGroupMembers.TYPE -> SetGroupMembers(
+                    groupId = payload.getString("groupId"),
+                    name = payload.getString("name"),
+                    packageNames = payload.getJSONArray("packageNames").toStringList()
+                )
                 DeleteGroup.TYPE -> DeleteGroup(payload.getString("groupId"))
                 SaveDowntimeRules.TYPE -> SaveDowntimeRules(payload.getString("rulesJson"))
+                UpdateDowntimeRule.TYPE -> UpdateDowntimeRule(payload.getString("ruleJson"))
                 DeleteDowntimeRule.TYPE -> DeleteDowntimeRule(payload.getString("ruleId"))
                 ClearSystemRestrictions.TYPE -> ClearSystemRestrictions(payload.getJSONArray("keys").toStringList())
                 DisableAccessibility.type -> DisableAccessibility
@@ -242,7 +298,6 @@ sealed interface PendingAction {
                     host = payload.getString("host"),
                     autoFailover = payload.optBoolean("autoFailover", false)
                 )
-                UpdateLocalDnsShield.TYPE -> UpdateLocalDnsShield(payload.getString("configJson"))
                 UpdateBrowserHardening.TYPE -> UpdateBrowserHardening(payload.getString("configJson"))
                 UpdatePlayStorePolicy.TYPE -> UpdatePlayStorePolicy(payload.getString("configJson"))
                 RemoveBlockedActivity.TYPE -> RemoveBlockedActivity(payload.getString("className"))
@@ -253,6 +308,7 @@ sealed interface PendingAction {
                     tetrisUnlock = payload.getBoolean("tetrisUnlock"),
                     tetrisMinutes = payload.getInt("tetrisMinutes")
                 )
+                UpdateImpulsePatch.TYPE -> UpdateImpulsePatch(payload.getString("patchJson"))
                 RemoveDeviceOwner.type -> RemoveDeviceOwner
                 AllowApkDowngrade.TYPE -> AllowApkDowngrade(payload.getString("packageName"))
                 else -> null
@@ -313,12 +369,15 @@ object TimelockManager {
     private const val PREFS_NAME = "timelock_prefs"
     private const val KEY_REQUESTS = "pending_requests"
     private const val KEY_APK_DOWNGRADE_PASS_PREFIX = "apk_downgrade_pass_"
+    private const val KEY_APK_DOWNGRADE_GRANTED_PREFIX = "apk_downgrade_granted_"
+    private const val KEY_APK_DOWNGRADE_BOOT_PREFIX = "apk_downgrade_boot_"
     private const val APK_DOWNGRADE_PASS_MS = 15L * 60L * 1000L
 
     const val WAIT_DURATION_MS = CountdownState.SEVEN_DAYS_MS
     const val CLAIM_WINDOW_MS = CountdownState.TWENTY_FOUR_HOURS_MS
 
     private val lock = Any()
+    private val inFlightRequestIds = HashSet<String>()
     private val _requests = MutableStateFlow<List<PendingUnlockRequest>>(emptyList())
     val requests: StateFlow<List<PendingUnlockRequest>> = _requests.asStateFlow()
 
@@ -408,6 +467,7 @@ object TimelockManager {
 
     fun cancelAll(context: Context) {
         synchronized(lock) {
+            inFlightRequestIds.clear()
             prefs(context).edit(commit = true) { clear() }
             _requests.value = emptyList()
         }
@@ -421,44 +481,66 @@ object TimelockManager {
         bootCount: Int = readBootCount(context)
     ): Boolean {
         val target = synchronized(lock) {
+            if (!inFlightRequestIds.add(requestId)) return false
             val synced = syncAll(context, nowRtc, nowElapsed, bootCount)
-            val found = synced.firstOrNull { it.id == requestId } ?: return false
-            if (found.status !is CountdownStatus.Ready) return false
+            val found = synced.firstOrNull { it.id == requestId }
+            if (found == null || found.status !is CountdownStatus.Ready) {
+                inFlightRequestIds.remove(requestId)
+                return false
+            }
             found
         }
-        val executed = runCatching { PendingActionExecutor.execute(context.applicationContext, target.action) }
-            .onFailure { Timber.e(it, "Failed executing pending unlock ${target.id}") }
-            .getOrDefault(false)
-        if (!executed) return false
+        return try {
+            val executed = runCatching { PendingActionExecutor.execute(context.applicationContext, target.action) }
+                .onFailure { Timber.e(it, "Failed executing pending unlock ${target.id}") }
+                .getOrDefault(false)
+            if (!executed) return false
 
-        synchronized(lock) {
-            val next = loadLocked(context).filterNot { it.id == requestId }
-            saveLocked(context, next)
-            _requests.value = next
+            synchronized(lock) {
+                val next = loadLocked(context).filterNot { it.id == requestId }
+                saveLocked(context, next)
+                _requests.value = next
+            }
+            true
+        } finally {
+            synchronized(lock) { inFlightRequestIds.remove(requestId) }
         }
-        return true
     }
 
     fun grantApkDowngradePass(context: Context, packageName: String, nowElapsed: Long = SystemClock.elapsedRealtime()) {
+        val boot = readBootCount(context)
         prefs(context).edit(commit = true) {
             putLong(KEY_APK_DOWNGRADE_PASS_PREFIX + packageName, nowElapsed + APK_DOWNGRADE_PASS_MS)
+            putLong(KEY_APK_DOWNGRADE_GRANTED_PREFIX + packageName, nowElapsed)
+            putInt(KEY_APK_DOWNGRADE_BOOT_PREFIX + packageName, boot)
         }
     }
 
     fun hasActiveApkDowngradePass(context: Context, packageName: String, nowElapsed: Long = SystemClock.elapsedRealtime()): Boolean {
         val key = KEY_APK_DOWNGRADE_PASS_PREFIX + packageName
+        val grantedKey = KEY_APK_DOWNGRADE_GRANTED_PREFIX + packageName
+        val bootKey = KEY_APK_DOWNGRADE_BOOT_PREFIX + packageName
         val p = prefs(context)
         val expiresAt = p.getLong(key, 0L)
         if (expiresAt <= 0L) return false
-        if (nowElapsed > expiresAt) {
-            p.edit(commit = true) { remove(key) }
+        val grantedAt = p.getLong(grantedKey, 0L)
+        val savedBoot = p.getInt(bootKey, -1)
+        val currentBoot = readBootCount(context)
+        val rebooted = (savedBoot != -1 && currentBoot != -1 && savedBoot != currentBoot) ||
+            (grantedAt > 0L && nowElapsed < grantedAt)
+        if (rebooted || nowElapsed > expiresAt) {
+            consumeApkDowngradePass(context, packageName)
             return false
         }
         return true
     }
 
     fun consumeApkDowngradePass(context: Context, packageName: String) {
-        prefs(context).edit(commit = true) { remove(KEY_APK_DOWNGRADE_PASS_PREFIX + packageName) }
+        prefs(context).edit(commit = true) {
+            remove(KEY_APK_DOWNGRADE_PASS_PREFIX + packageName)
+            remove(KEY_APK_DOWNGRADE_GRANTED_PREFIX + packageName)
+            remove(KEY_APK_DOWNGRADE_BOOT_PREFIX + packageName)
+        }
     }
 
     fun encodeTimeLimit(limit: TimeLimit): String {
@@ -483,28 +565,37 @@ object TimelockManager {
             @Suppress("DEPRECATION")
             val value = bundle.get(key)
             val entry = JSONObject()
-            when (value) {
-                is Boolean -> {
+            when {
+                value is Boolean -> {
                     entry.put("t", "b")
                     entry.put("v", value)
                 }
-                is Int -> {
+                value is Int -> {
                     entry.put("t", "i")
                     entry.put("v", value)
                 }
-                is Long -> {
+                value is Long -> {
                     entry.put("t", "l")
                     entry.put("v", value)
                 }
-                is String -> {
+                value is String -> {
                     entry.put("t", "s")
                     entry.put("v", value)
                 }
-                is Array<*> -> {
+                value is Array<*> && (value.any { it is Bundle } ||
+                    value.javaClass.componentType?.let {
+                        Bundle::class.java.isAssignableFrom(it) || Parcelable::class.java.isAssignableFrom(it)
+                    } == true) -> {
+                    entry.put("t", "ba")
+                    val arr = JSONArray()
+                    value.filterIsInstance<Bundle>().forEach { arr.put(JSONObject(encodeBundle(it))) }
+                    entry.put("v", arr)
+                }
+                value is Array<*> -> {
                     entry.put("t", "sa")
                     entry.put("v", JSONArray(value.filterIsInstance<String>()))
                 }
-                is Bundle -> {
+                value is Bundle -> {
                     entry.put("t", "bu")
                     entry.put("v", JSONObject(encodeBundle(value)))
                 }
@@ -530,6 +621,13 @@ object TimelockManager {
                 "sa" -> {
                     val arr = entry.optJSONArray("v") ?: JSONArray()
                     bundle.putStringArray(key, Array(arr.length()) { arr.getString(it) })
+                }
+                "ba" -> {
+                    val arr = entry.optJSONArray("v") ?: JSONArray()
+                    val bundles = Array(arr.length()) { idx ->
+                        arr.optJSONObject(idx)?.let { decodeBundle(it.toString()) } ?: Bundle()
+                    }
+                    bundle.putParcelableArray(key, bundles)
                 }
                 "bu" -> entry.optJSONObject("v")?.let {
                     bundle.putBundle(key, decodeBundle(it.toString()))

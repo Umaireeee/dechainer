@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -194,9 +195,10 @@ private fun SuspensionLogItem(
         modifier = Modifier.clickable(onClick = onClick),
         leadingContent = {
             if (appIcon != null) {
-                val bitmap = remember(log.packageName) {
+                val iconPx = with(LocalDensity.current) { 40.dp.roundToPx() }.coerceAtLeast(1)
+                val bitmap = remember(log.packageName, iconPx) {
                     try {
-                        appIcon.toBitmap().asImageBitmap()
+                        appIcon.toBitmap(iconPx, iconPx).asImageBitmap()
                     } catch (_: Exception) {
                         null
                     }

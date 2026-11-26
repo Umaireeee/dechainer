@@ -172,4 +172,20 @@ class PendingChangeTest {
         assertTrue(isLooserLimit(oldWeekly, raisedSunday))
         assertFalse(isLooserLimit(oldWeekly, loweredSunday))
     }
+
+    @Test
+    fun `isLooserRestrictions handles missing permissive boolean keys and nested bundles`() {
+        val current = Bundle()
+        val explicitTrue = Bundle().apply {
+            putBoolean("allow_third_party", true)
+            putBundle("nested", Bundle().apply { putString("mode", "strict") })
+        }
+        assertTrue(isLooserRestrictions(current, explicitTrue))
+
+        val reorderedSame = Bundle().apply {
+            putBoolean("allow_third_party", true)
+            putBundle("nested", Bundle().apply { putString("mode", "strict") })
+        }
+        assertFalse(isLooserRestrictions(explicitTrue, reorderedSame))
+    }
 }

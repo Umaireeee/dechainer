@@ -52,6 +52,7 @@ import io.github.warleysr.dechainer.security.PendingUnlockRequest
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.security.TimelockManager
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
+import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.RestrictionsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -61,12 +62,14 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PendingUnlocksScreen(
     appsViewModel: AppsViewModel = viewModel(),
-    restrictionsViewModel: RestrictionsViewModel = viewModel()
+    restrictionsViewModel: RestrictionsViewModel = viewModel(),
+    deviceOwnerViewModel: DeviceOwnerViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val requests by TimelockManager.requests.collectAsState()
     var challengingRequest by remember { mutableStateOf<PendingUnlockRequest?>(null) }
+    var applyingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(requests.isNotEmpty()) {
         if (requests.isEmpty()) return@LaunchedEffect
@@ -77,17 +80,24 @@ fun PendingUnlocksScreen(
     }
 
     fun applyRequest(req: PendingUnlockRequest) {
+        if (req.id in applyingIds) return
+        applyingIds = applyingIds + req.id
         scope.launch {
-            val applied = withContext(Dispatchers.IO) {
-                TimelockManager.applyIfReady(context, req.id)
-            }
-            if (applied) {
-                appsViewModel.loadApps()
-                appsViewModel.loadGroups()
-                restrictionsViewModel.loadRestrictions()
-                Toast.makeText(context, R.string.timelock_applied_toast, Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, R.string.timelock_apply_failed_toast, Toast.LENGTH_SHORT).show()
+            try {
+                val applied = withContext(Dispatchers.IO) {
+                    TimelockManager.applyIfReady(context, req.id)
+                }
+                if (applied) {
+                    appsViewModel.loadApps()
+                    appsViewModel.loadGroups()
+                    restrictionsViewModel.loadRestrictions()
+                    deviceOwnerViewModel.refreshStatus()
+                    Toast.makeText(context, R.string.timelock_applied_toast, Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, R.string.timelock_apply_failed_toast, Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                applyingIds = applyingIds - req.id
             }
         }
     }
@@ -148,6 +158,7 @@ fun PendingUnlocksScreen(
                             TimelockManager.formatRemaining(status.claimRemainingMs)
                         ),
                         progress = 1f,
+                        isApplying = req.id in applyingIds,
                         onApply = {
                             if (SecurityManager.isTetrisUnlockEnabled(context)) {
                                 challengingRequest = req
@@ -180,6 +191,7 @@ fun PendingUnlocksScreen(
                             TimelockManager.formatRemaining(status.remainingMs)
                         ),
                         progress = req.countdown.progressFraction(),
+                        isApplying = false,
                         onApply = {},
                         onCancel = { TimelockManager.cancel(context, req.id) }
                     )
@@ -216,6 +228,7 @@ private fun PendingUnlockCard(
     isReady: Boolean,
     statusLabel: String,
     progress: Float,
+    isApplying: Boolean = false,
     onApply: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -264,7 +277,7 @@ private fun PendingUnlockCard(
                     Text(stringResource(R.string.timelock_cancel_request))
                 }
                 if (isReady) {
-                    Button(onClick = onApply) {
+                    Button(enabled = !isApplying, onClick = onApply) {
                         Text(stringResource(R.string.apply))
                     }
                 }

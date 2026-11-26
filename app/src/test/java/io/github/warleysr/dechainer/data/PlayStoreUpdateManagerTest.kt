@@ -87,6 +87,8 @@ class PlayStoreUpdateManagerTest {
         assertTrue(armed.copy(screenOffOnly = false).isLooserThan(armed))
         // Widening window duration from 3h to 4h is looser
         assertTrue(armed.copy(windowEndMinute = 6 * 60).isLooserThan(armed))
+        // Shifting window schedule even with screenOffOnly=true is looser
+        assertTrue(armed.copy(windowStartMinute = 13 * 60, windowEndMinute = 16 * 60).isLooserThan(armed))
         // Enabling silent window while leaving UI block OFF is looser
         assertTrue(off.copy(silentAutoUpdateEnabled = true).isLooserThan(off))
     }

@@ -35,7 +35,11 @@ object ApkUpdateInstaller {
     private const val KEY_RESTORE_SUSPENDED = "apk_update_restore_suspended"
     private const val KEY_RESTORE_HIDDEN = "apk_update_restore_hidden"
     private const val KEY_ACTIVE_SESSIONS = "apk_update_active_sessions"
+    private const val KEY_ACTIVE_DOWNGRADES = "apk_update_active_downgrades"
+    private const val KEY_PENDING_ROLLBACK_UNINSTALLS = "apk_update_pending_rollback_uninstalls"
     private const val SESSION_STALE_MS = 10 * 60 * 1000L
+
+    private val stateLock = Any()
 
     private const val INSTALL_REQUEST_DOWNGRADE = 0x00000080
     private const val INSTALL_ALLOW_DOWNGRADE = 0x00100000
@@ -87,9 +91,14 @@ object ApkUpdateInstaller {
         val pending = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getStringSet(KEY_RESTORE_RESTRICTIONS, null)
         if (!pending.isNullOrEmpty()) return true
+        if (InstallRestrictionCoordinator.hasActiveLiftLease(context, InstallRestrictionCoordinator.LEASE_APK_UPDATE)) {
+            return true
+        }
 
         val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return false
-        if (installRestrictions.any { active.getBoolean(it) }) return true
+        if (installRestrictions.any { active.getBoolean(it) }) {
+            return true
+        }
 
         return runCatching {
             dpm.isPackageSuspended(admin, PlayStoreUpdateManager.PLAY_STORE_PACKAGE)
@@ -102,9 +111,22 @@ object ApkUpdateInstaller {
         runCatching { context.packageManager.packageInstaller.mySessions.isNotEmpty() }.getOrDefault(false)
 
     fun enqueueRestoreRestriction(context: Context, key: String) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
-        prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + key) }
+        if (key == UserManager.DISALLOW_INSTALL_APPS) {
+            InstallRestrictionCoordinator.setUserBaseline(context, true)
+            return
+        }
+        synchronized(stateLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
+            prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + key) }
+        }
+    }
+
+    fun hasActiveDowngradeForPackage(context: Context, packageName: String): Boolean = synchronized(stateLock) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getStringSet(KEY_ACTIVE_DOWNGRADES, null)
+            .orEmpty()
+            .contains(packageName)
     }
 
     internal fun hasMatchingSignatures(installed: PackageInfo, archive: PackageInfo): Boolean {
@@ -167,9 +189,15 @@ object ApkUpdateInstaller {
                 ?: return Inspection.Invalid.also { stagingDir.deleteRecursively() }
             apkFile to info
         }
-        val baseIndex = parsedPairs.indexOfFirst { (file, info) ->
-            info.splitNames.isNullOrEmpty() || file.name.equals("base.apk", ignoreCase = true)
-        }.let { if (it >= 0) it else 0 }
+        val baseIndex = parsedPairs.indexOfFirst { (file, _) ->
+            file.name.equals("base.apk", ignoreCase = true)
+        }.takeIf { it >= 0 }
+            ?: parsedPairs.indexOfFirst { (file, info) ->
+                !file.name.startsWith("split_", ignoreCase = true) &&
+                    !file.name.startsWith("config.", ignoreCase = true) &&
+                    info.splitNames.isNullOrEmpty()
+            }.takeIf { it >= 0 }
+            ?: 0
 
         val orderedPairs = buildList {
             add(parsedPairs[baseIndex])
@@ -235,6 +263,9 @@ object ApkUpdateInstaller {
 
             // Lift DISALLOW_INSTALL_APPS & unknown sources BEFORE createSession(), since AOSP
             // PackageInstallerService checks DISALLOW_INSTALL_APPS inside createSession().
+            if (update.isDowngrade) {
+                markActiveDowngrade(context, update.packageName, active = true)
+            }
             liftInstallRestrictions(context, includeUninstall = uninstallFirst)
 
             sessionId = installer.createSession(params)
@@ -310,10 +341,25 @@ object ApkUpdateInstaller {
     /** Restores per-package policies and user restrictions once an install session finishes. */
     fun onInstallFinished(context: Context, sessionId: Int, packageName: String?) {
         if (packageName != null) {
+            markActiveDowngrade(context, packageName, active = false)
             restorePreDowngradeState(context, packageName)
         }
         AppRepository.invalidateCache()
         restoreUnknownSourcesRestrictionsIfIdle(context, sessionId)
+    }
+
+    fun onRollbackUninstallFinished(context: Context, packageName: String?) {
+        synchronized(stateLock) {
+            if (packageName != null) {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val pending = prefs.getStringSet(KEY_PENDING_ROLLBACK_UNINSTALLS, null).orEmpty() - packageName
+                prefs.edit(commit = true) {
+                    if (pending.isEmpty()) remove(KEY_PENDING_ROLLBACK_UNINSTALLS)
+                    else putStringSet(KEY_PENDING_ROLLBACK_UNINSTALLS, pending)
+                }
+            }
+        }
+        restoreUnknownSourcesRestrictionsIfIdle(context)
     }
 
     internal fun requestDowngrade(params: PackageInstaller.SessionParams) {
@@ -362,105 +408,132 @@ object ApkUpdateInstaller {
     }
 
     private fun savePreDowngradeState(context: Context, packageName: String) {
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        synchronized(stateLock) {
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
-        val wasUninstallBlocked = runCatching { dpm.isUninstallBlocked(admin, packageName) }.getOrDefault(false)
-        val wasSuspended = runCatching { dpm.isPackageSuspended(admin, packageName) }.getOrDefault(false)
-        val wasHidden = runCatching { dpm.isApplicationHidden(admin, packageName) }.getOrDefault(false)
+            val wasUninstallBlocked = runCatching { dpm.isUninstallBlocked(admin, packageName) }.getOrDefault(false)
+            val wasSuspended = runCatching { dpm.isPackageSuspended(admin, packageName) }.getOrDefault(false)
+            val wasHidden = runCatching { dpm.isApplicationHidden(admin, packageName) }.getOrDefault(false)
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit(commit = true) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit(commit = true) {
+                if (wasUninstallBlocked) {
+                    val set = prefs.getStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, null).orEmpty()
+                    putStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, set + packageName)
+                }
+                if (wasSuspended) {
+                    val set = prefs.getStringSet(KEY_RESTORE_SUSPENDED, null).orEmpty()
+                    putStringSet(KEY_RESTORE_SUSPENDED, set + packageName)
+                }
+                if (wasHidden) {
+                    val set = prefs.getStringSet(KEY_RESTORE_HIDDEN, null).orEmpty()
+                    putStringSet(KEY_RESTORE_HIDDEN, set + packageName)
+                }
+            }
+
             if (wasUninstallBlocked) {
-                val set = prefs.getStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, null).orEmpty()
-                putStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, set + packageName)
+                runCatching { dpm.setUninstallBlocked(admin, packageName, false) }
             }
-            if (wasSuspended) {
-                val set = prefs.getStringSet(KEY_RESTORE_SUSPENDED, null).orEmpty()
-                putStringSet(KEY_RESTORE_SUSPENDED, set + packageName)
-            }
-            if (wasHidden) {
-                val set = prefs.getStringSet(KEY_RESTORE_HIDDEN, null).orEmpty()
-                putStringSet(KEY_RESTORE_HIDDEN, set + packageName)
-            }
-        }
-
-        if (wasUninstallBlocked) {
-            runCatching { dpm.setUninstallBlocked(admin, packageName, false) }
         }
     }
 
     private fun restorePreDowngradeState(context: Context, packageName: String) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val unblockSet = prefs.getStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, null).orEmpty()
-        val suspendedSet = prefs.getStringSet(KEY_RESTORE_SUSPENDED, null).orEmpty()
-        val hiddenSet = prefs.getStringSet(KEY_RESTORE_HIDDEN, null).orEmpty()
+        synchronized(stateLock) {
+            markActiveDowngrade(context, packageName, active = false)
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val unblockSet = prefs.getStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, null).orEmpty()
+            val suspendedSet = prefs.getStringSet(KEY_RESTORE_SUSPENDED, null).orEmpty()
+            val hiddenSet = prefs.getStringSet(KEY_RESTORE_HIDDEN, null).orEmpty()
 
-        val restoreUninstallBlocked = packageName in unblockSet
-        val restoreSuspended = packageName in suspendedSet
-        val restoreHidden = packageName in hiddenSet
-        if (!restoreUninstallBlocked && !restoreSuspended && !restoreHidden) return
+            val restoreUninstallBlocked = packageName in unblockSet
+            val restoreSuspended = packageName in suspendedSet
+            val restoreHidden = packageName in hiddenSet
+            if (!restoreUninstallBlocked && !restoreSuspended && !restoreHidden) return
 
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
-        if (!dpm.isDeviceOwnerApp(context.packageName) || installedInfo(context, packageName) == null) return
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (!runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) return
 
-        if (restoreUninstallBlocked) {
-            runCatching { dpm.setUninstallBlocked(admin, packageName, true) }
-        }
-        if (restoreSuspended) {
-            runCatching { dpm.setPackagesSuspended(admin, arrayOf(packageName), true) }
-        }
-        if (restoreHidden) {
-            runCatching { dpm.setApplicationHidden(admin, packageName, true) }
-        }
+            if (installedInfo(context, packageName) != null) {
+                if (restoreUninstallBlocked) {
+                    runCatching { dpm.setUninstallBlocked(admin, packageName, true) }
+                }
+                if (restoreSuspended) {
+                    runCatching { dpm.setPackagesSuspended(admin, arrayOf(packageName), true) }
+                }
+                if (restoreHidden) {
+                    runCatching { dpm.setApplicationHidden(admin, packageName, true) }
+                }
+            }
 
-        prefs.edit {
-            val nextUnblock = unblockSet - packageName
-            if (nextUnblock.isEmpty()) remove(KEY_RESTORE_UNINSTALL_BLOCKED)
-            else putStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, nextUnblock)
+            prefs.edit(commit = true) {
+                val nextUnblock = unblockSet - packageName
+                if (nextUnblock.isEmpty()) remove(KEY_RESTORE_UNINSTALL_BLOCKED)
+                else putStringSet(KEY_RESTORE_UNINSTALL_BLOCKED, nextUnblock)
 
-            val nextSuspended = suspendedSet - packageName
-            if (nextSuspended.isEmpty()) remove(KEY_RESTORE_SUSPENDED)
-            else putStringSet(KEY_RESTORE_SUSPENDED, nextSuspended)
+                val nextSuspended = suspendedSet - packageName
+                if (nextSuspended.isEmpty()) remove(KEY_RESTORE_SUSPENDED)
+                else putStringSet(KEY_RESTORE_SUSPENDED, nextSuspended)
 
-            val nextHidden = hiddenSet - packageName
-            if (nextHidden.isEmpty()) remove(KEY_RESTORE_HIDDEN)
-            else putStringSet(KEY_RESTORE_HIDDEN, nextHidden)
+                val nextHidden = hiddenSet - packageName
+                if (nextHidden.isEmpty()) remove(KEY_RESTORE_HIDDEN)
+                else putStringSet(KEY_RESTORE_HIDDEN, nextHidden)
+            }
         }
     }
 
-    private fun restoreUnknownSourcesRestrictions(context: Context) {
+    private fun markActiveDowngrade(context: Context, packageName: String, active: Boolean) {
+        synchronized(stateLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val current = prefs.getStringSet(KEY_ACTIVE_DOWNGRADES, null).orEmpty()
+            val next = if (active) current + packageName else current - packageName
+            prefs.edit(commit = true) {
+                if (next.isEmpty()) remove(KEY_ACTIVE_DOWNGRADES)
+                else putStringSet(KEY_ACTIVE_DOWNGRADES, next)
+            }
+        }
+    }
+
+    private fun restoreUnknownSourcesRestrictionsLocked(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val keys = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null) ?: return
+        val keys = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null)
+        if (!keys.isNullOrEmpty()) {
+            val hasPendingRollbacks = !prefs.getStringSet(KEY_PENDING_ROLLBACK_UNINSTALLS, null).isNullOrEmpty()
+            val toRestore = if (hasPendingRollbacks) {
+                keys - UserManager.DISALLOW_UNINSTALL_APPS
+            } else {
+                keys
+            }
+            val keepDeferred = if (hasPendingRollbacks && UserManager.DISALLOW_UNINSTALL_APPS in keys) {
+                setOf(UserManager.DISALLOW_UNINSTALL_APPS)
+            } else {
+                emptySet()
+            }
 
-        val passActive = PlayStoreUpdateManager.isSilentWindowOpen(context)
-        val toRestore = if (passActive) keys - UserManager.DISALLOW_INSTALL_APPS else keys
-        val keepDeferred = if (passActive && UserManager.DISALLOW_INSTALL_APPS in keys) {
-            setOf(UserManager.DISALLOW_INSTALL_APPS)
-        } else {
-            emptySet()
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) {
+                toRestore.forEach { runCatching { dpm.addUserRestriction(admin, it) } }
+            }
+            prefs.edit(commit = true) {
+                if (keepDeferred.isEmpty()) remove(KEY_RESTORE_RESTRICTIONS)
+                else putStringSet(KEY_RESTORE_RESTRICTIONS, keepDeferred)
+            }
         }
-
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
-        if (dpm.isDeviceOwnerApp(context.packageName)) {
-            toRestore.forEach { runCatching { dpm.addUserRestriction(admin, it) } }
-        }
-        prefs.edit {
-            if (keepDeferred.isEmpty()) remove(KEY_RESTORE_RESTRICTIONS)
-            else putStringSet(KEY_RESTORE_RESTRICTIONS, keepDeferred)
-        }
+        InstallRestrictionCoordinator.releaseLiftLease(context, InstallRestrictionCoordinator.LEASE_APK_UPDATE)
     }
 
     private fun recordActiveSession(context: Context, sessionId: Int) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        val existing = prefs.getStringSet(KEY_ACTIVE_SESSIONS, null).orEmpty()
-            .filterNot { it.substringBefore(':').toIntOrNull() == sessionId }
-        prefs.edit(commit = true) {
-            putStringSet(KEY_ACTIVE_SESSIONS, existing.toSet() + "$sessionId:$now")
+        synchronized(stateLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val existing = prefs.getStringSet(KEY_ACTIVE_SESSIONS, null).orEmpty()
+                .filterNot { it.substringBefore(':').toIntOrNull() == sessionId }
+            prefs.edit(commit = true) {
+                putStringSet(KEY_ACTIVE_SESSIONS, existing.toSet() + "$sessionId:$now")
+            }
         }
     }
 
@@ -469,45 +542,47 @@ object ApkUpdateInstaller {
         finishedSessionId: Int? = null,
         abandonStale: Boolean = false
     ) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        val tracked = prefs.getStringSet(KEY_ACTIVE_SESSIONS, null).orEmpty()
-            .mapNotNull { entry ->
-                val id = entry.substringBefore(':').toIntOrNull() ?: return@mapNotNull null
-                val ts = entry.substringAfter(':', "").toLongOrNull() ?: 0L
-                id to ts
-            }
-            .toMap()
+        synchronized(stateLock) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val tracked = prefs.getStringSet(KEY_ACTIVE_SESSIONS, null).orEmpty()
+                .mapNotNull { entry ->
+                    val id = entry.substringBefore(':').toIntOrNull() ?: return@mapNotNull null
+                    val ts = entry.substringAfter(':', "").toLongOrNull() ?: 0L
+                    id to ts
+                }
+                .toMap()
 
-        val installer = context.packageManager.packageInstaller
-        val sessions = installer.mySessions
-        val abandonedIds = mutableSetOf<Int>()
-        for (info in sessions) {
-            val sid = info.sessionId
-            if (sid == finishedSessionId) {
-                abandonedIds += sid
-                continue
+            val installer = context.packageManager.packageInstaller
+            val sessions = installer.mySessions
+            val abandonedIds = mutableSetOf<Int>()
+            for (info in sessions) {
+                val sid = info.sessionId
+                if (sid == finishedSessionId) {
+                    abandonedIds += sid
+                    continue
+                }
+                val startedAt = tracked[sid]
+                val isStale = (startedAt != null && now - startedAt > SESSION_STALE_MS) ||
+                    (abandonStale && startedAt == null)
+                if (isStale) {
+                    runCatching { installer.abandonSession(sid) }
+                    abandonedIds += sid
+                }
             }
-            val startedAt = tracked[sid]
-            val isStale = (startedAt != null && now - startedAt > SESSION_STALE_MS) ||
-                (abandonStale && startedAt == null)
-            if (isStale) {
-                runCatching { installer.abandonSession(sid) }
-                abandonedIds += sid
+
+            val liveRemaining = sessions.map { it.sessionId }.toSet() - abandonedIds
+            val updatedTracked = tracked.filterKeys { it in liveRemaining }
+                .map { (id, ts) -> "$id:$ts" }
+                .toSet()
+            prefs.edit(commit = true) {
+                if (updatedTracked.isEmpty()) remove(KEY_ACTIVE_SESSIONS)
+                else putStringSet(KEY_ACTIVE_SESSIONS, updatedTracked)
             }
-        }
 
-        val liveRemaining = sessions.map { it.sessionId }.toSet() - abandonedIds
-        val updatedTracked = tracked.filterKeys { it in liveRemaining }
-            .map { (id, ts) -> "$id:$ts" }
-            .toSet()
-        prefs.edit {
-            if (updatedTracked.isEmpty()) remove(KEY_ACTIVE_SESSIONS)
-            else putStringSet(KEY_ACTIVE_SESSIONS, updatedTracked)
-        }
-
-        if (liveRemaining.isEmpty()) {
-            restoreUnknownSourcesRestrictions(context)
+            if (liveRemaining.isEmpty()) {
+                restoreUnknownSourcesRestrictionsLocked(context)
+            }
         }
     }
 
@@ -517,17 +592,23 @@ object ApkUpdateInstaller {
     }
 
     fun uninstallForFreshRollback(context: Context, packageName: String) {
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
-        if (dpm.isDeviceOwnerApp(context.packageName)) {
-            val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull()
-            if (active?.getBoolean(UserManager.DISALLOW_UNINSTALL_APPS) == true) {
-                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
-                prefs.edit(commit = true) {
-                    putStringSet(KEY_RESTORE_RESTRICTIONS, pending + UserManager.DISALLOW_UNINSTALL_APPS)
+        synchronized(stateLock) {
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val pendingRollbacks = prefs.getStringSet(KEY_PENDING_ROLLBACK_UNINSTALLS, null).orEmpty()
+            prefs.edit(commit = true) {
+                putStringSet(KEY_PENDING_ROLLBACK_UNINSTALLS, pendingRollbacks + packageName)
+            }
+            if (runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) {
+                val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull()
+                if (active?.getBoolean(UserManager.DISALLOW_UNINSTALL_APPS) == true) {
+                    val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
+                    prefs.edit(commit = true) {
+                        putStringSet(KEY_RESTORE_RESTRICTIONS, pending + UserManager.DISALLOW_UNINSTALL_APPS)
+                    }
+                    runCatching { dpm.clearUserRestriction(admin, UserManager.DISALLOW_UNINSTALL_APPS) }
                 }
-                runCatching { dpm.clearUserRestriction(admin, UserManager.DISALLOW_UNINSTALL_APPS) }
             }
         }
         uninstall(context, packageName)
@@ -536,6 +617,7 @@ object ApkUpdateInstaller {
     fun uninstall(context: Context, packageName: String) {
         val intent = Intent(context, ApkUpdateResultReceiver::class.java)
             .setAction(ApkUpdateResultReceiver.ACTION_UNINSTALL_RESULT)
+            .putExtra(EXTRA_PACKAGE, packageName)
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             packageName.hashCode(),
@@ -546,19 +628,24 @@ object ApkUpdateInstaller {
     }
 
     private fun liftInstallRestrictions(context: Context, includeUninstall: Boolean) {
-        val dpm = DeviceAdmin.policyManager
-        val admin = DeviceAdmin.component
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return
+        synchronized(stateLock) {
+            val dpm = DeviceAdmin.policyManager
+            val admin = DeviceAdmin.component
+            if (!runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) return
 
-        val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return
-        val candidates = if (includeUninstall) downgradeRestrictions else installRestrictions
-        val lifted = candidates.filter { active.getBoolean(it) }
-        if (lifted.isEmpty()) return
+            InstallRestrictionCoordinator.acquireLiftLease(context, InstallRestrictionCoordinator.LEASE_APK_UPDATE)
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
-        prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + lifted) }
-        lifted.forEach { runCatching { dpm.clearUserRestriction(admin, it) } }
+            val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return
+            val candidates = (if (includeUninstall) downgradeRestrictions else installRestrictions) -
+                UserManager.DISALLOW_INSTALL_APPS
+            val lifted = candidates.filter { active.getBoolean(it) }
+            if (lifted.isEmpty()) return
+
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
+            prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + lifted) }
+            lifted.forEach { runCatching { dpm.clearUserRestriction(admin, it) } }
+        }
     }
 
     private fun installedInfo(context: Context, packageName: String, flags: Int = 0) = try {

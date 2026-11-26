@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -115,11 +116,18 @@ fun AppPickerDialog(
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Image(
-                                    bitmap = app.icon.toBitmap().asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp)
-                                )
+                                val iconBitmap = remember(app.packageName) {
+                                    runCatching { app.icon.toBitmap(120, 120).asImageBitmap() }.getOrNull()
+                                }
+                                if (iconBitmap != null) {
+                                    Image(
+                                        bitmap = iconBitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.size(40.dp))
+                                }
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)

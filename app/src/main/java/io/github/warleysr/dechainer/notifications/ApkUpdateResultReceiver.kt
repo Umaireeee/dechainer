@@ -23,7 +23,8 @@ class ApkUpdateResultReceiver : BroadcastReceiver() {
             ACTION_DOWNGRADE_UNINSTALL_RESULT -> onDowngradeUninstallResult(context, intent)
             ACTION_INSTALL_RESULT -> onInstallResult(context, intent)
             ACTION_UNINSTALL_RESULT -> {
-                ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(context)
+                val pkg = intent.getStringExtra(ApkUpdateInstaller.EXTRA_PACKAGE)
+                ApkUpdateInstaller.onRollbackUninstallFinished(context, pkg)
                 AppRepository.invalidateCache()
             }
         }

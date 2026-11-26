@@ -87,6 +87,21 @@ class RestrictionEditorState(
         }
     }
 
+    fun differsFromDefault(): Boolean {
+        return when (entry.type) {
+            RestrictionEntry.TYPE_BOOLEAN -> booleanValue != entry.selectedState
+            RestrictionEntry.TYPE_STRING, RestrictionEntry.TYPE_CHOICE -> stringValue != entry.selectedString.orEmpty()
+            RestrictionEntry.TYPE_INTEGER -> intValue != entry.intValue.toString()
+            RestrictionEntry.TYPE_MULTI_SELECT -> {
+                val defaults = entry.allSelectedStrings?.toSet() ?: emptySet<String>()
+                multiSelectValues != defaults
+            }
+            RestrictionEntry.TYPE_BUNDLE -> nestedBundleStates.any { it.differsFromDefault() }
+            RestrictionEntry.TYPE_BUNDLE_ARRAY -> bundleArrayList.isNotEmpty()
+            else -> false
+        }
+    }
+
     fun writeToBundle(bundle: Bundle) {
         when (entry.type) {
             RestrictionEntry.TYPE_BOOLEAN -> {
@@ -187,11 +202,14 @@ fun AppRestrictionsDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                // Start from the live bundle so keys the dialog doesn't show (e.g. URLBlocklist) survive as-is.
+                // Start from the live bundle so keys the dialog doesn't show (e.g. URLBlocklist) survive as-is,
+                // and only write entries that were already present or modified from manifest defaults.
                 val bundle = Bundle(currentRestrictions)
-                states.forEach {
-                    bundle.remove(it.entry.key)
-                    it.writeToBundle(bundle)
+                states.forEach { state ->
+                    if (currentRestrictions.containsKey(state.entry.key) || state.differsFromDefault()) {
+                        bundle.remove(state.entry.key)
+                        state.writeToBundle(bundle)
+                    }
                 }
                 onSave(bundle)
             }) {

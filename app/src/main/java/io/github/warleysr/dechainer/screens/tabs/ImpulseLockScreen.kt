@@ -38,11 +38,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.screens.common.AppPickerDialog
+import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.security.SecurityManager
 import io.github.warleysr.dechainer.viewmodels.ImpulseLockViewModel
+import org.json.JSONObject
 import kotlin.math.roundToInt
 
 @Composable
@@ -63,18 +65,8 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
         mutableIntStateOf(viewModel.durationMinutes)
     }
 
-    fun pendingActionFor(
-        action: SecurityManager.ImpulseAction = viewModel.action,
-        durationMinutes: Int = viewModel.durationMinutes,
-        suspendedApps: Set<String> = viewModel.suspendedApps,
-        tetrisUnlock: Boolean = viewModel.tetrisUnlock,
-        tetrisMinutes: Int = viewModel.tetrisMinutes
-    ) = PendingAction.UpdateImpulseLock(
-        actionName = action.name,
-        durationMinutes = durationMinutes,
-        suspendedApps = suspendedApps.sorted(),
-        tetrisUnlock = tetrisUnlock,
-        tetrisMinutes = tetrisMinutes
+    fun patchAction(build: JSONObject.() -> Unit) = PendingAction.UpdateImpulsePatch(
+        JSONObject().apply(build).toString()
     )
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -104,8 +96,8 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                                 loosening = loosening,
                                 title = context.getString(R.string.timelock_title_loosen_impulse),
                                 description = context.getString(R.string.challenge_option_tetris),
-                                dedupeKey = "impulse_lock_settings",
-                                pendingAction = pendingActionFor(tetrisUnlock = enable),
+                                dedupeKey = "impulse_tetris_unlock",
+                                pendingAction = patchAction { put("tetrisUnlock", enable) },
                                 onTighten = { viewModel.updateTetrisUnlock(enable) }
                             )
                         }
@@ -129,14 +121,16 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                     onValueChange = { sliderTetrisMinutes = it.roundToInt() },
                     onValueChangeFinished = {
                         val target = sliderTetrisMinutes
-                        if (target != viewModel.tetrisMinutes) {
+                        if (target == viewModel.tetrisMinutes) {
+                            PendingChange.cancelPending()
+                        } else {
                             val loosening = target < viewModel.tetrisMinutes
                             gate.change(
                                 loosening = loosening,
                                 title = context.getString(R.string.timelock_title_loosen_impulse),
                                 description = context.getString(R.string.tetris_duration),
-                                dedupeKey = "impulse_lock_settings",
-                                pendingAction = pendingActionFor(tetrisMinutes = target),
+                                dedupeKey = "impulse_tetris_minutes",
+                                pendingAction = patchAction { put("tetrisMinutes", target) },
                                 onCancel = { sliderTetrisMinutes = viewModel.tetrisMinutes },
                                 onTighten = { viewModel.updateTetrisMinutes(target) }
                             )
@@ -180,8 +174,8 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                                 loosening = loosening,
                                 title = context.getString(R.string.timelock_title_loosen_impulse),
                                 description = context.getString(R.string.impulse_action_section),
-                                dedupeKey = "impulse_lock_settings",
-                                pendingAction = pendingActionFor(action = action),
+                                dedupeKey = "impulse_action",
+                                pendingAction = patchAction { put("actionName", action.name) },
                                 onTighten = { viewModel.updateAction(action) }
                             )
                         }
@@ -208,14 +202,16 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                 onValueChange = { sliderDurationMinutes = it.roundToInt() },
                 onValueChangeFinished = {
                     val target = sliderDurationMinutes
-                    if (target != viewModel.durationMinutes) {
+                    if (target == viewModel.durationMinutes) {
+                        PendingChange.cancelPending()
+                    } else {
                         val loosening = target < viewModel.durationMinutes
                         gate.change(
                             loosening = loosening,
                             title = context.getString(R.string.timelock_title_loosen_impulse),
                             description = context.getString(R.string.impulse_duration_section),
-                            dedupeKey = "impulse_lock_settings",
-                            pendingAction = pendingActionFor(durationMinutes = target),
+                            dedupeKey = "impulse_duration",
+                            pendingAction = patchAction { put("durationMinutes", target) },
                             onCancel = { sliderDurationMinutes = viewModel.durationMinutes },
                             onTighten = { viewModel.updateDurationMinutes(target) }
                         )
@@ -290,11 +286,17 @@ fun ImpulseLockScreen(viewModel: ImpulseLockViewModel = viewModel()) {
                     gate.requestUnlock(
                         title = context.getString(R.string.timelock_title_loosen_impulse),
                         description = pkg,
-                        dedupeKey = "impulse_lock_settings",
-                        pendingAction = pendingActionFor(suspendedApps = viewModel.suspendedApps - pkg)
+                        dedupeKey = "impulse_remove_app:$pkg",
+                        pendingAction = patchAction { put("removeSuspendedApp", pkg) }
                     )
                 } else {
                     viewModel.toggleAppSelection(pkg)
+                    PendingChange.offerUndo(
+                        message = context.getString(R.string.restriction_pending),
+                        undoLabel = context.getString(R.string.undo)
+                    ) {
+                        if (pkg in viewModel.suspendedApps) viewModel.toggleAppSelection(pkg)
+                    }
                 }
             },
             onDismiss = { showAppSelectionDialog = false }

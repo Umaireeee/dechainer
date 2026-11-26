@@ -93,19 +93,15 @@ object MusicLimitTracker {
         val today = nowZoned.toLocalDate()
 
         if (today.isAfter(activeDate)) {
-            // Flush only the pre-midnight slice against yesterday's weekday limits before resetting.
+            // Reset yesterday's counters BEFORE recording any post-midnight delta so yesterday's
+            // usage never leaks into today's daily allowance.
             val millisSinceMidnight = nowZoned.toLocalTime().toSecondOfDay() * 1000L
             val midnightElapsed = (now - millisSinceMidnight).coerceAtLeast(0L)
+            DailyUsageStore.ensureCurrentDate(context, today)
             for (pkg in counting.keys.toList()) {
                 val started = counting[pkg] ?: continue
-                val day1End = midnightElapsed.coerceIn(started, now)
-                val day1Delta = day1End - started
-                if (day1Delta > 0L) {
-                    addUsageFor(context, pkg, day1Delta, activeDate)
-                }
-                counting[pkg] = day1End
+                counting[pkg] = midnightElapsed.coerceIn(started, now)
             }
-            DailyUsageStore.ensureCurrentDate(context, today)
             activeDate = today
         } else {
             if (DailyUsageStore.ensureCurrentDate(context, today)) {
@@ -143,7 +139,15 @@ object MusicLimitTracker {
                     block(context, pkg, outsideWindow = true)
                     continue
                 }
-                val untilWindowEnd = ((activeSpan.end * 60 - nowSecondOfDay) * 1000L).coerceAtLeast(1000L)
+                val endMoment = today.atStartOfDay().plusMinutes(activeSpan.end.toLong())
+                val endInstant = SuspensionCoordinator.resolvedInstants(
+                    endMoment,
+                    nowZoned.zone,
+                    nowZoned.zone.rules
+                ).firstOrNull { it.isAfter(nowZoned.toInstant()) }
+                val untilWindowEnd = endInstant?.let {
+                    java.time.Duration.between(nowZoned.toInstant(), it).toMillis().coerceAtLeast(1000L)
+                } ?: ((activeSpan.end * 60 - nowSecondOfDay) * 1000L).coerceAtLeast(1000L)
                 nextDelayMillis = minOf(nextDelayMillis ?: untilWindowEnd, untilWindowEnd)
             }
 
@@ -222,8 +226,10 @@ object MusicLimitTracker {
 
     private fun block(context: Context, pkg: String, outsideWindow: Boolean) {
         counting.remove(pkg)
+        playing.remove(pkg)
+        val controller = controllers.remove(pkg)
         try {
-            controllers[pkg]?.transportControls?.pause()
+            controller?.transportControls?.pause()
         } catch (e: Exception) {
             Timber.e(e, "Could not pause $pkg")
         }

@@ -1,6 +1,7 @@
 package io.github.warleysr.dechainer.screens.common
 
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -13,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,18 +45,16 @@ private data class QueuedPrompt(
  * Gates loosening changes behind a 7-day timelock queue while letting tightening changes apply
  * immediately after a 5-second undo window ([PendingChange]).
  */
-class TimelockGate(private val context: Context) {
+class TimelockGate(
+    context: Context,
+    private val uiScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val showToastOnQueue: Boolean = false
+) {
+    private val appContext = context.applicationContext
     private var prompt by mutableStateOf<QueuedPrompt?>(null)
-    private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val isDialogVisible: Boolean get() = prompt != null
 
-    /**
-     * If [loosening] is false, schedules [onTighten] via the 5-second undo snackbar.
-     * If [loosening] is true, prompts the user to queue [pendingAction] for 7 days (or notifies
-     * them if an identical request is already pending). [onCancel] is invoked if the user
-     * dismisses OR confirms queuing (since the loosening does not take effect immediately).
-     */
     fun change(
         loosening: Boolean,
         title: String,
@@ -66,8 +66,8 @@ class TimelockGate(private val context: Context) {
     ) {
         if (!loosening) {
             PendingChange.schedule(
-                context.getString(R.string.restriction_pending),
-                context.getString(R.string.undo),
+                appContext.getString(R.string.restriction_pending),
+                appContext.getString(R.string.undo),
                 onCancel,
                 onTighten
             )
@@ -76,7 +76,6 @@ class TimelockGate(private val context: Context) {
         }
     }
 
-    /** Queues an unconditionally-loosening action for the 7-day timelock. */
     fun requestUnlock(
         title: String,
         description: String,
@@ -84,7 +83,7 @@ class TimelockGate(private val context: Context) {
         pendingAction: PendingAction,
         onCancel: (() -> Unit)? = null
     ) {
-        val existing = TimelockManager.findByDedupeKey(context, dedupeKey)
+        val existing = TimelockManager.findByDedupeKey(appContext, dedupeKey)
         prompt = QueuedPrompt(
             dedupeKey = dedupeKey,
             title = title,
@@ -95,12 +94,11 @@ class TimelockGate(private val context: Context) {
         )
     }
 
-    /** Confirms queuing the currently prompted unlock request. */
     fun confirmQueue(): EnqueueResult? {
         val current = prompt ?: return null
         prompt = null
         val result = TimelockManager.enqueue(
-            context = context,
+            context = appContext,
             dedupeKey = current.dedupeKey,
             title = current.title,
             description = current.description,
@@ -108,19 +106,23 @@ class TimelockGate(private val context: Context) {
         )
         current.onCancel?.invoke()
         val msg = when (result) {
-            is EnqueueResult.Queued -> context.getString(R.string.timelock_queued_snackbar)
+            is EnqueueResult.Queued -> appContext.getString(R.string.timelock_queued_snackbar)
             is EnqueueResult.AlreadyPending -> {
                 val rem = when (val st = result.existing.status) {
                     is CountdownStatus.Waiting -> TimelockManager.formatRemaining(st.remainingMs)
-                    is CountdownStatus.Ready -> context.getString(R.string.timelock_ready_now)
+                    is CountdownStatus.Ready -> appContext.getString(R.string.timelock_ready_now)
                     CountdownStatus.Expired -> ""
                 }
-                context.getString(R.string.timelock_already_pending_snackbar, rem)
+                appContext.getString(R.string.timelock_already_pending_snackbar, rem)
             }
         }
-        uiScope.launch {
-            PendingChange.snackbarHost.currentSnackbarData?.dismiss()
-            PendingChange.snackbarHost.showSnackbar(msg, duration = SnackbarDuration.Short)
+        if (showToastOnQueue) {
+            Toast.makeText(appContext, msg, Toast.LENGTH_SHORT).show()
+        } else {
+            uiScope.launch {
+                PendingChange.snackbarHost.currentSnackbarData?.dismiss()
+                PendingChange.snackbarHost.showSnackbar(msg, duration = SnackbarDuration.Short)
+            }
         }
         return result
     }
@@ -128,7 +130,7 @@ class TimelockGate(private val context: Context) {
     fun cancelExistingAndDismiss() {
         val current = prompt ?: return
         prompt = null
-        current.existing?.let { TimelockManager.cancel(context, it.id) }
+        current.existing?.let { TimelockManager.cancel(appContext, it.id) }
         current.onCancel?.invoke()
     }
 
@@ -143,9 +145,10 @@ class TimelockGate(private val context: Context) {
 }
 
 @Composable
-fun rememberTimelockGate(): TimelockGate {
-    val context = LocalContext.current
-    return remember { TimelockGate(context) }
+fun rememberTimelockGate(showToastOnQueue: Boolean = false): TimelockGate {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    return remember(showToastOnQueue) { TimelockGate(context, scope, showToastOnQueue) }
 }
 
 @Composable
@@ -169,7 +172,10 @@ fun TimelockGateDialog(gate: TimelockGate) {
             title = { Text(stringResource(R.string.timelock_already_pending_title)) },
             text = {
                 Column {
-                    Text(title, fontWeight = FontWeight.Bold)
+                    Text(existing.title, fontWeight = FontWeight.Bold)
+                    if (existing.description.isNotBlank()) {
+                        Text(existing.description, style = MaterialTheme.typography.bodySmall)
+                    }
                     Spacer(Modifier.height(8.dp))
                     Text(statusText, style = MaterialTheme.typography.bodyMedium)
                 }

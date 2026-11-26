@@ -18,24 +18,30 @@ class BrowserHardeningTest {
         val def = BrowserHardeningConfig()
         assertFalse(def.enabled)
         assertFalse(def.disableIncognito)
-        assertFalse(def.disableDoH)
+        assertFalse(def.forceFamilyDns)
+        assertEquals(BrowserHardeningManager.DEFAULT_FAMILY_DNS_TEMPLATE, def.familyDnsTemplate)
+        assertFalse(def.lockBrowserDnsSettings)
         assertFalse(def.forceSafeSearch)
         assertFalse(def.forceYouTubeRestricted)
-        assertFalse(def.disableBraveTor)
+        assertFalse(def.disableBraveVpn)
         assertFalse(def.blockYouTubeShorts)
         assertFalse(def.blockInstagramReels)
+        assertFalse(def.blockInstagramExplore)
         assertFalse(def.blockFacebookReels)
+        assertFalse(def.blockSnapchatSpotlight)
         assertFalse(def.blockTikTok)
         assertFalse(def.blockAdultSites)
         assertTrue(def.customBlockedUrls.isEmpty())
+        assertFalse(def.needsAccessibility())
     }
 
     @Test
-    fun `buildUrlBlocklist includes Shorts, Reels, TikTok, Adult sites and custom rules`() {
+    fun `buildUrlBlocklist includes Shorts, Reels, Explore, TikTok, Adult sites and custom rules`() {
         val cfg = BrowserHardeningConfig(
             enabled = true,
             blockYouTubeShorts = true,
             blockInstagramReels = true,
+            blockInstagramExplore = true,
             blockFacebookReels = true,
             blockTikTok = true,
             blockAdultSites = true,
@@ -48,29 +54,38 @@ class BrowserHardeningTest {
         assertTrue("instagram.com/explore" in urls)
         assertTrue("facebook.com/reel" in urls)
         assertTrue("tiktok.com" in urls)
+        assertTrue("vm.tiktok.com" in urls)
         assertTrue("pornhub.com" in urls)
         assertTrue("reddit.com/r/popular" in urls)
         assertTrue("x.com" in urls)
     }
 
     @Test
-    fun `buildRestrictionsBundle writes Chromium JSON string for Brave and preserves unrelated keys`() {
+    fun `buildUrlBlocklist separates Instagram Reels and Explore`() {
+        val reelsOnly = BrowserHardeningConfig(enabled = true, blockInstagramReels = true)
+        val reelsUrls = BrowserHardeningManager.buildUrlBlocklist(reelsOnly)
+        assertTrue("instagram.com/reels" in reelsUrls)
+        assertFalse("instagram.com/explore" in reelsUrls)
+    }
+
+    @Test
+    fun `buildRestrictionsBundle writes Chromium JSON string and Family DoH policy`() {
         val existing = Bundle().apply {
             putString("HomepageLocation", "https://example.org")
             putStringArray("URLBlocklist", arrayOf("old.example"))
         }
+        val adguardFamily = "https://family.adguard-dns.com/dns-query"
         val cfg = BrowserHardeningConfig(
             enabled = true,
             disableIncognito = true,
-            disableDoH = true,
+            forceFamilyDns = true,
+            familyDnsTemplate = adguardFamily,
             forceSafeSearch = true,
             forceYouTubeRestricted = true,
-            disableBraveTor = true,
+            disableBraveVpn = true,
             blockYouTubeShorts = true
         )
 
-        // Default / Brave (empty manifestTypes) MUST emit URLBlocklist as a JSON array string
-        // with unescaped slashes so Chromium PolicyConverter reads it reliably.
         val braveBundle = BrowserHardeningManager.buildRestrictionsBundle(
             existing = existing,
             config = cfg,
@@ -83,13 +98,13 @@ class BrowserHardeningTest {
         val parsedArray = org.json.JSONArray(rawJson)
         val parsedList = (0 until parsedArray.length()).map { parsedArray.getString(it) }
         assertTrue("youtube.com/shorts" in parsedList)
-        assertEquals("off", braveBundle.getString("DnsOverHttpsMode"))
+        assertEquals("secure", braveBundle.getString("DnsOverHttpsMode"))
+        assertEquals(adguardFamily, braveBundle.getString("DnsOverHttpsTemplates"))
         assertEquals(1, braveBundle.getInt("IncognitoModeAvailability"))
         assertEquals(2, braveBundle.getInt("ForceYouTubeRestrict"))
         assertTrue(braveBundle.getBoolean("ForceGoogleSafeSearch"))
-        assertTrue(braveBundle.getBoolean("TorDisabled"))
+        assertTrue(braveBundle.getBoolean("BraveVPNDisabled"))
 
-        // Manifest explicitly declaring TYPE_MULTI_SELECT uses StringArray
         val arrayBundle = BrowserHardeningManager.buildRestrictionsBundle(
             existing = existing,
             config = cfg,
@@ -97,7 +112,7 @@ class BrowserHardeningTest {
                 "URLBlocklist" to RestrictionEntry.TYPE_MULTI_SELECT,
                 "IncognitoModeAvailability" to RestrictionEntry.TYPE_CHOICE,
                 "ForceYouTubeRestrict" to RestrictionEntry.TYPE_INTEGER,
-                "TorDisabled" to RestrictionEntry.TYPE_BOOLEAN
+                "BraveVPNDisabled" to RestrictionEntry.TYPE_BOOLEAN
             ),
             isBravePackage = true
         )
@@ -105,7 +120,6 @@ class BrowserHardeningTest {
         assertEquals(2, arrayBundle.getInt("ForceYouTubeRestrict"))
         assertTrue(arrayBundle.getStringArray("URLBlocklist")!!.contains("youtube.com/shorts"))
 
-        // Disabling removes managed keys while keeping unrelated keys
         val cleared = BrowserHardeningManager.buildRestrictionsBundle(
             existing = braveBundle,
             config = cfg.copy(enabled = false),
@@ -115,21 +129,35 @@ class BrowserHardeningTest {
         assertEquals("https://example.org", cleared.getString("HomepageLocation"))
         assertFalse(cleared.containsKey("URLBlocklist"))
         assertFalse(cleared.containsKey("DnsOverHttpsMode"))
+        assertFalse(cleared.containsKey("DnsOverHttpsTemplates"))
         assertFalse(cleared.containsKey("IncognitoModeAvailability"))
-        assertFalse(cleared.containsKey("TorDisabled"))
+        assertFalse(cleared.containsKey("BraveVPNDisabled"))
     }
 
     @Test
-    fun `BrowserHardeningConfig isLooserThan detects any relaxation`() {
+    fun `BrowserHardeningConfig isLooserThan detects any relaxation and migrates legacy json`() {
         val strict = BrowserHardeningConfig(
             enabled = true,
             disableIncognito = true,
+            forceFamilyDns = true,
+            familyDnsTemplate = "https://family.cloudflare-dns.com/dns-query",
+            lockBrowserDnsSettings = true,
             blockYouTubeShorts = true,
+            blockInstagramExplore = true,
+            blockSnapchatSpotlight = true,
             customBlockedUrls = setOf("reddit.com", "x.com")
         )
         assertTrue(strict.copy(enabled = false).isLooserThan(strict))
         assertTrue(strict.copy(disableIncognito = false).isLooserThan(strict))
+        assertTrue(strict.copy(forceFamilyDns = false).isLooserThan(strict))
+        assertTrue(
+            strict.copy(familyDnsTemplate = "https://family.adguard-dns.com/dns-query")
+                .isLooserThan(strict)
+        )
+        assertTrue(strict.copy(lockBrowserDnsSettings = false).isLooserThan(strict))
         assertTrue(strict.copy(blockYouTubeShorts = false).isLooserThan(strict))
+        assertTrue(strict.copy(blockInstagramExplore = false).isLooserThan(strict))
+        assertTrue(strict.copy(blockSnapchatSpotlight = false).isLooserThan(strict))
         assertTrue(strict.copy(customBlockedUrls = setOf("reddit.com")).isLooserThan(strict))
         assertFalse(strict.copy(forceYouTubeRestricted = true).isLooserThan(strict))
         assertFalse(strict.copy(customBlockedUrls = setOf("reddit.com", "x.com", "9gag.com")).isLooserThan(strict))
@@ -137,5 +165,18 @@ class BrowserHardeningTest {
         val roundTrip = BrowserHardeningConfig.fromJsonString(strict.toJsonString())
         assertEquals(strict, roundTrip)
         assertArrayEquals(strict.customBlockedUrls.sorted().toTypedArray(), roundTrip!!.customBlockedUrls.sorted().toTypedArray())
+
+        // Legacy v2.4.6 JSON with disableDoH/disableBraveTor must deserialize cleanly
+        val legacyJson = """{"enabled":true,"disableDoH":true,"disableBraveTor":true,"blockYouTubeShorts":true}"""
+        val migrated = BrowserHardeningConfig.fromJsonString(legacyJson)!!
+        assertTrue(migrated.enabled)
+        assertTrue(migrated.blockYouTubeShorts)
+        assertTrue(migrated.disableBraveVpn)
+        assertFalse(migrated.forceFamilyDns)
+        assertEquals(BrowserHardeningManager.DEFAULT_FAMILY_DNS_TEMPLATE, migrated.familyDnsTemplate)
+
+        assertEquals("reddit.com/r/popular", BrowserHardeningConfig.normalizeRule("https://www.Reddit.com/r/popular/?utm_source=x#top"))
+        assertEquals("", BrowserHardeningConfig.normalizeRule("not a valid rule"))
+        assertEquals("", BrowserHardeningConfig.normalizeRule("localhost"))
     }
 }

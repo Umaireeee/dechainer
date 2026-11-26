@@ -38,6 +38,7 @@ class ApkUpdateActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         ApkUpdateDialog(
                             uri = uri,
+                            showToastOnQueue = true,
                             onFinish = { finish() }
                         )
                     }

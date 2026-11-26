@@ -2,6 +2,8 @@ package io.github.warleysr.dechainer.screens.tabs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,6 +49,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.BrowserHardeningConfig
@@ -54,18 +62,27 @@ import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
+private val appIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BrowserHardeningScreen() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val gate = rememberTimelockGate()
     val cfg by BrowserHardeningManager.config.collectAsState()
     var browsers by remember { mutableStateOf<List<DetectedBrowser>>(emptyList()) }
     var showAddUrlDialog by remember { mutableStateOf(false) }
+    var showCustomDnsDialog by remember { mutableStateOf(false) }
+    val accessibilityRunning = DechainerAccessibilityService.isRunning
 
     fun refreshBrowsers() {
         scope.launch {
@@ -78,6 +95,14 @@ fun BrowserHardeningScreen() {
         refreshBrowsers()
     }
 
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshBrowsers()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val managedBrowsers = browsers.filter { it.isManaged }
     val activeUnmanaged = browsers.filter { !it.isManaged && !it.isSuspended && !it.isHidden }
     val hasBrave = managedBrowsers.any { it.isBrave }
@@ -85,16 +110,33 @@ fun BrowserHardeningScreen() {
     val undoMsg = stringResource(R.string.restriction_pending)
     val undoLabel = stringResource(R.string.undo)
 
-    fun updateConfig(title: String, description: String, transform: (BrowserHardeningConfig) -> BrowserHardeningConfig) {
+    fun updateConfig(
+        title: String,
+        description: String,
+        dedupeKey: String,
+        patchBuilder: JSONObject.() -> Unit,
+        autoEnableWhenTightening: Boolean = true,
+        transform: (BrowserHardeningConfig) -> BrowserHardeningConfig
+    ) {
         val prev = BrowserHardeningManager.getConfig(context)
-        val next = transform(prev)
-        if (next == prev) return
-        if (next.isLooserThan(prev)) {
+        val rawNext = transform(prev)
+        if (rawNext == prev) return
+        val loosening = rawNext.isLooserThan(prev)
+        val next = if (!loosening && autoEnableWhenTightening && !prev.enabled && !rawNext.enabled) {
+            rawNext.copy(enabled = true)
+        } else {
+            rawNext
+        }
+        if (loosening) {
+            val patchJson = JSONObject().apply {
+                put("_patch", true)
+                patchBuilder()
+            }.toString()
             gate.requestUnlock(
                 title = title,
                 description = description,
-                dedupeKey = "browser_hardening",
-                pendingAction = PendingAction.UpdateBrowserHardening(next.toJsonString())
+                dedupeKey = dedupeKey,
+                pendingAction = PendingAction.UpdateBrowserHardening(patchJson)
             )
         } else {
             BrowserHardeningManager.applyConfig(context, next)
@@ -167,6 +209,32 @@ fun BrowserHardeningScreen() {
             }
         }
 
+        if (cfg.needsAccessibility() && !accessibilityRunning) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Outlined.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            stringResource(R.string.browser_accessibility_warning),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+        }
+
         if (activeUnmanaged.isNotEmpty()) {
             item {
                 Card(
@@ -198,14 +266,15 @@ fun BrowserHardeningScreen() {
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Spacer(Modifier.height(10.dp))
+                        val packagesToSuspend = activeUnmanaged.map { it.packageName }
                         Button(onClick = {
                             PendingChange.schedule(
                                 message = context.getString(R.string.restriction_pending),
                                 undoLabel = context.getString(R.string.undo),
                                 action = {
-                                    scope.launch(Dispatchers.IO) {
-                                        activeUnmanaged.forEach { AppRepository.setAppSuspended(it.packageName, true) }
-                                        refreshBrowsers()
+                                    appIoScope.launch {
+                                        packagesToSuspend.forEach { AppRepository.setAppSuspended(it, true) }
+                                        withContext(Dispatchers.Main) { refreshBrowsers() }
                                     }
                                 }
                             )
@@ -226,8 +295,11 @@ fun BrowserHardeningScreen() {
                         checked = cfg.enabled,
                         onCheckedChange = { enable ->
                             updateConfig(
-                                context.getString(R.string.timelock_title_disable_browser_hardening),
-                                context.getString(R.string.browser_hardening_title)
+                                title = context.getString(R.string.timelock_title_disable_browser_hardening),
+                                description = context.getString(R.string.browser_hardening_title),
+                                dedupeKey = "browser_hardening:enabled",
+                                patchBuilder = { put("enabled", enable) },
+                                autoEnableWhenTightening = false
                             ) { it.copy(enabled = enable) }
                         }
                     )
@@ -245,6 +317,109 @@ fun BrowserHardeningScreen() {
             )
         }
 
+        if (!cfg.lockBrowserDnsSettings) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            stringResource(R.string.browser_dns_lock_guide_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.browser_dns_lock_guide_desc),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            ShieldToggleRow(
+                title = stringResource(R.string.browser_lock_dns_settings),
+                subtitle = stringResource(R.string.browser_lock_dns_settings_desc),
+                checked = cfg.lockBrowserDnsSettings,
+                onCheckedChange = { v ->
+                    updateConfig(
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_lock_dns_settings),
+                        dedupeKey = "browser_hardening:lock_dns",
+                        patchBuilder = { put("lockBrowserDnsSettings", v) }
+                    ) { it.copy(lockBrowserDnsSettings = v) }
+                }
+            )
+            ShieldToggleRow(
+                title = stringResource(R.string.browser_force_family_dns),
+                subtitle = stringResource(R.string.browser_force_family_dns_desc),
+                checked = cfg.forceFamilyDns,
+                onCheckedChange = { v ->
+                    updateConfig(
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_force_family_dns),
+                        dedupeKey = "browser_hardening:force_family_dns",
+                        patchBuilder = { put("forceFamilyDns", v) }
+                    ) { it.copy(forceFamilyDns = v) }
+                }
+            )
+        }
+
+        if (cfg.forceFamilyDns) {
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    Text(
+                        stringResource(R.string.browser_family_dns_provider_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    val presetTemplates = BrowserHardeningManager.FAMILY_DNS_PRESETS.map { it.second }
+                    val isCustomSelected = presetTemplates.none {
+                        it.equals(cfg.familyDnsTemplate, ignoreCase = true)
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BrowserHardeningManager.FAMILY_DNS_PRESETS.forEach { (label, template) ->
+                            val selected = cfg.familyDnsTemplate.equals(template, ignoreCase = true)
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    if (!selected) {
+                                        updateConfig(
+                                            title = context.getString(R.string.timelock_title_loosen_browser),
+                                            description = label,
+                                            dedupeKey = "browser_hardening:family_dns_template",
+                                            patchBuilder = { put("familyDnsTemplate", template) }
+                                        ) { it.copy(familyDnsTemplate = template) }
+                                    }
+                                },
+                                label = { Text(label) }
+                            )
+                        }
+                        FilterChip(
+                            selected = isCustomSelected,
+                            onClick = { showCustomDnsDialog = true },
+                            label = { Text(stringResource(R.string.browser_family_dns_custom_chip)) }
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        cfg.familyDnsTemplate,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider()
+            }
+        }
+
         item {
             ShieldToggleRow(
                 title = stringResource(R.string.browser_disable_incognito),
@@ -252,20 +427,11 @@ fun BrowserHardeningScreen() {
                 checked = cfg.disableIncognito,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_disable_incognito)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_disable_incognito),
+                        dedupeKey = "browser_hardening:disable_incognito",
+                        patchBuilder = { put("disableIncognito", v) }
                     ) { it.copy(disableIncognito = v) }
-                }
-            )
-            ShieldToggleRow(
-                title = stringResource(R.string.browser_disable_doh),
-                subtitle = stringResource(R.string.browser_disable_doh_desc),
-                checked = cfg.disableDoH,
-                onCheckedChange = { v ->
-                    updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_disable_doh)
-                    ) { it.copy(disableDoH = v) }
                 }
             )
             ShieldToggleRow(
@@ -274,8 +440,10 @@ fun BrowserHardeningScreen() {
                 checked = cfg.forceSafeSearch,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_force_safesearch)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_force_safesearch),
+                        dedupeKey = "browser_hardening:safe_search",
+                        patchBuilder = { put("forceSafeSearch", v) }
                     ) { it.copy(forceSafeSearch = v) }
                 }
             )
@@ -285,21 +453,25 @@ fun BrowserHardeningScreen() {
                 checked = cfg.forceYouTubeRestricted,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_force_youtube_restricted)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_force_youtube_restricted),
+                        dedupeKey = "browser_hardening:yt_restricted",
+                        patchBuilder = { put("forceYouTubeRestricted", v) }
                     ) { it.copy(forceYouTubeRestricted = v) }
                 }
             )
             if (hasBrave) {
                 ShieldToggleRow(
-                    title = stringResource(R.string.browser_disable_brave_tor),
-                    subtitle = stringResource(R.string.browser_disable_brave_tor_desc),
-                    checked = cfg.disableBraveTor,
+                    title = stringResource(R.string.browser_disable_brave_vpn),
+                    subtitle = stringResource(R.string.browser_disable_brave_vpn_desc),
+                    checked = cfg.disableBraveVpn,
                     onCheckedChange = { v ->
                         updateConfig(
-                            context.getString(R.string.timelock_title_loosen_browser),
-                            context.getString(R.string.browser_disable_brave_tor)
-                        ) { it.copy(disableBraveTor = v) }
+                            title = context.getString(R.string.timelock_title_loosen_browser),
+                            description = context.getString(R.string.browser_disable_brave_vpn),
+                            dedupeKey = "browser_hardening:brave_vpn",
+                            patchBuilder = { put("disableBraveVpn", v) }
+                        ) { it.copy(disableBraveVpn = v) }
                     }
                 )
             }
@@ -321,8 +493,10 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockYouTubeShorts,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_block_yt_shorts)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_yt_shorts),
+                        dedupeKey = "browser_hardening:yt_shorts",
+                        patchBuilder = { put("blockYouTubeShorts", v) }
                     ) { it.copy(blockYouTubeShorts = v) }
                 }
             )
@@ -332,9 +506,24 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockInstagramReels,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_block_ig_reels)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_ig_reels),
+                        dedupeKey = "browser_hardening:ig_reels",
+                        patchBuilder = { put("blockInstagramReels", v) }
                     ) { it.copy(blockInstagramReels = v) }
+                }
+            )
+            ShieldToggleRow(
+                title = stringResource(R.string.browser_block_ig_explore),
+                subtitle = stringResource(R.string.browser_block_ig_explore_desc),
+                checked = cfg.blockInstagramExplore,
+                onCheckedChange = { v ->
+                    updateConfig(
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_ig_explore),
+                        dedupeKey = "browser_hardening:ig_explore",
+                        patchBuilder = { put("blockInstagramExplore", v) }
+                    ) { it.copy(blockInstagramExplore = v) }
                 }
             )
             ShieldToggleRow(
@@ -343,9 +532,24 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockFacebookReels,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_block_fb_reels)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_fb_reels),
+                        dedupeKey = "browser_hardening:fb_reels",
+                        patchBuilder = { put("blockFacebookReels", v) }
                     ) { it.copy(blockFacebookReels = v) }
+                }
+            )
+            ShieldToggleRow(
+                title = stringResource(R.string.browser_block_snap_spotlight),
+                subtitle = stringResource(R.string.browser_block_snap_spotlight_desc),
+                checked = cfg.blockSnapchatSpotlight,
+                onCheckedChange = { v ->
+                    updateConfig(
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_snap_spotlight),
+                        dedupeKey = "browser_hardening:snap_spotlight",
+                        patchBuilder = { put("blockSnapchatSpotlight", v) }
+                    ) { it.copy(blockSnapchatSpotlight = v) }
                 }
             )
             ShieldToggleRow(
@@ -354,8 +558,10 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockTikTok,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_block_tiktok)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_tiktok),
+                        dedupeKey = "browser_hardening:tiktok",
+                        patchBuilder = { put("blockTikTok", v) }
                     ) { it.copy(blockTikTok = v) }
                 }
             )
@@ -365,8 +571,10 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockAdultSites,
                 onCheckedChange = { v ->
                     updateConfig(
-                        context.getString(R.string.timelock_title_loosen_browser),
-                        context.getString(R.string.browser_block_adult_sites)
+                        title = context.getString(R.string.timelock_title_loosen_browser),
+                        description = context.getString(R.string.browser_block_adult_sites),
+                        dedupeKey = "browser_hardening:adult_sites",
+                        patchBuilder = { put("blockAdultSites", v) }
                     ) { it.copy(blockAdultSites = v) }
                 }
             )
@@ -407,8 +615,10 @@ fun BrowserHardeningScreen() {
                     trailingContent = {
                         IconButton(onClick = {
                             updateConfig(
-                                context.getString(R.string.timelock_title_unblock_url, urlRule),
-                                context.getString(R.string.browser_custom_urls)
+                                title = context.getString(R.string.timelock_title_unblock_url, urlRule),
+                                description = context.getString(R.string.browser_custom_urls),
+                                dedupeKey = "browser_hardening:url:$urlRule",
+                                patchBuilder = { put("removeCustomUrl", urlRule) }
                             ) { it.copy(customBlockedUrls = it.customBlockedUrls - urlRule) }
                         }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
@@ -422,28 +632,40 @@ fun BrowserHardeningScreen() {
 
     if (showAddUrlDialog) {
         var input by remember { mutableStateOf("") }
+        var showError by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showAddUrlDialog = false },
             title = { Text(stringResource(R.string.browser_add_url_title)) },
             text = {
                 OutlinedTextField(
                     value = input,
-                    onValueChange = { input = it },
+                    onValueChange = {
+                        input = it
+                        if (showError) showError = false
+                    },
                     label = { Text(stringResource(R.string.browser_add_url_hint)) },
                     singleLine = true,
+                    isError = showError,
+                    supportingText = if (showError) {
+                        { Text(stringResource(R.string.browser_invalid_url_error)) }
+                    } else null,
                     modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     val normalized = BrowserHardeningConfig.normalizeRule(input)
-                    if (normalized.isNotEmpty() && normalized.contains('.')) {
+                    if (normalized.isEmpty()) {
+                        showError = true
+                    } else {
                         updateConfig(
-                            context.getString(R.string.browser_add_url_title),
-                            normalized
+                            title = context.getString(R.string.browser_add_url_title),
+                            description = normalized,
+                            dedupeKey = "browser_hardening:add_url:$normalized",
+                            patchBuilder = {}
                         ) { it.copy(customBlockedUrls = it.customBlockedUrls + normalized) }
+                        showAddUrlDialog = false
                     }
-                    showAddUrlDialog = false
                 }) {
                     Text(stringResource(R.string.confirm))
                 }
@@ -456,5 +678,73 @@ fun BrowserHardeningScreen() {
         )
     }
 
+    if (showCustomDnsDialog) {
+        var input by remember { mutableStateOf(cfg.familyDnsTemplate) }
+        var showError by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showCustomDnsDialog = false },
+            title = { Text(stringResource(R.string.browser_family_dns_custom_dialog_title)) },
+            text = {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = {
+                        input = it
+                        if (showError) showError = false
+                    },
+                    label = { Text(stringResource(R.string.browser_family_dns_custom_hint)) },
+                    singleLine = true,
+                    isError = showError,
+                    supportingText = if (showError) {
+                        { Text(stringResource(R.string.browser_invalid_doh_error)) }
+                    } else null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val clean = input.trim()
+                    if (!clean.startsWith("https://", ignoreCase = true) ||
+                        !clean.contains('.') ||
+                        clean.any { it.isWhitespace() }
+                    ) {
+                        showError = true
+                    } else {
+                        updateConfig(
+                            title = context.getString(R.string.timelock_title_loosen_browser),
+                            description = clean,
+                            dedupeKey = "browser_hardening:family_dns_template",
+                            patchBuilder = { put("familyDnsTemplate", clean) }
+                        ) { it.copy(familyDnsTemplate = clean) }
+                        showCustomDnsDialog = false
+                    }
+                }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomDnsDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     TimelockGateDialog(gate)
+}
+
+@Composable
+internal fun ShieldToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        trailingContent = {
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
+    )
+    HorizontalDivider()
 }

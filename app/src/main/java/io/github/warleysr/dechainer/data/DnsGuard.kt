@@ -57,11 +57,11 @@ object DnsGuard {
         { r -> Thread(r, "dns-guard").apply { isDaemon = true } }
     )
     private val probePool = ThreadPoolExecutor(
-        0, 5,
+        5, 5,
         10L, TimeUnit.SECONDS,
         LinkedBlockingQueue(),
         { r -> Thread(r, "dns-probe").apply { isDaemon = true } }
-    )
+    ).apply { allowCoreThreadTimeOut(true) }
     private val stateLock = Any()
 
     @Volatile
@@ -118,22 +118,29 @@ object DnsGuard {
      * IPv6 route), then falls back to system DNS resolution for [host].
      */
     fun canReachDoT(host: String): Boolean {
-        val addresses = LinkedHashSet<InetAddress>()
+        val bootstrapAddresses = LinkedHashSet<InetAddress>()
         DnsFailoverRule.bootstrapIpsFor(host).forEach { ip ->
             runCatching {
                 val raw = InetAddress.getByName(ip).address
                 // Bind the TLS peer hostname to the bootstrap IP bytes so HTTPS hostname
                 // verification checks the provider's hostname, not the numeric IP string.
-                addresses += InetAddress.getByAddress(host, raw)
+                bootstrapAddresses += InetAddress.getByAddress(host, raw)
             }
         }
+        if (probeDotAddresses(host, bootstrapAddresses)) return true
+
+        val resolvedAddresses = LinkedHashSet<InetAddress>()
         runCatching {
             InetAddress.getAllByName(host).forEach { resolved ->
-                addresses += InetAddress.getByAddress(host, resolved.address)
+                val wrapped = InetAddress.getByAddress(host, resolved.address)
+                if (wrapped !in bootstrapAddresses) resolvedAddresses += wrapped
             }
         }
-        if (addresses.isEmpty()) return false
+        return probeDotAddresses(host, resolvedAddresses)
+    }
 
+    private fun probeDotAddresses(host: String, addresses: Set<InetAddress>): Boolean {
+        if (addresses.isEmpty()) return false
         val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
         for (addr in addresses) {
             try {
@@ -293,6 +300,7 @@ object DnsGuard {
             }
         }
 
+        val currentPinned = pinnedHost(ctx)
         val netHandle = activeValidatedNetworkHandle(ctx)
         val now = SystemClock.elapsedRealtime()
         if (!DnsFailoverRule.shouldProbeNow(
@@ -301,13 +309,13 @@ object DnsGuard {
                 currentNetworkId = netHandle,
                 lastVerifiedNetworkId = lastVerifiedNetworkId,
                 lastVerifiedHost = lastVerifiedHost,
-                pinnedHost = pinned,
+                pinnedHost = currentPinned,
                 lastProbeElapsedMs = lastProbeElapsedMs,
                 nowElapsedMs = now
             )
         ) {
             _status.value = _status.value.copy(
-                activeHost = DeviceOwnerRepository.getPrivateDNS() ?: pinned,
+                activeHost = DeviceOwnerRepository.getPrivateDNS() ?: currentPinned,
                 autoFailover = auto,
                 checking = false
             )
@@ -315,13 +323,13 @@ object DnsGuard {
         }
 
         lastProbeElapsedMs = now
-        if (pinned != null && canReachDoT(pinned)) {
+        if (currentPinned != null && canReachDoT(currentPinned)) {
             lastVerifiedNetworkId = netHandle
-            lastVerifiedHost = pinned
+            lastVerifiedHost = currentPinned
             _status.value = DnsStatus(
-                activeHost = pinned,
+                activeHost = currentPinned,
                 autoFailover = auto,
-                reachable = _status.value.reachable + (pinned to true),
+                reachable = _status.value.reachable + (currentPinned to true),
                 checking = false
             )
             return
@@ -329,9 +337,9 @@ object DnsGuard {
 
         _status.value = _status.value.copy(checking = true)
         val reachability = probeAllCleanServers()
-        val chosen = DnsFailoverRule.chooseServer(pinned, autoFailover = true, reachability = reachability)
-        var active = DeviceOwnerRepository.getPrivateDNS() ?: pinned
-        if (chosen != null && (chosen != pinned || needsRestore(chosen, active))) {
+        val chosen = DnsFailoverRule.chooseServer(currentPinned, autoFailover = true, reachability = reachability)
+        var active = DeviceOwnerRepository.getPrivateDNS() ?: currentPinned
+        if (chosen != null && (chosen != currentPinned || needsRestore(chosen, active))) {
             val result = DeviceOwnerRepository.applyPrivateDnsHostOnly(chosen)
             if (result == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR) {
                 Timber.i("DNS guard auto-switched to working clean server %s", chosen)
@@ -355,9 +363,11 @@ object DnsGuard {
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         val net = cm?.activeNetwork
         val caps = if (net != null) cm.getNetworkCapabilities(net) else null
+        // Do NOT require NET_CAPABILITY_VALIDATED: broken Private DNS itself prevents Android
+        // NetworkMonitor from marking the network validated, which would deadlock auto-failover.
         if (net != null && caps != null &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
         ) net.networkHandle else null
     } catch (_: Exception) {
         null
@@ -373,7 +383,6 @@ object DnsGuard {
         val ctx = context.applicationContext
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
-                if (io.github.warleysr.dechainer.vpn.LocalDnsShieldManager.getConfig(ctx).enabled) return
                 enforce(ctx)
             }
         }
@@ -391,9 +400,15 @@ object DnsGuard {
         try {
             val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    if (isAutoFailover(ctx) || pinnedHost(ctx) != null) {
+                        enforce(ctx)
+                    }
+                }
+
                 override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
                     if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED) &&
                         (isAutoFailover(ctx) || pinnedHost(ctx) != null)
                     ) {
                         enforce(ctx)

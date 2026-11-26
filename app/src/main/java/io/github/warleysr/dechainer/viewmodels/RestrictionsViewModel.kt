@@ -1,8 +1,11 @@
 package io.github.warleysr.dechainer.viewmodels
 
+import android.content.Context
+import android.os.UserManager
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import io.github.warleysr.dechainer.data.DeviceAdmin
+import io.github.warleysr.dechainer.data.InstallRestrictionCoordinator
 import io.github.warleysr.dechainer.data.SystemRestrictions
 import timber.log.Timber
 
@@ -29,6 +32,8 @@ class RestrictionsViewModel : ViewModel() {
     fun loadRestrictions() {
         if (!dpm.isDeviceOwnerApp(adminName.packageName)) return
         val currentRestrictions = dpm.getUserRestrictions(adminName)
+        draftRestrictions.clear()
+        appliedRestrictions.clear()
         allKeys.forEach { key ->
             val isEnabled = currentRestrictions.getBoolean(key)
             draftRestrictions[key] = isEnabled
@@ -75,11 +80,14 @@ class RestrictionsViewModel : ViewModel() {
             }
     }
 
-    fun addRestrictions(keys: List<String>) {
+    fun addRestrictions(context: Context, keys: List<String>) {
         if (!dpm.isDeviceOwnerApp(adminName.packageName)) return
         keys.forEach { key ->
             runCatching { dpm.addUserRestriction(adminName, key) }
                 .onFailure { Timber.w(it, "Failed to add restriction $key") }
+        }
+        if (UserManager.DISALLOW_INSTALL_APPS in keys) {
+            InstallRestrictionCoordinator.setUserBaseline(context, true)
         }
         loadRestrictions()
     }

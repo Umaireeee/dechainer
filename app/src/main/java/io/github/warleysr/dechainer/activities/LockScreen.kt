@@ -152,6 +152,7 @@ fun LockScreen(isOwner: Boolean, onAuthenticated: () -> Unit) {
             delay(1.seconds)
             impulseRemaining = SecurityManager.getImpulseBlockRemainingTime(context)
         }
+        io.github.warleysr.dechainer.DechainerAccessibilityService.releaseImpulseSuspensionIfExpired(context)
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {

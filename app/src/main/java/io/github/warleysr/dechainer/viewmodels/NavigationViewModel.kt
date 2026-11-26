@@ -16,6 +16,7 @@ class NavigationViewModel : ViewModel() {
     fun selectedTab() = stack.lastOrNull() ?: "apps"
 
     fun navigateTo(screen: String) {
+        if (stack.lastOrNull() == screen) return
         if (screen in listOf("apps", "schedule", "config", "suspension_logs")) {
             stack.clear()
         }

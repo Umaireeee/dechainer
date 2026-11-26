@@ -13,10 +13,10 @@ sealed interface CountdownStatus {
  * Tamper-resistant dual-clock countdown that survives reboots.
  *
  * Within the same boot (`!rebooted`), progress is measured strictly via monotonic
- * `elapsedRealtime()`, making it immune to wall-clock manipulation. Across reboots, progress is
- * derived from `rtc` delta clamped to `[0, maxRebootAdvanceMs]` (or post-reboot `elapsed` if
- * larger, up to `maxOf(elapsed, maxRebootAdvanceMs)`), so a user cannot fast-forward a 7-day
- * countdown by rolling the system clock forward and rebooting.
+ * `elapsedRealtime()`, making it immune to wall-clock manipulation. Across reboots, forward RTC
+ * jumps are capped both per-reboot ([maxRebootAdvanceMs]) AND across the entire lifetime of the
+ * countdown ([MAX_TOTAL_REBOOT_CREDIT_MS]), so repeated clock-forward + reboot cycles cannot
+ * fast-forward a 7-day timelock.
  */
 data class CountdownState(
     val durationMs: Long,
@@ -26,7 +26,8 @@ data class CountdownState(
     val lastSyncRtcMs: Long,
     val lastSyncElapsedMs: Long,
     val lastBootCount: Int = -1,
-    val isReady: Boolean = false
+    val isReady: Boolean = false,
+    val rebootRtcCreditedMs: Long = 0L
 ) {
     fun advance(
         nowRtc: Long,
@@ -37,12 +38,16 @@ data class CountdownState(
         val rebooted = (lastBootCount != -1 && currentBootCount != -1 && currentBootCount != lastBootCount) ||
             nowElapsed < lastSyncElapsedMs
 
+        var nextRebootCredit = rebootRtcCreditedMs
         val delta = if (!rebooted) {
             (nowElapsed - lastSyncElapsedMs).coerceAtLeast(0L)
         } else {
             val safeElapsed = nowElapsed.coerceAtLeast(0L)
-            val rtcDelta = (nowRtc - lastSyncRtcMs).coerceIn(0L, maxRebootAdvanceMs)
-            maxOf(safeElapsed, rtcDelta).coerceAtMost(maxOf(safeElapsed, maxRebootAdvanceMs))
+            val remainingBudget = (MAX_TOTAL_REBOOT_CREDIT_MS - rebootRtcCreditedMs).coerceAtLeast(0L)
+            val effectiveCap = minOf(maxRebootAdvanceMs, remainingBudget)
+            val rtcDelta = (nowRtc - lastSyncRtcMs).coerceIn(0L, effectiveCap)
+            nextRebootCredit = (rebootRtcCreditedMs + rtcDelta).coerceAtMost(MAX_TOTAL_REBOOT_CREDIT_MS)
+            maxOf(safeElapsed, rtcDelta)
         }
 
         var nextAcc = accumulatedMs
@@ -67,7 +72,8 @@ data class CountdownState(
             lastSyncRtcMs = nowRtc,
             lastSyncElapsedMs = nowElapsed,
             lastBootCount = currentBootCount,
-            isReady = nextReady
+            isReady = nextReady,
+            rebootRtcCreditedMs = nextRebootCredit
         )
     }
 
@@ -89,12 +95,14 @@ data class CountdownState(
         put("lastSyncElapsedMs", lastSyncElapsedMs)
         put("lastBootCount", lastBootCount)
         put("isReady", isReady)
+        put("rebootRtcCreditedMs", rebootRtcCreditedMs)
     }
 
     companion object {
         const val SEVEN_DAYS_MS = 7L * 24L * 60L * 60L * 1000L
         const val TWENTY_FOUR_HOURS_MS = 24L * 60L * 60L * 1000L
         const val MAX_REBOOT_ADVANCE_MS = 24L * 60L * 60L * 1000L
+        const val MAX_TOTAL_REBOOT_CREDIT_MS = 24L * 60L * 60L * 1000L
 
         fun start(
             durationMs: Long = SEVEN_DAYS_MS,
@@ -110,7 +118,8 @@ data class CountdownState(
             lastSyncRtcMs = nowRtc,
             lastSyncElapsedMs = nowElapsed,
             lastBootCount = bootCount,
-            isReady = false
+            isReady = false,
+            rebootRtcCreditedMs = 0L
         )
 
         fun fromJson(obj: JSONObject): CountdownState = CountdownState(
@@ -121,7 +130,8 @@ data class CountdownState(
             lastSyncRtcMs = obj.optLong("lastSyncRtcMs", 0L),
             lastSyncElapsedMs = obj.optLong("lastSyncElapsedMs", 0L),
             lastBootCount = obj.optInt("lastBootCount", -1),
-            isReady = obj.optBoolean("isReady", false)
+            isReady = obj.optBoolean("isReady", false),
+            rebootRtcCreditedMs = obj.optLong("rebootRtcCreditedMs", 0L).coerceAtLeast(0L)
         )
     }
 }
