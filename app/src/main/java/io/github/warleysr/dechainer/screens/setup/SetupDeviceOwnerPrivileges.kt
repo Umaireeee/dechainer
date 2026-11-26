@@ -25,15 +25,15 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
     var commandResult by remember { mutableStateOf<String?>(null) }
     val gate = rememberTimelockGate()
 
-    LaunchedEffect(Unit) {
-        while (true) {
+    LaunchedEffect(viewModel.isDeviceOwner()) {
+        while (!viewModel.isDeviceOwner() && (!shizukuInstalled || !shizukuRunning)) {
             if (!shizukuInstalled)
                 shizukuInstalled = viewModel.isShizukuInstalled()
 
             if (shizukuInstalled && !shizukuRunning)
                 shizukuRunning = Shizuku.pingBinder()
 
-            delay(500)
+            delay(1000)
         }
     }
 

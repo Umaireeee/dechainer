@@ -41,6 +41,7 @@ import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.PlayStoreUpdateConfig
 import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
+import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
@@ -61,21 +62,34 @@ fun PlayStoreUpdatesScreen() {
     val status by PlayStoreUpdateManager.status.collectAsState()
     val cfg = status.config
     val accessibilityRunning = DechainerAccessibilityService.isRunning
+    val undoMsg = stringResource(R.string.restriction_pending)
+    val undoLabel = stringResource(R.string.undo)
 
     LaunchedEffect(Unit) {
         PlayStoreUpdateManager.refreshStatus(context)
     }
 
-    fun updateConfig(next: PlayStoreUpdateConfig, title: String, description: String) {
-        val loosening = next.isLooserThan(cfg)
-        gate.change(
-            loosening = loosening,
-            title = title,
-            description = description,
-            dedupeKey = "play_store_update_policy",
-            pendingAction = PendingAction.UpdatePlayStorePolicy(next.toJsonString()),
-            onTighten = { PlayStoreUpdateManager.applyConfig(context, next) }
-        )
+    fun updateConfig(title: String, description: String, transform: (PlayStoreUpdateConfig) -> PlayStoreUpdateConfig) {
+        val prev = PlayStoreUpdateManager.getConfig(context)
+        val next = transform(prev)
+        if (next == prev) return
+        if (next.isLooserThan(prev)) {
+            gate.requestUnlock(
+                title = title,
+                description = description,
+                dedupeKey = "play_store_update_policy",
+                pendingAction = PendingAction.UpdatePlayStorePolicy(next.toJsonString())
+            )
+        } else {
+            PlayStoreUpdateManager.applyConfig(context, next)
+            if (prev.blockPlayStoreUi || prev.silentAutoUpdateEnabled ||
+                next.blockPlayStoreUi || next.silentAutoUpdateEnabled
+            ) {
+                PendingChange.offerUndo(undoMsg, undoLabel) {
+                    PlayStoreUpdateManager.applyConfig(context, prev)
+                }
+            }
+        }
     }
 
     LazyColumn(
@@ -236,10 +250,9 @@ fun PlayStoreUpdatesScreen() {
                 checked = cfg.blockPlayStoreUi,
                 onCheckedChange = { enable ->
                     updateConfig(
-                        cfg.copy(blockPlayStoreUi = enable),
                         context.getString(R.string.timelock_title_disable_play_ui_block),
                         context.getString(R.string.play_updates_block_ui_title)
-                    )
+                    ) { it.copy(blockPlayStoreUi = enable) }
                 }
             )
             ShieldToggleRow(
@@ -248,10 +261,9 @@ fun PlayStoreUpdatesScreen() {
                 checked = cfg.silentAutoUpdateEnabled,
                 onCheckedChange = { enable ->
                     updateConfig(
-                        cfg.copy(silentAutoUpdateEnabled = enable),
                         context.getString(R.string.timelock_title_loosen_play_updates),
                         context.getString(R.string.play_updates_silent_window_title)
-                    )
+                    ) { it.copy(silentAutoUpdateEnabled = enable) }
                 }
             )
         }
@@ -264,10 +276,9 @@ fun PlayStoreUpdatesScreen() {
                     checked = cfg.screenOffOnly,
                     onCheckedChange = { requireScreenOff ->
                         updateConfig(
-                            cfg.copy(screenOffOnly = requireScreenOff),
                             context.getString(R.string.timelock_title_loosen_play_updates),
                             context.getString(R.string.play_updates_screen_off_title)
-                        )
+                        ) { it.copy(screenOffOnly = requireScreenOff) }
                     }
                 )
             }
@@ -295,10 +306,9 @@ fun PlayStoreUpdatesScreen() {
                             onClick = {
                                 if (!selected) {
                                     updateConfig(
-                                        cfg.copy(windowStartMinute = startMin, windowEndMinute = endMin),
                                         context.getString(R.string.timelock_title_loosen_play_updates),
                                         label
-                                    )
+                                    ) { it.copy(windowStartMinute = startMin, windowEndMinute = endMin) }
                                 }
                             },
                             label = { Text(label) }

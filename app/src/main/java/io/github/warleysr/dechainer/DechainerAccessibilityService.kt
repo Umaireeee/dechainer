@@ -83,6 +83,10 @@ class DechainerAccessibilityService : AccessibilityService() {
     private lateinit var timeWindowPrefs: SharedPreferences
     private lateinit var groupsPrefs: SharedPreferences
     private lateinit var securityPrefs: SharedPreferences
+    private lateinit var activityBlockerPrefs: SharedPreferences
+
+    @Volatile
+    private var cachedBlockedActivities: Set<String> = emptySet()
 
     private var receiversRegistered = false
     private var debugReceiver: BroadcastReceiver? = null
@@ -179,6 +183,11 @@ class DechainerAccessibilityService : AccessibilityService() {
                 ) {
                     syncImpulseSuspension()
                 }
+            }
+
+            activityBlockerPrefs -> {
+                cachedBlockedActivities = activityBlockerPrefs.getStringSet("blocked_activities", emptySet())
+                    ?.toSet().orEmpty()
             }
         }
     }
@@ -317,12 +326,16 @@ class DechainerAccessibilityService : AccessibilityService() {
         timeWindowPrefs = getSharedPreferences(AppTimeWindows.PREFS_NAME, MODE_PRIVATE)
         groupsPrefs = getSharedPreferences(AppGroupRepository.PREFS_NAME, MODE_PRIVATE)
         securityPrefs = getSharedPreferences("security_prefs", MODE_PRIVATE)
+        activityBlockerPrefs = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
+        cachedBlockedActivities = activityBlockerPrefs.getStringSet("blocked_activities", emptySet())
+            ?.toSet().orEmpty()
 
         limitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         weeklyLimitPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         timeWindowPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         groupsPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         securityPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        activityBlockerPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
 
         synchronized(SuspensionCoordinator.lock) {
             val blockHeld = BlockSuspensionManager.heldPackages(applicationContext)
@@ -341,6 +354,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         syncImpulseSuspension()
         // DowntimeManager.sync also reconciles BlockSuspensionManager.
         DowntimeManager.sync(applicationContext)
+        PlayStoreUpdateManager.sync(applicationContext)
 
         val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(this, DechainerDeviceAdminReceiver::class.java)
@@ -402,6 +416,7 @@ class DechainerAccessibilityService : AccessibilityService() {
         if (::timeWindowPrefs.isInitialized) timeWindowPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         if (::groupsPrefs.isInitialized) groupsPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         if (::securityPrefs.isInitialized) securityPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        if (::activityBlockerPrefs.isInitialized) activityBlockerPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
 
         impulseReleaseRunnable?.let { handler.removeCallbacks(it) }
         impulseReleaseRunnable = null
@@ -517,15 +532,17 @@ class DechainerAccessibilityService : AccessibilityService() {
         // Every screen is logged, not only classes named "...Activity": Settings pages are often
         // "...SubSettings", so the blocker has to see them too.
         addLog(newPackage, className)
-        val blockedActivities = getSharedPreferences("activity_blocker_prefs", MODE_PRIVATE)
-            .getStringSet("blocked_activities", emptySet()) ?: emptySet()
-
-        if (blockedActivities.contains(className))
+        if (cachedBlockedActivities.contains(className))
             performGlobalAction(GLOBAL_ACTION_BACK)
     }
 
     /** Enforces schedules/exhausted limits on secondary visible windows (split-screen / PiP). */
     private fun enforceSplitScreenWindows() {
+        if (!PlayStoreUpdateManager.isBlockUiEnabledCached(applicationContext) &&
+            getControlledPackages().isEmpty()
+        ) {
+            return
+        }
         val visible = runCatching {
             windows.orEmpty()
                 .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }

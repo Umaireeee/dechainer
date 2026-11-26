@@ -82,16 +82,30 @@ fun BrowserHardeningScreen() {
     val activeUnmanaged = browsers.filter { !it.isManaged && !it.isSuspended && !it.isHidden }
     val hasBrave = managedBrowsers.any { it.isBrave }
 
-    fun updateConfig(next: BrowserHardeningConfig, title: String, description: String) {
-        val loosening = next.isLooserThan(cfg)
-        gate.change(
-            loosening = loosening,
-            title = title,
-            description = description,
-            dedupeKey = "browser_hardening",
-            pendingAction = PendingAction.UpdateBrowserHardening(next.toJsonString()),
-            onTighten = { BrowserHardeningManager.applyConfig(context, next) }
-        )
+    val undoMsg = stringResource(R.string.restriction_pending)
+    val undoLabel = stringResource(R.string.undo)
+
+    fun updateConfig(title: String, description: String, transform: (BrowserHardeningConfig) -> BrowserHardeningConfig) {
+        val prev = BrowserHardeningManager.getConfig(context)
+        val next = transform(prev)
+        if (next == prev) return
+        if (next.isLooserThan(prev)) {
+            gate.requestUnlock(
+                title = title,
+                description = description,
+                dedupeKey = "browser_hardening",
+                pendingAction = PendingAction.UpdateBrowserHardening(next.toJsonString())
+            )
+        } else {
+            BrowserHardeningManager.applyConfig(context, next)
+            refreshBrowsers()
+            if (prev.enabled || next.enabled) {
+                PendingChange.offerUndo(undoMsg, undoLabel) {
+                    BrowserHardeningManager.applyConfig(context, prev)
+                    refreshBrowsers()
+                }
+            }
+        }
     }
 
     LazyColumn(
@@ -124,12 +138,31 @@ fun BrowserHardeningScreen() {
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    val names = managedBrowsers.joinToString(", ") { it.label }
+                    val names = managedBrowsers.joinToString(", ") { b ->
+                        if (cfg.enabled || b.appliedPolicyCount > 0) "${b.label} (${b.appliedPolicyCount})"
+                        else b.label
+                    }
                     Text(
                         if (names.isNotEmpty()) stringResource(R.string.browser_hardening_detected, names)
                         else stringResource(R.string.browser_hardening_none_detected),
                         style = MaterialTheme.typography.labelLarge
                     )
+                    if (managedBrowsers.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            stringResource(R.string.browser_hardening_restart_note),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (cfg.enabled) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = {
+                                BrowserHardeningManager.reapplyNow(context)
+                                refreshBrowsers()
+                            }) {
+                                Text(stringResource(R.string.browser_hardening_reapply_btn))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -193,10 +226,9 @@ fun BrowserHardeningScreen() {
                         checked = cfg.enabled,
                         onCheckedChange = { enable ->
                             updateConfig(
-                                cfg.copy(enabled = enable),
                                 context.getString(R.string.timelock_title_disable_browser_hardening),
                                 context.getString(R.string.browser_hardening_title)
-                            )
+                            ) { it.copy(enabled = enable) }
                         }
                     )
                 }
@@ -220,10 +252,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.disableIncognito,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(disableIncognito = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_disable_incognito)
-                    )
+                    ) { it.copy(disableIncognito = v) }
                 }
             )
             ShieldToggleRow(
@@ -232,10 +263,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.disableDoH,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(disableDoH = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_disable_doh)
-                    )
+                    ) { it.copy(disableDoH = v) }
                 }
             )
             ShieldToggleRow(
@@ -244,10 +274,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.forceSafeSearch,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(forceSafeSearch = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_force_safesearch)
-                    )
+                    ) { it.copy(forceSafeSearch = v) }
                 }
             )
             ShieldToggleRow(
@@ -256,10 +285,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.forceYouTubeRestricted,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(forceYouTubeRestricted = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_force_youtube_restricted)
-                    )
+                    ) { it.copy(forceYouTubeRestricted = v) }
                 }
             )
             if (hasBrave) {
@@ -269,10 +297,9 @@ fun BrowserHardeningScreen() {
                     checked = cfg.disableBraveTor,
                     onCheckedChange = { v ->
                         updateConfig(
-                            cfg.copy(disableBraveTor = v),
                             context.getString(R.string.timelock_title_loosen_browser),
                             context.getString(R.string.browser_disable_brave_tor)
-                        )
+                        ) { it.copy(disableBraveTor = v) }
                     }
                 )
             }
@@ -294,10 +321,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockYouTubeShorts,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockYouTubeShorts = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_block_yt_shorts)
-                    )
+                    ) { it.copy(blockYouTubeShorts = v) }
                 }
             )
             ShieldToggleRow(
@@ -306,10 +332,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockInstagramReels,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockInstagramReels = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_block_ig_reels)
-                    )
+                    ) { it.copy(blockInstagramReels = v) }
                 }
             )
             ShieldToggleRow(
@@ -318,10 +343,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockFacebookReels,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockFacebookReels = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_block_fb_reels)
-                    )
+                    ) { it.copy(blockFacebookReels = v) }
                 }
             )
             ShieldToggleRow(
@@ -330,10 +354,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockTikTok,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockTikTok = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_block_tiktok)
-                    )
+                    ) { it.copy(blockTikTok = v) }
                 }
             )
             ShieldToggleRow(
@@ -342,10 +365,9 @@ fun BrowserHardeningScreen() {
                 checked = cfg.blockAdultSites,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockAdultSites = v),
                         context.getString(R.string.timelock_title_loosen_browser),
                         context.getString(R.string.browser_block_adult_sites)
-                    )
+                    ) { it.copy(blockAdultSites = v) }
                 }
             )
         }
@@ -385,10 +407,9 @@ fun BrowserHardeningScreen() {
                     trailingContent = {
                         IconButton(onClick = {
                             updateConfig(
-                                cfg.copy(customBlockedUrls = cfg.customBlockedUrls - urlRule),
                                 context.getString(R.string.timelock_title_unblock_url, urlRule),
                                 context.getString(R.string.browser_custom_urls)
-                            )
+                            ) { it.copy(customBlockedUrls = it.customBlockedUrls - urlRule) }
                         }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
                         }
@@ -418,10 +439,9 @@ fun BrowserHardeningScreen() {
                     val normalized = BrowserHardeningConfig.normalizeRule(input)
                     if (normalized.isNotEmpty() && normalized.contains('.')) {
                         updateConfig(
-                            cfg.copy(customBlockedUrls = cfg.customBlockedUrls + normalized),
                             context.getString(R.string.browser_add_url_title),
                             normalized
-                        )
+                        ) { it.copy(customBlockedUrls = it.customBlockedUrls + normalized) }
                     }
                     showAddUrlDialog = false
                 }) {

@@ -48,6 +48,29 @@ object PendingChange {
             }
         }
     }
+
+    /**
+     * Offers a 5-second undo snackbar for a change that was already committed immediately,
+     * rolling back via [onUndo] only if the user explicitly taps undo.
+     */
+    fun offerUndo(message: String, undoLabel: String, onUndo: () -> Unit) {
+        activeJob?.cancel()
+        val displaced = activeAction
+        activeJob = null
+        activeAction = null
+        snackbarHost.currentSnackbarData?.dismiss()
+        displaced?.invoke()
+
+        activeJob = scope.launch {
+            val result = withTimeoutOrNull(UNDO_WINDOW_MS) {
+                snackbarHost.showSnackbar(message, undoLabel, duration = SnackbarDuration.Indefinite)
+            }
+            activeJob = null
+            if (result == SnackbarResult.ActionPerformed) {
+                onUndo()
+            }
+        }
+    }
 }
 
 // 0 means "no limit".

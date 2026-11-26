@@ -68,7 +68,8 @@ fun PendingUnlocksScreen(
     val requests by TimelockManager.requests.collectAsState()
     var challengingRequest by remember { mutableStateOf<PendingUnlockRequest?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(requests.isNotEmpty()) {
+        if (requests.isEmpty()) return@LaunchedEffect
         while (true) {
             TimelockManager.syncAll(context)
             delay(30_000L)

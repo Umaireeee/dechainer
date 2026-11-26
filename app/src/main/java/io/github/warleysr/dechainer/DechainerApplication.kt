@@ -62,11 +62,10 @@ class DechainerApplication : Application() {
                     PlayStoreUpdateManager.onPackageChanged(this@DechainerApplication, pkg)
                 }
             }
-            applicationScope.launch {
-                AppRepository.getApps()
-                if (intent?.action == Intent.ACTION_PACKAGE_ADDED ||
-                    intent?.action == Intent.ACTION_PACKAGE_REPLACED
-                ) {
+            if (intent?.action == Intent.ACTION_PACKAGE_ADDED ||
+                intent?.action == Intent.ACTION_PACKAGE_REPLACED
+            ) {
+                applicationScope.launch {
                     BrowserHardeningManager.reapplyIfEnabled(this@DechainerApplication)
                 }
             }
@@ -123,10 +122,6 @@ class DechainerApplication : Application() {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         })
-
-        applicationScope.launch {
-            AppRepository.getApps()
-        }
 
         applicationScope.launch {
             DeviceOwnerRepository.restoreStuckUserSetupComplete()

@@ -119,16 +119,20 @@ fun ConfigTab(
     }
 
     var forcedRemovalStatus by remember { mutableStateOf(SecurityManager.getForcedRemovalStatus(context)) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(forcedRemovalStatus != null) {
+        if (forcedRemovalStatus == null) return@LaunchedEffect
         while (true) {
-            forcedRemovalStatus = SecurityManager.getForcedRemovalStatus(context)
             kotlinx.coroutines.delay(60000.milliseconds)
+            forcedRemovalStatus = SecurityManager.getForcedRemovalStatus(context)
         }
     }
 
     val dnsStatus by DnsGuard.status.collectAsState()
-    LaunchedEffect(viewModel.isDeviceOwner()) {
-        if (viewModel.isDeviceOwner()) {
+    LaunchedEffect(viewModel.isDeviceOwner(), localDnsStatus.config.enabled) {
+        if (viewModel.isDeviceOwner() &&
+            !localDnsStatus.config.enabled &&
+            (DnsGuard.pinnedHost(context) != null || DnsGuard.isAutoFailover(context))
+        ) {
             DnsGuard.refreshReachabilityAsync(context)
         }
     }

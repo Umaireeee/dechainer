@@ -45,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
@@ -63,17 +64,28 @@ fun LocalDnsShieldScreen() {
     }
 
     val cfg = status.config
+    val undoMsg = stringResource(R.string.restriction_pending)
+    val undoLabel = stringResource(R.string.undo)
 
-    fun updateConfig(next: LocalDnsConfig, title: String, description: String) {
-        val loosening = next.isLooserThan(cfg)
-        gate.change(
-            loosening = loosening,
-            title = title,
-            description = description,
-            dedupeKey = "local_dns_shield",
-            pendingAction = PendingAction.UpdateLocalDnsShield(next.toJsonString()),
-            onTighten = { LocalDnsShieldManager.applyConfig(context, next) }
-        )
+    fun updateConfig(title: String, description: String, transform: (LocalDnsConfig) -> LocalDnsConfig) {
+        val prev = LocalDnsShieldManager.getConfig(context)
+        val next = transform(prev)
+        if (next == prev) return
+        if (next.isLooserThan(prev)) {
+            gate.requestUnlock(
+                title = title,
+                description = description,
+                dedupeKey = "local_dns_shield",
+                pendingAction = PendingAction.UpdateLocalDnsShield(next.toJsonString())
+            )
+        } else {
+            LocalDnsShieldManager.applyConfig(context, next)
+            if (prev.enabled || next.enabled) {
+                PendingChange.offerUndo(undoMsg, undoLabel) {
+                    LocalDnsShieldManager.applyConfig(context, prev)
+                }
+            }
+        }
     }
 
     LazyColumn(
@@ -135,6 +147,14 @@ fun LocalDnsShieldScreen() {
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    status.lastError?.let { err ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
@@ -148,10 +168,9 @@ fun LocalDnsShieldScreen() {
                         checked = cfg.enabled,
                         onCheckedChange = { enable ->
                             updateConfig(
-                                next = cfg.copy(enabled = enable),
                                 title = context.getString(R.string.timelock_title_disable_dns_shield),
                                 description = context.getString(R.string.dns_shield_title)
-                            )
+                            ) { it.copy(enabled = enable) }
                         }
                     )
                 }
@@ -175,10 +194,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.blockAdultDomains,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockAdultDomains = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_adult_domains)
-                    )
+                    ) { it.copy(blockAdultDomains = v) }
                 }
             )
             ShieldToggleRow(
@@ -187,10 +205,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.blockAdultKeywords,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockAdultKeywords = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_adult_keywords)
-                    )
+                    ) { it.copy(blockAdultKeywords = v) }
                 }
             )
             ShieldToggleRow(
@@ -199,10 +216,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.forceSafeSearch,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(forceSafeSearch = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_safesearch)
-                    )
+                    ) { it.copy(forceSafeSearch = v) }
                 }
             )
             ShieldToggleRow(
@@ -211,10 +227,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.forceYouTubeRestricted,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(forceYouTubeRestricted = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_youtube_restricted)
-                    )
+                    ) { it.copy(forceYouTubeRestricted = v) }
                 }
             )
             ShieldToggleRow(
@@ -223,10 +238,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.blockDoHBypass,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockDoHBypass = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_block_doh)
-                    )
+                    ) { it.copy(blockDoHBypass = v) }
                 }
             )
             ShieldToggleRow(
@@ -235,10 +249,9 @@ fun LocalDnsShieldScreen() {
                 checked = cfg.blockTikTok,
                 onCheckedChange = { v ->
                     updateConfig(
-                        cfg.copy(blockTikTok = v),
                         context.getString(R.string.timelock_title_loosen_dns_shield),
                         context.getString(R.string.dns_shield_block_tiktok)
-                    )
+                    ) { it.copy(blockTikTok = v) }
                 }
             )
         }
@@ -278,10 +291,9 @@ fun LocalDnsShieldScreen() {
                     trailingContent = {
                         IconButton(onClick = {
                             updateConfig(
-                                cfg.copy(customBlockedDomains = cfg.customBlockedDomains - domain),
                                 context.getString(R.string.timelock_title_unblock_domain, domain),
                                 context.getString(R.string.dns_shield_custom_domains)
-                            )
+                            ) { it.copy(customBlockedDomains = it.customBlockedDomains - domain) }
                         }) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.remove))
                         }
@@ -328,10 +340,9 @@ fun LocalDnsShieldScreen() {
                     val normalized = LocalDnsConfig.normalizeDomain(input)
                     if (normalized.contains('.') && normalized.length >= 3) {
                         updateConfig(
-                            cfg.copy(customBlockedDomains = cfg.customBlockedDomains + normalized),
                             context.getString(R.string.dns_shield_add_domain_title),
                             normalized
-                        )
+                        ) { it.copy(customBlockedDomains = it.customBlockedDomains + normalized) }
                     }
                     showAddDomainDialog = false
                 }) {

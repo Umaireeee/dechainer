@@ -8,7 +8,26 @@ import org.junit.Test
 class LocalDnsBlocklistTest {
 
     private val sampleAdultSet = setOf("pornhub.com", "xvideos.com", "onlyfans.com")
-    private val defaultConfig = LocalDnsConfig(enabled = true)
+    private val defaultConfig = LocalDnsConfig(
+        enabled = true,
+        blockAdultDomains = true,
+        blockAdultKeywords = true,
+        forceSafeSearch = true,
+        blockDoHBypass = true
+    )
+
+    @Test
+    fun `default LocalDnsConfig leaves all filters off`() {
+        val def = LocalDnsConfig()
+        assertFalse(def.enabled)
+        assertFalse(def.blockAdultDomains)
+        assertFalse(def.blockAdultKeywords)
+        assertFalse(def.forceSafeSearch)
+        assertFalse(def.forceYouTubeRestricted)
+        assertFalse(def.blockDoHBypass)
+        assertFalse(def.blockTikTok)
+        assertTrue(def.customBlockedDomains.isEmpty())
+    }
 
     @Test
     fun `blocks exact and subdomain adult hosts`() {

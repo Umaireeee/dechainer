@@ -24,7 +24,9 @@ import io.github.warleysr.dechainer.MediaPlaybackListener
 import io.github.warleysr.dechainer.utils.ShizukuRunner
 import rikka.shizuku.Shizuku
 import timber.log.Timber
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Protects both Notification layers with zero background polling and zero battery cost:
@@ -40,9 +42,12 @@ object NotificationGuard {
     private const val KEY_LISTENER_WANTED = "listener_wanted"
     private const val SETTING_ENABLED_LISTENERS = "enabled_notification_listeners"
 
-    private val worker = Executors.newSingleThreadExecutor {
-        Thread(it, "notification-guard").apply { isDaemon = true }
-    }
+    private val worker = ThreadPoolExecutor(
+        0, 1,
+        15L, TimeUnit.SECONDS,
+        LinkedBlockingQueue(),
+        { r -> Thread(r, "notification-guard").apply { isDaemon = true } }
+    )
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
 

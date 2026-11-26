@@ -5,11 +5,11 @@ import org.json.JSONObject
 
 data class LocalDnsConfig(
     val enabled: Boolean = false,
-    val blockAdultDomains: Boolean = true,
-    val blockAdultKeywords: Boolean = true,
-    val forceSafeSearch: Boolean = true,
+    val blockAdultDomains: Boolean = false,
+    val blockAdultKeywords: Boolean = false,
+    val forceSafeSearch: Boolean = false,
     val forceYouTubeRestricted: Boolean = false,
-    val blockDoHBypass: Boolean = true,
+    val blockDoHBypass: Boolean = false,
     val blockTikTok: Boolean = false,
     val customBlockedDomains: Set<String> = emptySet()
 ) {
@@ -59,11 +59,11 @@ data class LocalDnsConfig(
             }
             return LocalDnsConfig(
                 enabled = obj.optBoolean("enabled", false),
-                blockAdultDomains = obj.optBoolean("blockAdultDomains", true),
-                blockAdultKeywords = obj.optBoolean("blockAdultKeywords", true),
-                forceSafeSearch = obj.optBoolean("forceSafeSearch", true),
+                blockAdultDomains = obj.optBoolean("blockAdultDomains", false),
+                blockAdultKeywords = obj.optBoolean("blockAdultKeywords", false),
+                forceSafeSearch = obj.optBoolean("forceSafeSearch", false),
                 forceYouTubeRestricted = obj.optBoolean("forceYouTubeRestricted", false),
-                blockDoHBypass = obj.optBoolean("blockDoHBypass", true),
+                blockDoHBypass = obj.optBoolean("blockDoHBypass", false),
                 blockTikTok = obj.optBoolean("blockTikTok", false),
                 customBlockedDomains = domains
             )

@@ -519,7 +519,7 @@
     <string name="dns_shield_blocked_counter">Blocked queries: %1$d</string>
     <string name="dns_shield_upstreams">Upstream ISP DNS: %1$s</string>
     <string name="dns_shield_enable_title">Enable Always-On Local DNS Shield</string>
-    <string name="dns_shield_enable_desc">Locks Always-On VPN + disables Private DNS bypass</string>
+    <string name="dns_shield_enable_desc">Starts Always-On local DNS filtering (optional Private DNS / VPN locks can be added in Restrictions)</string>
     <string name="dns_shield_filters_header">Filters</string>
     <string name="dns_shield_adult_domains">Block adult domains</string>
     <string name="dns_shield_adult_domains_desc">Uses the bundled offline NSFW/cam/hentai blocklist</string>
@@ -551,6 +551,8 @@
     <string name="browser_unmanaged_suspend_btn">Suspend unmanaged browsers</string>
     <string name="browser_hardening_enable_title">Enforce browser policies</string>
     <string name="browser_hardening_enable_desc">Pushes rules to Brave, Chrome, and Edge</string>
+    <string name="browser_hardening_reapply_btn">Re-apply now</string>
+    <string name="browser_hardening_restart_note">After changing rules, swipe-close and reopen Brave/Chrome to reload policies (verify at brave://policy).</string>
     <string name="browser_section_privacy_bypass">Bypass &amp; Search Protection</string>
     <string name="browser_disable_incognito">Disable Incognito / Private mode</string>
     <string name="browser_disable_incognito_desc">Prevents opening private tabs</string>

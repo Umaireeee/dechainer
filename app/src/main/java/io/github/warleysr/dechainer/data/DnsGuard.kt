@@ -19,7 +19,9 @@ import timber.log.Timber
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.Callable
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
@@ -48,12 +50,18 @@ object DnsGuard {
         val checking: Boolean = false
     )
 
-    private val worker = Executors.newSingleThreadExecutor {
-        Thread(it, "dns-guard").apply { isDaemon = true }
-    }
-    private val probePool = Executors.newFixedThreadPool(5) {
-        Thread(it, "dns-probe").apply { isDaemon = true }
-    }
+    private val worker = ThreadPoolExecutor(
+        0, 1,
+        15L, TimeUnit.SECONDS,
+        LinkedBlockingQueue(),
+        { r -> Thread(r, "dns-guard").apply { isDaemon = true } }
+    )
+    private val probePool = ThreadPoolExecutor(
+        0, 5,
+        10L, TimeUnit.SECONDS,
+        LinkedBlockingQueue(),
+        { r -> Thread(r, "dns-probe").apply { isDaemon = true } }
+    )
     private val stateLock = Any()
 
     @Volatile
@@ -365,6 +373,7 @@ object DnsGuard {
         val ctx = context.applicationContext
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
+                if (io.github.warleysr.dechainer.vpn.LocalDnsShieldManager.getConfig(ctx).enabled) return
                 enforce(ctx)
             }
         }

@@ -17,16 +17,16 @@ import timber.log.Timber
 
 data class BrowserHardeningConfig(
     val enabled: Boolean = false,
-    val disableIncognito: Boolean = true,
-    val disableDoH: Boolean = true,
-    val forceSafeSearch: Boolean = true,
+    val disableIncognito: Boolean = false,
+    val disableDoH: Boolean = false,
+    val forceSafeSearch: Boolean = false,
     val forceYouTubeRestricted: Boolean = false,
-    val disableBraveTor: Boolean = true,
-    val blockYouTubeShorts: Boolean = true,
-    val blockInstagramReels: Boolean = true,
-    val blockFacebookReels: Boolean = true,
-    val blockTikTok: Boolean = true,
-    val blockAdultSites: Boolean = true,
+    val disableBraveTor: Boolean = false,
+    val blockYouTubeShorts: Boolean = false,
+    val blockInstagramReels: Boolean = false,
+    val blockFacebookReels: Boolean = false,
+    val blockTikTok: Boolean = false,
+    val blockAdultSites: Boolean = false,
     val customBlockedUrls: Set<String> = emptySet()
 ) {
     fun isLooserThan(old: BrowserHardeningConfig): Boolean {
@@ -82,16 +82,16 @@ data class BrowserHardeningConfig(
             }
             return BrowserHardeningConfig(
                 enabled = obj.optBoolean("enabled", false),
-                disableIncognito = obj.optBoolean("disableIncognito", true),
-                disableDoH = obj.optBoolean("disableDoH", true),
-                forceSafeSearch = obj.optBoolean("forceSafeSearch", true),
+                disableIncognito = obj.optBoolean("disableIncognito", false),
+                disableDoH = obj.optBoolean("disableDoH", false),
+                forceSafeSearch = obj.optBoolean("forceSafeSearch", false),
                 forceYouTubeRestricted = obj.optBoolean("forceYouTubeRestricted", false),
-                disableBraveTor = obj.optBoolean("disableBraveTor", true),
-                blockYouTubeShorts = obj.optBoolean("blockYouTubeShorts", true),
-                blockInstagramReels = obj.optBoolean("blockInstagramReels", true),
-                blockFacebookReels = obj.optBoolean("blockFacebookReels", true),
-                blockTikTok = obj.optBoolean("blockTikTok", true),
-                blockAdultSites = obj.optBoolean("blockAdultSites", true),
+                disableBraveTor = obj.optBoolean("disableBraveTor", false),
+                blockYouTubeShorts = obj.optBoolean("blockYouTubeShorts", false),
+                blockInstagramReels = obj.optBoolean("blockInstagramReels", false),
+                blockFacebookReels = obj.optBoolean("blockFacebookReels", false),
+                blockTikTok = obj.optBoolean("blockTikTok", false),
+                blockAdultSites = obj.optBoolean("blockAdultSites", false),
                 customBlockedUrls = urls
             )
         }
@@ -109,7 +109,8 @@ data class DetectedBrowser(
     val isManaged: Boolean,
     val isBrave: Boolean,
     val isSuspended: Boolean,
-    val isHidden: Boolean
+    val isHidden: Boolean,
+    val appliedPolicyCount: Int = 0
 )
 
 object BrowserHardeningManager {
@@ -223,10 +224,12 @@ object BrowserHardeningManager {
 
         val urls = buildUrlBlocklist(config)
         if (urls.isNotEmpty()) {
-            if (manifestTypes["URLBlocklist"] == RestrictionEntry.TYPE_STRING) {
-                out.putString("URLBlocklist", JSONArray(urls).toString())
-            } else {
+            if (manifestTypes["URLBlocklist"] == RestrictionEntry.TYPE_MULTI_SELECT) {
                 out.putStringArray("URLBlocklist", urls.toTypedArray())
+            } else {
+                // Chromium Android's PolicyConverter expects URLBlocklist as a JSON array string
+                // (especially when manifestTypes is empty or TYPE_STRING, as in Brave/Chrome).
+                out.putString("URLBlocklist", JSONArray(urls).toString().replace("\\/", "/"))
             }
         }
 
@@ -293,6 +296,12 @@ object BrowserHardeningManager {
             val isBrave = pkg.startsWith("com.brave.browser")
             val isSuspended = isOwner && runCatching { dpm.isPackageSuspended(admin, pkg) }.getOrDefault(false)
             val isHidden = isOwner && runCatching { dpm.isApplicationHidden(admin, pkg) }.getOrDefault(false)
+            val appliedCount = if (isOwner && isManaged) {
+                val liveBundle = runCatching { dpm.getApplicationRestrictions(admin, pkg) }.getOrNull()
+                if (liveBundle != null) MANAGED_POLICY_KEYS.count { liveBundle.containsKey(it) } else 0
+            } else {
+                0
+            }
 
             DetectedBrowser(
                 packageName = pkg,
@@ -300,7 +309,8 @@ object BrowserHardeningManager {
                 isManaged = isManaged,
                 isBrave = isBrave,
                 isSuspended = isSuspended,
-                isHidden = isHidden
+                isHidden = isHidden,
+                appliedPolicyCount = appliedCount
             )
         }.sortedWith(compareByDescending<DetectedBrowser> { it.isBrave }.thenByDescending { it.isManaged }.thenBy { it.label.lowercase() })
     }
@@ -317,6 +327,10 @@ object BrowserHardeningManager {
         if (cfg.enabled) {
             pushToManagedBrowsers(context, cfg)
         }
+    }
+
+    fun reapplyNow(context: Context) {
+        pushToManagedBrowsers(context.applicationContext, getConfig(context))
     }
 
     fun releaseForDeviceOwnerRemoval(context: Context) {

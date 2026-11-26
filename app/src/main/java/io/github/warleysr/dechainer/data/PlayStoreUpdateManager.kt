@@ -217,6 +217,9 @@ object PlayStoreUpdateManager {
         return cachedBlockUi ?: getConfig(context).blockPlayStoreUi.also { cachedBlockUi = it }
     }
 
+    fun isBlockUiEnabledCached(context: Context): Boolean =
+        cachedBlockUi ?: getConfig(context).blockPlayStoreUi.also { cachedBlockUi = it }
+
     fun getConfig(context: Context): PlayStoreUpdateConfig {
         val ctx = context.applicationContext
         val raw = prefs(ctx).getString(KEY_CONFIG_JSON, null)

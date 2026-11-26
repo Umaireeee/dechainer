@@ -14,6 +14,23 @@ import org.robolectric.RobolectricTestRunner
 class BrowserHardeningTest {
 
     @Test
+    fun `default BrowserHardeningConfig leaves all restrictions off`() {
+        val def = BrowserHardeningConfig()
+        assertFalse(def.enabled)
+        assertFalse(def.disableIncognito)
+        assertFalse(def.disableDoH)
+        assertFalse(def.forceSafeSearch)
+        assertFalse(def.forceYouTubeRestricted)
+        assertFalse(def.disableBraveTor)
+        assertFalse(def.blockYouTubeShorts)
+        assertFalse(def.blockInstagramReels)
+        assertFalse(def.blockFacebookReels)
+        assertFalse(def.blockTikTok)
+        assertFalse(def.blockAdultSites)
+        assertTrue(def.customBlockedUrls.isEmpty())
+    }
+
+    @Test
     fun `buildUrlBlocklist includes Shorts, Reels, TikTok, Adult sites and custom rules`() {
         val cfg = BrowserHardeningConfig(
             enabled = true,
@@ -37,7 +54,7 @@ class BrowserHardeningTest {
     }
 
     @Test
-    fun `buildRestrictionsBundle formats policies for Brave and Chrome and preserves unrelated keys`() {
+    fun `buildRestrictionsBundle writes Chromium JSON string for Brave and preserves unrelated keys`() {
         val existing = Bundle().apply {
             putString("HomepageLocation", "https://example.org")
             putStringArray("URLBlocklist", arrayOf("old.example"))
@@ -48,10 +65,31 @@ class BrowserHardeningTest {
             disableDoH = true,
             forceSafeSearch = true,
             forceYouTubeRestricted = true,
-            disableBraveTor = true
+            disableBraveTor = true,
+            blockYouTubeShorts = true
         )
 
-        // Chrome-style TYPE_MULTI_SELECT / StringArray
+        // Default / Brave (empty manifestTypes) MUST emit URLBlocklist as a JSON array string
+        // with unescaped slashes so Chromium PolicyConverter reads it reliably.
+        val braveBundle = BrowserHardeningManager.buildRestrictionsBundle(
+            existing = existing,
+            config = cfg,
+            manifestTypes = emptyMap(),
+            isBravePackage = true
+        )
+        assertEquals("https://example.org", braveBundle.getString("HomepageLocation"))
+        val rawJson = braveBundle.getString("URLBlocklist")!!
+        assertTrue(rawJson.contains("\"youtube.com/shorts\""))
+        val parsedArray = org.json.JSONArray(rawJson)
+        val parsedList = (0 until parsedArray.length()).map { parsedArray.getString(it) }
+        assertTrue("youtube.com/shorts" in parsedList)
+        assertEquals("off", braveBundle.getString("DnsOverHttpsMode"))
+        assertEquals(1, braveBundle.getInt("IncognitoModeAvailability"))
+        assertEquals(2, braveBundle.getInt("ForceYouTubeRestrict"))
+        assertTrue(braveBundle.getBoolean("ForceGoogleSafeSearch"))
+        assertTrue(braveBundle.getBoolean("TorDisabled"))
+
+        // Manifest explicitly declaring TYPE_MULTI_SELECT uses StringArray
         val arrayBundle = BrowserHardeningManager.buildRestrictionsBundle(
             existing = existing,
             config = cfg,
@@ -63,30 +101,13 @@ class BrowserHardeningTest {
             ),
             isBravePackage = true
         )
-        assertEquals("https://example.org", arrayBundle.getString("HomepageLocation"))
-        assertEquals("off", arrayBundle.getString("DnsOverHttpsMode"))
         assertEquals("1", arrayBundle.getString("IncognitoModeAvailability"))
         assertEquals(2, arrayBundle.getInt("ForceYouTubeRestrict"))
-        assertTrue(arrayBundle.getBoolean("ForceGoogleSafeSearch"))
-        assertTrue(arrayBundle.getBoolean("TorDisabled"))
         assertTrue(arrayBundle.getStringArray("URLBlocklist")!!.contains("youtube.com/shorts"))
-
-        // Manifest declaring URLBlocklist as TYPE_STRING (JSON array string)
-        val stringBundle = BrowserHardeningManager.buildRestrictionsBundle(
-            existing = existing,
-            config = cfg,
-            manifestTypes = mapOf("URLBlocklist" to RestrictionEntry.TYPE_STRING),
-            isBravePackage = true
-        )
-        val rawJson = stringBundle.getString("URLBlocklist")!!
-        val parsedArray = org.json.JSONArray(rawJson)
-        val parsedList = (0 until parsedArray.length()).map { parsedArray.getString(it) }
-        assertTrue("youtube.com/shorts" in parsedList)
-        assertEquals(1, stringBundle.getInt("IncognitoModeAvailability"))
 
         // Disabling removes managed keys while keeping unrelated keys
         val cleared = BrowserHardeningManager.buildRestrictionsBundle(
-            existing = arrayBundle,
+            existing = braveBundle,
             config = cfg.copy(enabled = false),
             manifestTypes = emptyMap(),
             isBravePackage = true
