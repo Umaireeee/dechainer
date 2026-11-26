@@ -35,6 +35,8 @@ import androidx.core.graphics.drawable.toBitmap
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller.Inspection
+import io.github.warleysr.dechainer.security.PendingAction
+import io.github.warleysr.dechainer.security.TimelockManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,7 +47,7 @@ import kotlinx.coroutines.withContext
 fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val recoveryGate = rememberRecoveryGate()
+    val gate = rememberTimelockGate()
     var inspection by remember(uri) { mutableStateOf<Inspection?>(null) }
     var installing by remember(uri) { mutableStateOf(false) }
 
@@ -62,7 +64,7 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
         onDispose {
             if (current is Inspection.Update && !consumedByInstall) {
                 CoroutineScope(Dispatchers.IO).launch {
-                    current.file.delete()
+                    current.cleanup()
                 }
             }
         }
@@ -144,7 +146,18 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 if (current.isDowngrade) {
-                    recoveryGate.run { startInstall() }
+                    if (TimelockManager.hasActiveApkDowngradePass(context, current.packageName)) {
+                        TimelockManager.consumeApkDowngradePass(context, current.packageName)
+                        startInstall()
+                    } else {
+                        gate.requestUnlock(
+                            title = context.getString(R.string.timelock_title_apk_downgrade, current.label),
+                            description = current.packageName,
+                            dedupeKey = "apk_downgrade:${current.packageName}",
+                            pendingAction = PendingAction.AllowApkDowngrade(current.packageName),
+                            onCancel = onFinish
+                        )
+                    }
                 } else {
                     startInstall()
                 }
@@ -159,7 +172,7 @@ fun ApkUpdateDialog(uri: Uri, onFinish: () -> Unit) {
         }
     )
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 /** Explains what updating through an APK does before the file picker opens. */

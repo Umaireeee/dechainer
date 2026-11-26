@@ -16,11 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
-/**
- * Settings behind the "I'm having impulses" panic button. Persistence goes through
- * [SecurityManager], which owns `security_prefs` and is also what
- * [io.github.warleysr.dechainer.DechainerAccessibilityService] reads to apply the suspensions.
- */
 class ImpulseLockViewModel : ViewModel() {
     private val context = DechainerApplication.getInstance()
 
@@ -49,30 +44,31 @@ class ImpulseLockViewModel : ViewModel() {
         loadApps()
     }
 
-    private fun canEdit(): Boolean =
-        SecurityManager.isSessionActive() || !SecurityManager.isRecoveryCodeSet(context)
+    fun refreshFromPrefs() {
+        tetrisUnlock = SecurityManager.isTetrisUnlockEnabled(context)
+        tetrisMinutes = SecurityManager.getTetrisMinutes(context)
+        action = SecurityManager.getImpulseAction(context)
+        durationMinutes = SecurityManager.getImpulseDurationMinutes(context)
+        suspendedApps = SecurityManager.getImpulseSuspendedApps(context)
+    }
 
     fun updateTetrisUnlock(enabled: Boolean) {
-        if (!canEdit()) return
         tetrisUnlock = enabled
         SecurityManager.setTetrisUnlockEnabled(context, enabled)
     }
 
     fun updateTetrisMinutes(value: Int) {
-        if (!canEdit()) return
         val clamped = value.coerceIn(SecurityManager.TETRIS_MIN_MINUTES, SecurityManager.TETRIS_MAX_MINUTES)
         tetrisMinutes = clamped
         SecurityManager.setTetrisMinutes(context, clamped)
     }
 
     fun updateAction(value: SecurityManager.ImpulseAction) {
-        if (!canEdit()) return
         action = value
         SecurityManager.setImpulseAction(context, value)
     }
 
     fun updateDurationMinutes(value: Int) {
-        if (!canEdit()) return
         val clamped = value.coerceIn(
             SecurityManager.IMPULSE_MIN_DURATION_MINUTES,
             SecurityManager.IMPULSE_MAX_DURATION_MINUTES
@@ -82,7 +78,6 @@ class ImpulseLockViewModel : ViewModel() {
     }
 
     fun toggleAppSelection(packageName: String) {
-        if (!canEdit()) return
         val newSet = suspendedApps.toMutableSet()
         if (!newSet.remove(packageName)) newSet.add(packageName)
         suspendedApps = newSet

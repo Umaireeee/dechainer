@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,9 +32,9 @@ import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.models.Downtime
 import io.github.warleysr.dechainer.models.DowntimeRule
 import io.github.warleysr.dechainer.models.TimeWindow
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
-import io.github.warleysr.dechainer.security.SecurityManager
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 
 private val DOWNTIME_PRESETS = listOf(
@@ -45,7 +46,8 @@ private val DOWNTIME_PRESETS = listOf(
 /** Lists the downtime rules: apps that are suspended while a window runs and given back after. */
 @Composable
 fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
-    val recoveryGate = rememberRecoveryGate()
+    val context = LocalContext.current
+    val gate = rememberTimelockGate()
     var rules by remember { mutableStateOf(DowntimeRepository.getRules()) }
     var editing by remember { mutableStateOf<DowntimeRule?>(null) }
 
@@ -53,12 +55,16 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
         val current = DowntimeRepository.getRules()
         val preview = transform(current)
         val loosening = Downtime.isLooser(current, preview, viewModel.groups)
-        recoveryGate.change(loosening) {
+        gate.change(
+            loosening = loosening,
+            title = context.getString(R.string.timelock_title_loosen_downtime),
+            description = context.getString(R.string.schedule_tab_downtime),
+            dedupeKey = "downtime_rules",
+            pendingAction = PendingAction.SaveDowntimeRules(DowntimeRepository.encode(preview))
+        ) {
             val latest = DowntimeRepository.getRules()
             val updated = transform(latest)
-            if (!loosening && !SecurityManager.isSessionActive() &&
-                Downtime.isLooser(latest, updated, viewModel.groups)
-            ) {
+            if (!loosening && Downtime.isLooser(latest, updated, viewModel.groups)) {
                 return@change
             }
             DowntimeRepository.save(updated)
@@ -136,18 +142,19 @@ fun DowntimeScreen(viewModel: AppsViewModel = viewModel()) {
                 editing = null
             },
             onDelete = {
-                // Removing downtime gives apps back, so it needs the recovery code.
-                recoveryGate.run {
-                    val updated = DowntimeRepository.getRules().filterNot { it.id == draft.id }
-                    DowntimeRepository.save(updated)
-                    rules = updated
-                }
+                val ruleTitle = draft.name.ifBlank { context.getString(R.string.downtime_default_name) }
+                gate.requestUnlock(
+                    title = context.getString(R.string.timelock_title_delete_downtime, ruleTitle),
+                    description = ruleTitle,
+                    dedupeKey = "delete_downtime:${draft.id}",
+                    pendingAction = PendingAction.DeleteDowntimeRule(draft.id)
+                )
                 editing = null
             }
         )
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 @Composable

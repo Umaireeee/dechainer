@@ -33,13 +33,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.AppGroupRepository
 import io.github.warleysr.dechainer.data.AppRepository
+import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.models.TimeWindow
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.isLooserWindows
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
-import io.github.warleysr.dechainer.security.SecurityManager
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
+import io.github.warleysr.dechainer.security.TimelockManager
 import io.github.warleysr.dechainer.viewmodels.AppsViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import java.time.DayOfWeek
@@ -80,7 +82,8 @@ fun ScheduleTab(navViewModel: NavigationViewModel = viewModel()) {
 
 @Composable
 fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: NavigationViewModel = viewModel()) {
-    val recoveryGate = rememberRecoveryGate()
+    val context = LocalContext.current
+    val gate = rememberTimelockGate()
     var picking by remember { mutableStateOf(false) }
     var editingKey by remember { mutableStateOf<String?>(null) }
 
@@ -116,10 +119,38 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
     fun saveWindows(key: String, initialWindows: List<TimeWindow>, transform: (List<TimeWindow>) -> List<TimeWindow>) {
         val preview = transform(initialWindows)
         val loosening = isLooserWindows(initialWindows, preview)
-        recoveryGate.change(loosening) {
+        val targetName = when (val t = targetFor(key)) {
+            is ScheduleTarget.App -> t.item.name
+            is ScheduleTarget.Group -> t.group.name
+            null -> key
+        }
+        val pendingAction = when {
+            key.startsWith("app:") -> PendingAction.SetAppTimeWindows(
+                packageName = key.removePrefix("app:"),
+                windowsEncoded = AppTimeWindows.encode(preview)
+            )
+            key.startsWith("group:") -> {
+                val grp = viewModel.groups.firstOrNull { it.id == key.removePrefix("group:") }
+                PendingAction.UpdateGroup(
+                    groupId = key.removePrefix("group:"),
+                    name = grp?.name ?: targetName,
+                    limitEncoded = TimelockManager.encodeTimeLimit(grp?.timeLimit ?: io.github.warleysr.dechainer.models.TimeLimit.NONE),
+                    windowsEncoded = AppTimeWindows.encode(preview),
+                    packageNames = grp?.packageNames?.sorted().orEmpty()
+                )
+            }
+            else -> return
+        }
+        gate.change(
+            loosening = loosening,
+            title = context.getString(R.string.timelock_title_loosen_schedule, targetName),
+            description = targetName,
+            dedupeKey = "schedule:$key",
+            pendingAction = pendingAction
+        ) {
             val latest = liveWindowsFor(key) ?: return@change
             val updated = transform(latest)
-            if (!loosening && !SecurityManager.isSessionActive() && isLooserWindows(latest, updated)) {
+            if (!loosening && isLooserWindows(latest, updated)) {
                 return@change
             }
             when {
@@ -220,7 +251,7 @@ fun ScheduleScreen(viewModel: AppsViewModel = viewModel(), navViewModel: Navigat
         }
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 private fun List<TimeWindow>.toggled(index: Int, enabled: Boolean) =

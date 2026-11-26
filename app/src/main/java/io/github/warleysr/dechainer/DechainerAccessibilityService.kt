@@ -40,6 +40,7 @@ import io.github.warleysr.dechainer.data.DailyUsageStore
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.DowntimeRepository
 import io.github.warleysr.dechainer.data.MusicLimitTracker
+import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.data.SuspensionCoordinator
 import io.github.warleysr.dechainer.data.SuspensionLogRepository
 import io.github.warleysr.dechainer.models.AppGroup
@@ -93,7 +94,9 @@ class DechainerAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
             val packageName = intent.data?.encodedSchemeSpecificPart ?: return
-            if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+            val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+            PlayStoreUpdateManager.onPackageAdded(applicationContext, packageName, replacing)
+            if (!replacing) {
                 AppRepository.reapplyHiddenIfNeeded(packageName)
             }
         }
@@ -357,9 +360,6 @@ class DechainerAccessibilityService : AccessibilityService() {
                 override fun onReceive(context: Context, intent: Intent) {
                     disablingService = true
                     AccessibilityWatchdog.setWanted(context.applicationContext, false)
-                    context.getSharedPreferences("security_prefs", MODE_PRIVATE).edit {
-                        putBoolean(SecurityManager.DEBUG_AUTO_START_SESSION_KEY, true)
-                    }
                     SecurityManager.suspendUnknownSourcesRestrictionForDebugInstall(context)
                     disableSelf()
                 }

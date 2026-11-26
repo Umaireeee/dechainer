@@ -14,14 +14,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.screens.common.PendingChange
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.viewmodels.ActivityBlockerViewModel
 import io.github.warleysr.dechainer.viewmodels.GroupedActivityLog
 
@@ -30,8 +33,9 @@ import io.github.warleysr.dechainer.viewmodels.GroupedActivityLog
 fun ActivityBlockerScreen(
     viewModel: ActivityBlockerViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
     var showAddDialog by remember { mutableStateOf(false) }
-    val recoveryGate = rememberRecoveryGate()
+    val gate = rememberTimelockGate()
 
     Scaffold { padding ->
         LazyColumn(
@@ -62,7 +66,12 @@ fun ActivityBlockerScreen(
                     headlineContent = { Text(className) },
                     trailingContent = {
                         IconButton(onClick = {
-                            recoveryGate.run { viewModel.removeBlockedActivity(className) }
+                            gate.requestUnlock(
+                                title = context.getString(R.string.timelock_title_unblock_activity, className),
+                                description = className,
+                                dedupeKey = "unblock_activity:$className",
+                                pendingAction = PendingAction.RemoveBlockedActivity(className)
+                            )
                         }) {
                             Icon(Icons.Default.Delete, contentDescription = null)
                         }
@@ -103,7 +112,11 @@ fun ActivityBlockerScreen(
             confirmButton = {
                 TextButton(onClick = {
                     if (activityName.isNotBlank()) {
-                        recoveryGate.change(loosening = false) { viewModel.addBlockedActivity(activityName) }
+                        PendingChange.schedule(
+                            message = context.getString(R.string.restriction_pending),
+                            undoLabel = context.getString(R.string.undo),
+                            action = { viewModel.addBlockedActivity(activityName) }
+                        )
                     }
                     showAddDialog = false
                 }) { Text(stringResource(R.string.confirm)) }
@@ -116,7 +129,7 @@ fun ActivityBlockerScreen(
         )
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 @Composable

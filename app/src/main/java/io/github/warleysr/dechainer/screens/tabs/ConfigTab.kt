@@ -5,10 +5,15 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.material.icons.outlined.Dns
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
+import io.github.warleysr.dechainer.data.BrowserHardeningManager
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsFailoverRule
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.NotificationGuard
+import io.github.warleysr.dechainer.security.CountdownStatus
+import io.github.warleysr.dechainer.security.PendingAction
+import io.github.warleysr.dechainer.security.TimelockManager
+import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,12 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.Adb
 import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,11 +50,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.DechainerAccessibilityService
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.RecoveryGenerateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.SecurityManager
-import io.github.warleysr.dechainer.utils.LocaleUtils
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import rikka.shizuku.Shizuku
@@ -62,13 +64,10 @@ fun ConfigTab(
     viewModel: DeviceOwnerViewModel = viewModel(),
     navViewModel: NavigationViewModel = viewModel()
 ) {
-    var showLanguageDialog by remember { mutableStateOf(false) }
-    var showKeyboardDialog by remember { mutableStateOf(false) }
-    var showRecoveryDialog by remember { mutableStateOf(false) }
     var showDnsDialog by remember { mutableStateOf(false) }
     var dnsErrorRes by remember { mutableStateOf<Int?>(null) }
     var isApplyingDns by remember { mutableStateOf(false) }
-    val recoveryGate = rememberRecoveryGate()
+    val gate = rememberTimelockGate()
     var showStartForcedRemovalDialog by remember { mutableStateOf(false) }
     var showCancelForcedRemovalDialog by remember { mutableStateOf(false) }
     var showFinishForcedRemovalDialog by remember { mutableStateOf(false) }
@@ -81,7 +80,9 @@ fun ConfigTab(
     val advancedBlockingRequiredMsg = stringResource(R.string.advanced_blocking_required)
     val ownerPrivilegesFirstMsg = stringResource(R.string.get_owner_privileges_first)
 
-    var shuffleKeyboard by remember { mutableStateOf(SecurityManager.isShuffleKeyboardEnabled(context)) }
+    val pendingRequests by TimelockManager.requests.collectAsState()
+    val localDnsStatus by LocalDnsShieldManager.status.collectAsState()
+    val browserConfig by BrowserHardeningManager.config.collectAsState()
 
     val advancedBlocking = DechainerAccessibilityService.isRunning
     var hasSecureGuard by remember { mutableStateOf(AccessibilityWatchdog.hasPermission(context)) }
@@ -91,6 +92,9 @@ fun ConfigTab(
     DisposableEffect(context) {
         val activity = context as? ComponentActivity
         val refreshGuards = {
+            TimelockManager.syncAll(context)
+            LocalDnsShieldManager.refreshState(context)
+            BrowserHardeningManager.getConfig(context)
             hasShizuku = DeviceOwnerRepository.checkShizukuPermission()
             hasSecureGuard = AccessibilityWatchdog.hasPermission(context)
             notificationAccess = NotificationGuard.isListenerEnabled(context)
@@ -110,10 +114,10 @@ fun ConfigTab(
         onDispose { activity?.lifecycle?.removeObserver(observer) }
     }
 
-    var forcedRemovalRemaining by remember { mutableLongStateOf(SecurityManager.getForcedRemovalRemainingTime(context)) }
+    var forcedRemovalStatus by remember { mutableStateOf(SecurityManager.getForcedRemovalStatus(context)) }
     LaunchedEffect(Unit) {
         while (true) {
-            forcedRemovalRemaining = SecurityManager.getForcedRemovalRemainingTime(context)
+            forcedRemovalStatus = SecurityManager.getForcedRemovalStatus(context)
             kotlinx.coroutines.delay(60000.milliseconds)
         }
     }
@@ -152,6 +156,76 @@ fun ConfigTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
                 )
+            }
+            item {
+                val readyCount = pendingRequests.count { it.status is CountdownStatus.Ready }
+                val waitingCount = pendingRequests.count { it.status is CountdownStatus.Waiting }
+                val pendingSummary = when {
+                    readyCount > 0 -> stringResource(R.string.timelock_summary_ready, readyCount)
+                    waitingCount > 0 -> stringResource(R.string.timelock_summary_waiting, waitingCount)
+                    else -> stringResource(R.string.timelock_summary_none)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.timelock_pending_title)) },
+                    supportingContent = { Text(pendingSummary) },
+                    leadingContent = { Icon(Icons.Outlined.HourglassTop, "") },
+                    trailingContent = if (pendingRequests.isNotEmpty()) {
+                        {
+                            Badge(
+                                containerColor = if (readyCount > 0) Color(26, 163, 63)
+                                else MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ) {
+                                Text(pendingRequests.size.toString())
+                            }
+                        }
+                    } else null,
+                    modifier = Modifier.clickable { navViewModel.navigateTo("pending_unlocks") }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
+                val shieldSummary = when {
+                    localDnsStatus.isRunning -> stringResource(
+                        R.string.dns_shield_config_active,
+                        localDnsStatus.blockedCount
+                    )
+                    localDnsStatus.config.enabled -> stringResource(R.string.dns_shield_config_starting)
+                    else -> stringResource(R.string.dns_shield_config_off)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.dns_shield_title)) },
+                    supportingContent = { Text(shieldSummary) },
+                    leadingContent = { Icon(Icons.Outlined.Shield, "") },
+                    modifier = Modifier.clickable {
+                        if (!viewModel.isDeviceOwner()) {
+                            scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
+                            return@clickable
+                        }
+                        navViewModel.navigateTo("local_dns_shield")
+                    }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item {
+                val browserSummary = if (browserConfig.enabled) {
+                    stringResource(R.string.browser_hardening_config_active)
+                } else {
+                    stringResource(R.string.browser_hardening_config_off)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.browser_hardening_title)) },
+                    supportingContent = { Text(browserSummary) },
+                    leadingContent = { Icon(Icons.Outlined.Language, "") },
+                    modifier = Modifier.clickable {
+                        if (!viewModel.isDeviceOwner()) {
+                            scope.launch { snackbarHostState.showSnackbar(ownerPrivilegesFirstMsg) }
+                            return@clickable
+                        }
+                        navViewModel.navigateTo("browser_hardening")
+                    }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
             item {
                 ListItem(
@@ -209,21 +283,12 @@ fun ConfigTab(
                                         if (!enabledViaShizuku) openSettings()
                                     }
                                 } else {
-                                    recoveryGate.run {
-                                        DechainerAccessibilityService.prepareServiceDisable()
-                                        AccessibilityWatchdog.setWanted(context, false)
-                                        scope.launch {
-                                            val disabledViaShizuku = withContext(Dispatchers.IO) {
-                                                if (Shizuku.pingBinder() && DeviceOwnerRepository.checkShizukuPermission()) {
-                                                    DeviceOwnerRepository.changeAccessibilityPermission(false)
-                                                    true
-                                                } else {
-                                                    false
-                                                }
-                                            }
-                                            if (!disabledViaShizuku) openSettings()
-                                        }
-                                    }
+                                    gate.requestUnlock(
+                                        title = context.getString(R.string.timelock_title_disable_accessibility),
+                                        description = context.getString(R.string.activity_blocker),
+                                        dedupeKey = "disable_accessibility",
+                                        pendingAction = PendingAction.DisableAccessibility
+                                    )
                                 }
                             }
                         )
@@ -263,15 +328,12 @@ fun ConfigTab(
                                         if (!enabledViaShizuku) openListenerSettings()
                                     }
                                 } else {
-                                    recoveryGate.run {
-                                        scope.launch {
-                                            val disabledViaShizuku = withContext(Dispatchers.IO) {
-                                                NotificationGuard.disableListenerViaShizuku(context)
-                                            }
-                                            notificationAccess = NotificationGuard.isListenerEnabled(context)
-                                            if (!disabledViaShizuku) openListenerSettings()
-                                        }
-                                    }
+                                    gate.requestUnlock(
+                                        title = context.getString(R.string.timelock_title_disable_notifications),
+                                        description = context.getString(R.string.notification_access_title),
+                                        dedupeKey = "disable_notification_access",
+                                        pendingAction = PendingAction.DisableNotificationAccess
+                                    )
                                 }
                             }
                         )
@@ -333,48 +395,25 @@ fun ConfigTab(
                 )
             }
             item {
-                val keyboardLabel = if (shuffleKeyboard)
-                    stringResource(R.string.keyboard_shuffle)
-                else
-                    stringResource(R.string.keyboard_normal)
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.keyboard_type)) },
-                    supportingContent = { Text(keyboardLabel) },
-                    leadingContent = { Icon(Icons.Outlined.Keyboard, "") },
-                    modifier = Modifier.clickable { showKeyboardDialog = true }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.change_recovery_code)) },
-                    leadingContent = { Icon(Icons.Outlined.VpnKey, "") },
-                    supportingContent = { Text(stringResource(R.string.change_recovery_code_desc)) },
-                    modifier = Modifier.clickable {
-                        recoveryGate.run { showRecoveryDialog = true }
-                    }
-                )
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            item {
-                val forcedRemovalText = if (forcedRemovalRemaining > 0) {
-                    val hours = (forcedRemovalRemaining / (1000 * 60 * 60)).toInt()
-                    val minutes = ((forcedRemovalRemaining / (1000 * 60)) % 60).toInt()
-                    if (hours > 0) stringResource(R.string.time_hours_minutes, hours, minutes)
-                    else stringResource(R.string.time_minutes, minutes)
-                } else if (forcedRemovalRemaining == 0L) {
-                    stringResource(R.string.active)
-                } else null
+                val forcedRemovalText = when (val status = forcedRemovalStatus) {
+                    is CountdownStatus.Waiting -> TimelockManager.formatRemaining(status.remainingMs)
+                    is CountdownStatus.Ready -> stringResource(R.string.active)
+                    CountdownStatus.Expired, null -> null
+                }
 
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.forced_removal)) },
                     supportingContent = { Text(stringResource(R.string.forced_removal_desc)) },
                     leadingContent = { Icon(Icons.Outlined.LockClock, "") },
-                    trailingContent = forcedRemovalText?.let { { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) } },
+                    trailingContent = forcedRemovalText?.let {
+                        { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                    },
                     modifier = Modifier.clickable {
-                        if (forcedRemovalRemaining < 0) showStartForcedRemovalDialog = true
-                        else if (forcedRemovalRemaining == 0L) showFinishForcedRemovalDialog = true
-                        else showCancelForcedRemovalDialog = true
+                        when (forcedRemovalStatus) {
+                            null, CountdownStatus.Expired -> showStartForcedRemovalDialog = true
+                            is CountdownStatus.Ready -> showFinishForcedRemovalDialog = true
+                            is CountdownStatus.Waiting -> showCancelForcedRemovalDialog = true
+                        }
                     }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -399,7 +438,7 @@ fun ConfigTab(
                 TextButton(
                     onClick = {
                         SecurityManager.startForcedRemoval(context)
-                        forcedRemovalRemaining = SecurityManager.getForcedRemovalRemainingTime(context)
+                        forcedRemovalStatus = SecurityManager.getForcedRemovalStatus(context)
                         showStartForcedRemovalDialog = false
                         confirmForcedRemoval = false
                     }
@@ -423,7 +462,7 @@ fun ConfigTab(
             confirmButton = {
                 TextButton(onClick = {
                     SecurityManager.cancelForcedRemoval(context)
-                    forcedRemovalRemaining = -1L
+                    forcedRemovalStatus = null
                     showCancelForcedRemovalDialog = false
                 }) {
                     Text(stringResource(R.string.confirm))
@@ -439,7 +478,7 @@ fun ConfigTab(
 
     if (showFinishForcedRemovalDialog) {
         AlertDialog(
-            onDismissRequest = { 
+            onDismissRequest = {
                 showFinishForcedRemovalDialog = false
                 confirmForcedRemoval = false
             },
@@ -467,7 +506,7 @@ fun ConfigTab(
                         confirmForcedRemoval = false
                         viewModel.removeDeviceOwner {
                             SecurityManager.cancelForcedRemoval(context)
-                            forcedRemovalRemaining = -1L
+                            forcedRemovalStatus = null
                             (context as? android.app.Activity)?.recreate()
                         }
                     }
@@ -478,7 +517,7 @@ fun ConfigTab(
             dismissButton = {
                 TextButton(onClick = {
                     SecurityManager.cancelForcedRemoval(context)
-                    forcedRemovalRemaining = -1L
+                    forcedRemovalStatus = null
                     showFinishForcedRemovalDialog = false
                     confirmForcedRemoval = false
                 }) {
@@ -522,154 +561,22 @@ fun ConfigTab(
                         }
                     }
                 }
-                if (currentDns == null) runApply() else recoveryGate.run { runApply() }
+                if (currentDns == null) {
+                    runApply()
+                } else {
+                    showDnsDialog = false
+                    gate.requestUnlock(
+                        title = context.getString(R.string.timelock_title_change_dns),
+                        description = host,
+                        dedupeKey = "change_private_dns",
+                        pendingAction = PendingAction.ChangePrivateDns(host, autoFailover)
+                    )
+                }
             }
         )
     }
 
-
-    if (showKeyboardDialog) {
-        KeyboardTypeDialog(
-            currentShuffle = shuffleKeyboard,
-            onDismiss = { showKeyboardDialog = false },
-            onApply = { isShuffle ->
-                if (isShuffle == shuffleKeyboard) {
-                    showKeyboardDialog = false
-                    return@KeyboardTypeDialog
-                }
-                val loosening = shuffleKeyboard && !isShuffle
-                recoveryGate.change(loosening) {
-                    shuffleKeyboard = isShuffle
-                    SecurityManager.setShuffleKeyboardEnabled(context, isShuffle)
-                    showKeyboardDialog = false
-                }
-                if (!loosening) showKeyboardDialog = false
-            }
-        )
-    }
-
-    if (showRecoveryDialog) {
-        RecoveryGenerateDialog(
-            onDismiss = { showRecoveryDialog = false },
-            onConfirm = { code ->
-                SecurityManager.saveRecoveryCode(context, code)
-                showRecoveryDialog = false
-            }
-        )
-    }
-
-    RecoveryGateDialog(recoveryGate)
-}
-
-@Composable
-fun LanguageSelectionDialog(
-    onDismiss: () -> Unit,
-    onApply: (String) -> Unit
-) {
-    val context = LocalContext.current
-    val currentLocale = LocaleUtils.getLocale(context)
-    val options = listOf(
-        "en" to "English",
-        "pt" to "PortuguÃªs"
-    )
-    
-    var selectedOption by remember { 
-        mutableStateOf(if (currentLocale.startsWith("pt")) "pt" else "en")
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.language_settings)) },
-        text = {
-            Column {
-                options.forEach { (code, name) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedOption = code }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = selectedOption == code, onClick = { selectedOption = code })
-                        Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onApply(selectedOption) }
-            ) {
-                Text(stringResource(R.string.apply))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
-@Composable
-fun KeyboardTypeDialog(
-    currentShuffle: Boolean,
-    onDismiss: () -> Unit,
-    onApply: (Boolean) -> Unit
-) {
-    var selectedShuffle by remember { mutableStateOf(currentShuffle) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.keyboard_type)) },
-        text = {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedShuffle = false }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(selected = !selectedShuffle, onClick = { selectedShuffle = false })
-                    Column(Modifier.padding(start = 8.dp)) {
-                        Text(stringResource(R.string.keyboard_normal), fontWeight = FontWeight.Bold)
-                        Text(
-                            stringResource(R.string.keyboard_normal_desc),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedShuffle = true }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(selected = selectedShuffle, onClick = { selectedShuffle = true })
-                    Column(Modifier.padding(start = 8.dp)) {
-                        Text(stringResource(R.string.keyboard_shuffle), fontWeight = FontWeight.Bold)
-                        Text(
-                            stringResource(R.string.keyboard_shuffle_desc),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onApply(selectedShuffle) }) {
-                Text(stringResource(R.string.apply))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
+    TimelockGateDialog(gate)
 }
 
 private const val DNS_AUTO = "auto"

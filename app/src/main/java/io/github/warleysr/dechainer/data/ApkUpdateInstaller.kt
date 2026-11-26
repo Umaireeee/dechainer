@@ -14,12 +14,14 @@ import android.os.UserManager
 import androidx.core.content.edit
 import io.github.warleysr.dechainer.notifications.ApkUpdateResultReceiver
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * Lets an APK picked from the lock screen replace an app that is already installed, while new apps
- * stay blocked. The unknown sources restrictions are lifted only for the duration of the install
- * and put back once its result arrives.
+ * Lets a `.apk` or split-APK bundle (`.apks`, `.xapk`, `.apkm`) update an app that is already
+ * installed, while new apps stay blocked. Install restrictions (`DISALLOW_INSTALL_APPS`,
+ * `DISALLOW_INSTALL_UNKNOWN_SOURCES*`) are lifted only for the duration of the install and put
+ * back once its result arrives.
  */
 object ApkUpdateInstaller {
     const val EXTRA_PACKAGE = "io.github.warleysr.dechainer.extra.APK_UPDATE_PACKAGE"
@@ -39,23 +41,31 @@ object ApkUpdateInstaller {
     // @SystemApi PackageManager.MATCH_FACTORY_ONLY (not exposed in the public SDK stubs).
     private const val MATCH_FACTORY_ONLY = 0x00800000
 
-    private val unknownSourcesRestrictions = listOf(
+    internal val installRestrictions = listOf(
         UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES,
-        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY
+        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY,
+        UserManager.DISALLOW_INSTALL_APPS
     )
 
-    private val downgradeRestrictions = unknownSourcesRestrictions + UserManager.DISALLOW_UNINSTALL_APPS
+    private val downgradeRestrictions = installRestrictions + UserManager.DISALLOW_UNINSTALL_APPS
 
     sealed interface Inspection {
         data class Update(
             val file: File,
+            val stagingDir: File,
+            val apkFiles: List<File>,
+            val isSplitBundle: Boolean,
             val packageName: String,
             val label: String,
             val icon: Drawable?,
             val installedVersion: String,
             val newVersion: String,
             val isDowngrade: Boolean = false
-        ) : Inspection
+        ) : Inspection {
+            fun cleanup() {
+                runCatching { stagingDir.deleteRecursively() }
+            }
+        }
 
         data object NewApp : Inspection
         data object SignatureMismatch : Inspection
@@ -63,20 +73,37 @@ object ApkUpdateInstaller {
     }
 
     /**
-     * Whether installing APKs is blocked, which is the only case where this updater is useful.
-     * Restrictions lifted by an update still in progress count as active.
+     * Whether installing apps/APKs is restricted or Play Store is suspended, which is when the
+     * lock-screen Update hub is needed.
      */
-    fun isUnknownSourcesRestricted(context: Context): Boolean {
+    fun isInstallRestricted(context: Context): Boolean {
         val dpm = DeviceAdmin.policyManager
         val admin = DeviceAdmin.component
-        if (!dpm.isDeviceOwnerApp(context.packageName)) return false
+        if (!runCatching { dpm.isDeviceOwnerApp(context.packageName) }.getOrDefault(false)) return false
+
+        if (PlayStoreUpdateManager.isPassActive(context)) return true
 
         val pending = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getStringSet(KEY_RESTORE_RESTRICTIONS, null)
         if (!pending.isNullOrEmpty()) return true
 
         val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return false
-        return unknownSourcesRestrictions.any { active.getBoolean(it) }
+        if (installRestrictions.any { active.getBoolean(it) }) return true
+
+        return runCatching {
+            dpm.isPackageSuspended(admin, PlayStoreUpdateManager.PLAY_STORE_PACKAGE)
+        }.getOrDefault(false)
+    }
+
+    fun isUnknownSourcesRestricted(context: Context): Boolean = isInstallRestricted(context)
+
+    fun hasActiveSessions(context: Context): Boolean =
+        runCatching { context.packageManager.packageInstaller.mySessions.isNotEmpty() }.getOrDefault(false)
+
+    fun enqueueRestoreRestriction(context: Context, key: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
+        prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + key) }
     }
 
     internal fun hasMatchingSignatures(installed: PackageInfo, archive: PackageInfo): Boolean {
@@ -99,11 +126,9 @@ object ApkUpdateInstaller {
 
         val isUpgrade = archive.longVersionCode >= installed.longVersionCode
         return if (isUpgrade) {
-            // Key rotation during upgrade: archive's verified history must include the installed signer.
             val archiveHistory = archiveInfo.signingCertificateHistory?.map { it.toByteArray() }.orEmpty()
             archiveHistory.any { it.contentEquals(installedLeaf) }
         } else {
-            // Downgrade: archive's signer must exist in the installed app's verified history.
             val installedHistory = installedInfo.signingCertificateHistory?.map { it.toByteArray() }.orEmpty()
             installedHistory.any { it.contentEquals(archiveLeaf) }
         }
@@ -114,41 +139,69 @@ object ApkUpdateInstaller {
         pm.getPackageArchiveInfo(path, PackageManager.GET_SIGNING_CERTIFICATES)
 
     fun inspect(context: Context, uri: Uri): Inspection {
-        val dir = File(context.cacheDir, "apk_update").apply { mkdirs() }
+        val rootDir = File(context.cacheDir, "apk_update").apply { mkdirs() }
         val staleBefore = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1)
-        dir.listFiles()?.forEach { existing ->
-            if (existing.lastModified() < staleBefore) existing.delete()
+        rootDir.listFiles()?.forEach { existing ->
+            if (existing.lastModified() < staleBefore) existing.deleteRecursively()
         }
 
-        val file = File.createTempFile("update", ".apk", dir)
+        val stagingDir = File(rootDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val pickedFile = File(stagingDir, "picked.bin")
         val copied = runCatching {
             context.contentResolver.openInputStream(uri)!!.use { input ->
-                file.outputStream().use { input.copyTo(it) }
+                pickedFile.outputStream().use { input.copyTo(it) }
             }
         }.isSuccess
-        if (!copied) return Inspection.Invalid.also { file.delete() }
+        if (!copied) return Inspection.Invalid.also { stagingDir.deleteRecursively() }
 
-        val pm = context.packageManager
-        val archive = archivePackageInfo(pm, file.path)
-            ?: return Inspection.Invalid.also { file.delete() }
-        val installed = installedInfo(context, archive.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-            ?: return Inspection.NewApp.also { file.delete() }
-        if (!hasMatchingSignatures(installed, archive)) {
-            return Inspection.SignatureMismatch.also { file.delete() }
+        val extracted = ApkArchiveExtractor.extract(pickedFile, stagingDir)
+            ?: return Inspection.Invalid.also { stagingDir.deleteRecursively() }
+        if (extracted.isSplitBundle) {
+            pickedFile.delete()
         }
 
-        val isDowngrade = archive.longVersionCode < installed.longVersionCode ||
-            (archive.longVersionCode == installed.longVersionCode &&
-                archive.baseRevisionCode < installed.baseRevisionCode)
+        val pm = context.packageManager
+        val parsedPairs = extracted.apkFiles.map { apkFile ->
+            val info = archivePackageInfo(pm, apkFile.path)
+                ?: return Inspection.Invalid.also { stagingDir.deleteRecursively() }
+            apkFile to info
+        }
+        val baseIndex = parsedPairs.indexOfFirst { (file, info) ->
+            info.splitNames.isNullOrEmpty() || file.name.equals("base.apk", ignoreCase = true)
+        }.let { if (it >= 0) it else 0 }
+
+        val orderedPairs = buildList {
+            add(parsedPairs[baseIndex])
+            parsedPairs.forEachIndexed { idx, pair -> if (idx != baseIndex) add(pair) }
+        }
+        val (baseFile, baseArchive) = orderedPairs.first()
+        val pkgName = baseArchive.packageName
+        if (orderedPairs.any { it.second.packageName != pkgName }) {
+            return Inspection.Invalid.also { stagingDir.deleteRecursively() }
+        }
+
+        val installed = installedInfo(context, pkgName, PackageManager.GET_SIGNING_CERTIFICATES)
+            ?: return Inspection.NewApp.also { stagingDir.deleteRecursively() }
+
+        if (orderedPairs.any { !hasMatchingSignatures(installed, it.second) }) {
+            return Inspection.SignatureMismatch.also { stagingDir.deleteRecursively() }
+        }
+
+        val isDowngrade = baseArchive.longVersionCode < installed.longVersionCode ||
+            (baseArchive.longVersionCode == installed.longVersionCode &&
+                baseArchive.baseRevisionCode < installed.baseRevisionCode)
 
         val appInfo = installed.applicationInfo
         return Inspection.Update(
-            file = file,
-            packageName = archive.packageName,
-            label = appInfo?.loadLabel(pm)?.toString() ?: archive.packageName,
+            file = baseFile,
+            stagingDir = stagingDir,
+            apkFiles = orderedPairs.map { it.first },
+            isSplitBundle = extracted.isSplitBundle,
+            packageName = pkgName,
+            label = appInfo?.loadLabel(pm)?.toString() ?: pkgName,
             icon = appInfo?.loadIcon(pm),
             installedVersion = installed.versionName ?: installed.longVersionCode.toString(),
-            newVersion = archive.versionName ?: archive.longVersionCode.toString(),
+            newVersion = baseArchive.versionName ?: baseArchive.longVersionCode.toString(),
             isDowngrade = isDowngrade
         )
     }
@@ -159,9 +212,12 @@ object ApkUpdateInstaller {
         return try {
             val installed = installedInfo(context, update.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
                 ?: return false
-            val archive = archivePackageInfo(context.packageManager, update.file.path)
-                ?: return false
-            if (!hasMatchingSignatures(installed, archive)) return false
+            for (apkFile in update.apkFiles) {
+                val archive = archivePackageInfo(context.packageManager, apkFile.path) ?: return false
+                if (archive.packageName != update.packageName || !hasMatchingSignatures(installed, archive)) {
+                    return false
+                }
+            }
 
             val uninstallFirst = update.isDowngrade &&
                 needsUninstallForDowngrade(context, update.file, update.packageName)
@@ -175,10 +231,13 @@ object ApkUpdateInstaller {
             recordActiveSession(context, sessionId)
 
             installer.openSession(sessionId).use { session ->
-                update.file.inputStream().use { input ->
-                    session.openWrite("base.apk", 0, update.file.length()).use { output ->
-                        input.copyTo(output)
-                        session.fsync(output)
+                update.apkFiles.forEachIndexed { index, apkFile ->
+                    val splitName = if (index == 0) "base.apk" else "split_${index}.apk"
+                    apkFile.inputStream().use { input ->
+                        session.openWrite(splitName, 0, apkFile.length()).use { output ->
+                            input.copyTo(output)
+                            session.fsync(output)
+                        }
                     }
                 }
                 if (installedInfo(context, update.packageName) == null) {
@@ -187,13 +246,13 @@ object ApkUpdateInstaller {
                 }
                 if (uninstallFirst) {
                     savePreDowngradeState(context, update.packageName)
-                    liftUnknownSourcesRestrictions(context, includeUninstall = true)
+                    liftInstallRestrictions(context, includeUninstall = true)
                     installer.uninstall(
                         update.packageName,
                         downgradeUninstallSender(context, sessionId, update.packageName)
                     )
                 } else {
-                    liftUnknownSourcesRestrictions(context, includeUninstall = false)
+                    liftInstallRestrictions(context, includeUninstall = false)
                     session.commit(
                         resultSender(
                             context,
@@ -211,7 +270,7 @@ object ApkUpdateInstaller {
             restoreUnknownSourcesRestrictionsIfIdle(context, if (sessionId != -1) sessionId else null)
             false
         } finally {
-            update.file.delete()
+            update.cleanup()
         }
     }
 
@@ -244,11 +303,6 @@ object ApkUpdateInstaller {
         restoreUnknownSourcesRestrictionsIfIdle(context, sessionId)
     }
 
-    /**
-     * Lets the session install an older version when the OS allows in-place downgrades (debuggable
-     * builds or debuggable packages). [PackageInstaller.SessionParams.installFlags] is on the
-     * light greylist (`@UnsupportedAppUsage`), whereas `setRequestDowngrade` is a hidden `@SystemApi`.
-     */
     internal fun requestDowngrade(params: PackageInstaller.SessionParams) {
         runCatching {
             val field = PackageInstaller.SessionParams::class.java.getField("installFlags")
@@ -269,11 +323,6 @@ object ApkUpdateInstaller {
             Build::class.java.getField("IS_DEBUGGABLE").getBoolean(null)
         }.getOrDefault(Build.TYPE == "userdebug" || Build.TYPE == "eng")
 
-    /**
-     * Production Android (`!isBuildDebuggable`) blocks in-place downgrades of non-debuggable
-     * packages even when `INSTALL_REQUEST_DOWNGRADE` is set, requiring the current version to be
-     * uninstalled before the older APK session is committed.
-     */
     private fun needsUninstallForDowngrade(
         context: Context,
         archiveFile: File,
@@ -369,17 +418,27 @@ object ApkUpdateInstaller {
         }
     }
 
-    /** Puts back the restrictions lifted by [install]; a no-op when none are pending. */
     private fun restoreUnknownSourcesRestrictions(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val keys = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null) ?: return
 
+        val passActive = PlayStoreUpdateManager.isPassActive(context)
+        val toRestore = if (passActive) keys - UserManager.DISALLOW_INSTALL_APPS else keys
+        val keepDeferred = if (passActive && UserManager.DISALLOW_INSTALL_APPS in keys) {
+            setOf(UserManager.DISALLOW_INSTALL_APPS)
+        } else {
+            emptySet()
+        }
+
         val dpm = DeviceAdmin.policyManager
         val admin = DeviceAdmin.component
         if (dpm.isDeviceOwnerApp(context.packageName)) {
-            keys.forEach { runCatching { dpm.addUserRestriction(admin, it) } }
+            toRestore.forEach { runCatching { dpm.addUserRestriction(admin, it) } }
         }
-        prefs.edit { remove(KEY_RESTORE_RESTRICTIONS) }
+        prefs.edit {
+            if (keepDeferred.isEmpty()) remove(KEY_RESTORE_RESTRICTIONS)
+            else putStringSet(KEY_RESTORE_RESTRICTIONS, keepDeferred)
+        }
     }
 
     private fun recordActiveSession(context: Context, sessionId: Int) {
@@ -392,10 +451,6 @@ object ApkUpdateInstaller {
         }
     }
 
-    /**
-     * Restores the restrictions unless another update is still running. [finishedSessionId] is the
-     * session whose result is being handled, which may not have been cleaned up yet.
-     */
     fun restoreUnknownSourcesRestrictionsIfIdle(
         context: Context,
         finishedSessionId: Int? = null,
@@ -477,17 +532,16 @@ object ApkUpdateInstaller {
         context.packageManager.packageInstaller.uninstall(packageName, pendingIntent.intentSender)
     }
 
-    private fun liftUnknownSourcesRestrictions(context: Context, includeUninstall: Boolean) {
+    private fun liftInstallRestrictions(context: Context, includeUninstall: Boolean) {
         val dpm = DeviceAdmin.policyManager
         val admin = DeviceAdmin.component
         if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
         val active = runCatching { dpm.getUserRestrictions(admin) }.getOrNull() ?: return
-        val candidates = if (includeUninstall) downgradeRestrictions else unknownSourcesRestrictions
+        val candidates = if (includeUninstall) downgradeRestrictions else installRestrictions
         val lifted = candidates.filter { active.getBoolean(it) }
         if (lifted.isEmpty()) return
 
-        // Saved before clearing, so a crash in between still leaves a way to put them back.
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val pending = prefs.getStringSet(KEY_RESTORE_RESTRICTIONS, null).orEmpty()
         prefs.edit(commit = true) { putStringSet(KEY_RESTORE_RESTRICTIONS, pending + lifted) }

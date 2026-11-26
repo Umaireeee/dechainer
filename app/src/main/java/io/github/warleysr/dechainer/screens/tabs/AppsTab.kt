@@ -22,12 +22,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
+import io.github.warleysr.dechainer.data.AppTimeWindows
 import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
 import io.github.warleysr.dechainer.screens.common.isLooserLimit
 import io.github.warleysr.dechainer.screens.common.isLooserRestrictions
 import io.github.warleysr.dechainer.screens.common.isLooserWindows
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
+import io.github.warleysr.dechainer.security.TimelockManager
 import io.github.warleysr.dechainer.models.AppGroup
 import io.github.warleysr.dechainer.models.AppItem
 import io.github.warleysr.dechainer.models.TimeLimit
@@ -124,7 +127,7 @@ fun AppsScreen(
             AppSection.SYSTEM_TOOLS to true
         )
     }
-    val recoveryGate = rememberRecoveryGate()
+    val gate = rememberTimelockGate()
     var showMenu by remember { mutableStateOf(false) }
     val selecting = selection.isNotEmpty()
     val appContext = LocalContext.current
@@ -199,7 +202,13 @@ fun AppsScreen(
                         )
                         IconButton(onClick = {
                             val packages = selection.toList()
-                            recoveryGate.change(loosening = false) {
+                            gate.change(
+                                loosening = false,
+                                title = "",
+                                description = "",
+                                dedupeKey = "bulk_suspend",
+                                pendingAction = PendingAction.UnsuspendApp("")
+                            ) {
                                 packages.forEach { viewModel.suspendApp(it, true) }
                             }
                             selection.clear()
@@ -330,7 +339,13 @@ fun AppsScreen(
                                 },
                                 onLongClick = { if (!selecting) selection.add(app.packageName) },
                                 onToggleSuspend = {
-                                    recoveryGate.change(loosening = app.isSuspended) {
+                                    gate.change(
+                                        loosening = app.isSuspended,
+                                        title = context.getString(R.string.timelock_title_unsuspend_app, app.name),
+                                        description = app.packageName,
+                                        dedupeKey = "unsuspend:${app.packageName}",
+                                        pendingAction = PendingAction.UnsuspendApp(app.packageName)
+                                    ) {
                                         viewModel.suspendApp(app.packageName, !app.isSuspended)
                                     }
                                 }
@@ -347,15 +362,33 @@ fun AppsScreen(
             app = app,
             onDismiss = { selectedApp = null },
             onBlock = {
-                recoveryGate.change(loosening = app.isHidden) { viewModel.blockApp(app.packageName, !app.isHidden) }
+                gate.change(
+                    loosening = app.isHidden,
+                    title = context.getString(R.string.timelock_title_unhide_app, app.name),
+                    description = app.packageName,
+                    dedupeKey = "unhide:${app.packageName}",
+                    pendingAction = PendingAction.UnhideApp(app.packageName)
+                ) { viewModel.blockApp(app.packageName, !app.isHidden) }
                 selectedApp = null
             },
             onToggleUninstall = {
-                recoveryGate.change(loosening = app.isUninstallBlocked) { viewModel.setUninstallBlocked(app.packageName, !app.isUninstallBlocked) }
+                gate.change(
+                    loosening = app.isUninstallBlocked,
+                    title = context.getString(R.string.timelock_title_allow_uninstall, app.name),
+                    description = app.packageName,
+                    dedupeKey = "allow_uninstall:${app.packageName}",
+                    pendingAction = PendingAction.AllowUninstallApp(app.packageName)
+                ) { viewModel.setUninstallBlocked(app.packageName, !app.isUninstallBlocked) }
                 selectedApp = null
             },
             onSuspend = {
-                recoveryGate.change(loosening = app.isSuspended) { viewModel.suspendApp(app.packageName, !app.isSuspended) }
+                gate.change(
+                    loosening = app.isSuspended,
+                    title = context.getString(R.string.timelock_title_unsuspend_app, app.name),
+                    description = app.packageName,
+                    dedupeKey = "unsuspend:${app.packageName}",
+                    pendingAction = PendingAction.UnsuspendApp(app.packageName)
+                ) { viewModel.suspendApp(app.packageName, !app.isSuspended) }
                 selectedApp = null
             },
             onSetTimeLimit = {
@@ -385,7 +418,18 @@ fun AppsScreen(
             onDismiss = { showTimeLimitDialog = null },
             onConfirm = { limit, reopeningSeconds ->
                 val liveApp = viewModel.apps.firstOrNull { it.packageName == app.packageName } ?: app
-                recoveryGate.change(isLooserLimit(liveApp.timeLimit, limit) || reopeningSeconds < liveApp.reopeningSeconds) {
+                val loosening = isLooserLimit(liveApp.timeLimit, limit) || reopeningSeconds < liveApp.reopeningSeconds
+                gate.change(
+                    loosening = loosening,
+                    title = context.getString(R.string.timelock_title_loosen_limit, app.name),
+                    description = app.packageName,
+                    dedupeKey = "app_limit:${app.packageName}",
+                    pendingAction = PendingAction.SetAppTimeLimit(
+                        packageName = app.packageName,
+                        limitEncoded = TimelockManager.encodeTimeLimit(limit),
+                        reopenSeconds = reopeningSeconds
+                    )
+                ) {
                     viewModel.setAppReopenTime(app.packageName, reopeningSeconds)
                     viewModel.setAppTimeLimit(app.packageName, limit)
                 }
@@ -401,7 +445,17 @@ fun AppsScreen(
             onDismiss = { showRestrictionsDialog = null },
             onSave = { restrictions ->
                 val current = deviceOwnerViewModel.getApplicationRestrictions(app.packageName)
-                recoveryGate.change(isLooserRestrictions(current, restrictions)) {
+                val loosening = isLooserRestrictions(current, restrictions)
+                gate.change(
+                    loosening = loosening,
+                    title = context.getString(R.string.timelock_title_loosen_app_restrictions, app.name),
+                    description = app.packageName,
+                    dedupeKey = "app_restrictions:${app.packageName}",
+                    pendingAction = PendingAction.SetAppRestrictions(
+                        packageName = app.packageName,
+                        bundleJson = TimelockManager.encodeBundle(restrictions)
+                    )
+                ) {
                     deviceOwnerViewModel.setApplicationRestrictions(app.packageName, restrictions)
                 }
                 showRestrictionsDialog = null
@@ -416,9 +470,14 @@ fun AppsScreen(
             currentGroupId = viewModel.groupFor(app.packageName)?.id,
             onDismiss = { showGroupPickerDialog = null },
             onSelect = { groupId ->
-                // Leaving a group (to none or to another) takes its restrictions away.
                 val leaving = viewModel.groupFor(app.packageName)?.id.let { it != null && it != groupId }
-                recoveryGate.change(leaving) { viewModel.setPackageGroup(app.packageName, groupId) }
+                gate.change(
+                    loosening = leaving,
+                    title = context.getString(R.string.timelock_title_leave_group, app.name),
+                    description = app.packageName,
+                    dedupeKey = "app_group:${app.packageName}",
+                    pendingAction = PendingAction.SetAppGroup(app.packageName, groupId)
+                ) { viewModel.setPackageGroup(app.packageName, groupId) }
                 showGroupPickerDialog = null
             },
             onCreateNew = {
@@ -447,7 +506,6 @@ fun AppsScreen(
         CreateGroupDialog(
             onDismiss = { showCreateGroupDialog = false },
             onConfirm = { name ->
-                // An empty group restricts nothing, so creating one needs no session.
                 viewModel.createGroup(name)
                 showCreateGroupDialog = false
             }
@@ -467,7 +525,19 @@ fun AppsScreen(
                     isLooserWindows(group.timeWindows, windows) ||
                     !packageNames.containsAll(group.packageNames) ||
                     stolenFromOtherGroup
-                recoveryGate.change(loosening) {
+                gate.change(
+                    loosening = loosening,
+                    title = context.getString(R.string.timelock_title_loosen_group, group.name),
+                    description = name,
+                    dedupeKey = "edit_group:${group.id}",
+                    pendingAction = PendingAction.UpdateGroup(
+                        groupId = group.id,
+                        name = name,
+                        limitEncoded = TimelockManager.encodeTimeLimit(limit),
+                        windowsEncoded = AppTimeWindows.encode(windows),
+                        packageNames = packageNames.sorted()
+                    )
+                ) {
                     if (name != group.name) viewModel.renameGroup(group.id, name)
                     viewModel.setGroupTimeLimit(group.id, limit)
                     viewModel.setGroupTimeWindows(group.id, windows)
@@ -481,7 +551,12 @@ fun AppsScreen(
                 navViewModel.navigateTo("schedule")
             },
             onDelete = {
-                recoveryGate.run { viewModel.deleteGroup(group.id) }
+                gate.requestUnlock(
+                    title = context.getString(R.string.timelock_title_delete_group, group.name),
+                    description = group.name,
+                    dedupeKey = "delete_group:${group.id}",
+                    pendingAction = PendingAction.DeleteGroup(group.id)
+                )
                 showEditGroupDialog = null
             }
         )
@@ -494,11 +569,16 @@ fun AppsScreen(
             onDismiss = { showBulkGroupDialog = false },
             onSelect = { groupId ->
                 val packages = selection.toList()
-                // Moving an app out of its current group takes that group's rules away.
                 val leaving = packages.any { pkg ->
                     viewModel.groupFor(pkg)?.id.let { it != null && it != groupId }
                 }
-                recoveryGate.change(leaving) { packages.forEach { viewModel.setPackageGroup(it, groupId) } }
+                gate.change(
+                    loosening = leaving,
+                    title = context.getString(R.string.timelock_title_bulk_leave_group, packages.size),
+                    description = packages.joinToString(", "),
+                    dedupeKey = "bulk_group:" + packages.sorted().joinToString(","),
+                    pendingAction = PendingAction.BulkSetAppGroup(packages, groupId)
+                ) { packages.forEach { viewModel.setPackageGroup(it, groupId) } }
                 showBulkGroupDialog = false
                 selection.clear()
             },
@@ -509,7 +589,7 @@ fun AppsScreen(
         )
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 

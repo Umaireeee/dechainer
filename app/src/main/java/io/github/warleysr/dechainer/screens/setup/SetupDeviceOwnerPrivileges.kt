@@ -6,21 +6,24 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import kotlinx.coroutines.delay
 import rikka.shizuku.Shizuku
 
 @Composable
 fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
+    val context = LocalContext.current
     var shizukuInstalled by remember { mutableStateOf(viewModel.isShizukuInstalled()) }
     var shizukuRunning by remember { mutableStateOf(Shizuku.pingBinder()) }
     var commandResult by remember { mutableStateOf<String?>(null) }
-    val recoveryGate = rememberRecoveryGate()
+    val gate = rememberTimelockGate()
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -42,7 +45,12 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
         when {
             viewModel.isDeviceOwner() -> DeviceOwnerRemoveContent(
                 onRemoveAction = {
-                    recoveryGate.run { viewModel.processDeviceOwnerPrivileges(remove = true) }
+                    gate.requestUnlock(
+                        title = context.getString(R.string.timelock_title_remove_device_owner),
+                        description = context.getString(R.string.remove_privileges_description),
+                        dedupeKey = "remove_device_owner",
+                        pendingAction = PendingAction.RemoveDeviceOwner
+                    )
                 }
             )
             !shizukuInstalled -> ShizukuNotInstalledCard(viewModel)
@@ -62,7 +70,7 @@ fun SetupDeviceOwnerPrivileges(viewModel: DeviceOwnerViewModel = viewModel()) {
         )
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 @Composable

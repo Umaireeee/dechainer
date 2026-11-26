@@ -23,8 +23,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.SystemRestrictions
 import io.github.warleysr.dechainer.screens.common.NoDeviceOwnerPrivileges
-import io.github.warleysr.dechainer.screens.common.RecoveryGateDialog
-import io.github.warleysr.dechainer.screens.common.rememberRecoveryGate
+import io.github.warleysr.dechainer.screens.common.PendingChange
+import io.github.warleysr.dechainer.screens.common.TimelockGateDialog
+import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
+import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import io.github.warleysr.dechainer.viewmodels.RestrictionsViewModel
@@ -35,7 +37,8 @@ fun RestrictionsTab(
     restrictionsViewModel: RestrictionsViewModel = viewModel(),
     navViewModel: NavigationViewModel = viewModel()
 ) {
-    val recoveryGate = rememberRecoveryGate()
+    val context = LocalContext.current
+    val gate = rememberTimelockGate()
     val isOwner = deviceOwnerViewModel.isDeviceOwner()
     LaunchedEffect(isOwner) {
         if (isOwner) restrictionsViewModel.loadRestrictions()
@@ -77,9 +80,26 @@ fun RestrictionsTab(
             Button(
                 onClick = {
                     val snapshot = restrictionsViewModel.snapshotDrafts()
-                    val loosening = restrictionsViewModel.isLoosening(snapshot)
-                    recoveryGate.change(loosening) {
-                        restrictionsViewModel.applyChanges(snapshot, allowLoosening = loosening)
+                    val added = restrictionsViewModel.addedKeys(snapshot)
+                    val removed = restrictionsViewModel.removedKeys(snapshot)
+                    if (added.isNotEmpty() && removed.isEmpty()) {
+                        PendingChange.schedule(
+                            message = context.getString(R.string.restriction_pending),
+                            undoLabel = context.getString(R.string.undo),
+                            onUndo = { restrictionsViewModel.revertKeysToApplied(added) },
+                            action = { restrictionsViewModel.addRestrictions(added) }
+                        )
+                    } else if (removed.isNotEmpty()) {
+                        if (added.isNotEmpty()) {
+                            restrictionsViewModel.addRestrictions(added)
+                        }
+                        gate.requestUnlock(
+                            title = context.getString(R.string.timelock_title_clear_restrictions, removed.size),
+                            description = removed.joinToString(", "),
+                            dedupeKey = "clear_sys_restrictions:" + removed.sorted().joinToString(","),
+                            pendingAction = PendingAction.ClearSystemRestrictions(removed),
+                            onCancel = { restrictionsViewModel.revertKeysToApplied(removed) }
+                        )
                     }
                 },
                 enabled = restrictionsViewModel.hasPendingChanges(),
@@ -104,7 +124,7 @@ fun RestrictionsTab(
         }
     }
 
-    RecoveryGateDialog(recoveryGate)
+    TimelockGateDialog(gate)
 }
 
 

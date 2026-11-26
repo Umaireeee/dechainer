@@ -8,11 +8,15 @@ import android.content.IntentFilter
 import android.os.Build
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppRepository
+import io.github.warleysr.dechainer.data.BrowserHardeningManager
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.NotificationGuard
+import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 import io.github.warleysr.dechainer.data.SettingsLock
+import io.github.warleysr.dechainer.security.TimelockManager
+import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +49,21 @@ class DechainerApplication : Application() {
                 return
             }
             AppRepository.invalidateCache()
-            applicationScope.launch { AppRepository.getApps() }
+            if (intent?.action == Intent.ACTION_PACKAGE_ADDED) {
+                val pkg = intent.data?.encodedSchemeSpecificPart
+                val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
+                if (pkg != null) {
+                    PlayStoreUpdateManager.onPackageAdded(this@DechainerApplication, pkg, replacing)
+                }
+            }
+            applicationScope.launch {
+                AppRepository.getApps()
+                if (intent?.action == Intent.ACTION_PACKAGE_ADDED ||
+                    intent?.action == Intent.ACTION_PACKAGE_REPLACED
+                ) {
+                    BrowserHardeningManager.reapplyIfEnabled(this@DechainerApplication)
+                }
+            }
         }
     }
 
@@ -85,6 +103,7 @@ class DechainerApplication : Application() {
         // Catches up after a force stop, which also cancels alarms.
         applicationScope.launch {
             if (SettingsLock.isLocked()) SettingsLock.setLocked(false)
+            TimelockManager.syncAll(this@DechainerApplication)
             DowntimeManager.sync(this@DechainerApplication)
             AccessibilityWatchdog.cancelLegacyPeriodic(this@DechainerApplication)
             if (!AccessibilityWatchdog.hasPermission(this@DechainerApplication)) {
@@ -95,6 +114,9 @@ class DechainerApplication : Application() {
             }
             NotificationGuard.enforceAll(this@DechainerApplication)
             DnsGuard.enforce(this@DechainerApplication)
+            LocalDnsShieldManager.enforce(this@DechainerApplication)
+            BrowserHardeningManager.reapplyIfEnabled(this@DechainerApplication)
+            PlayStoreUpdateManager.sync(this@DechainerApplication)
         }
 
         // Zero-polling instant observers for accessibility, notifications, and Clean DNS failover.

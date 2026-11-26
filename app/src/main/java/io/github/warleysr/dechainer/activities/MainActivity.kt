@@ -7,7 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,13 +16,24 @@ import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.filled.AppBlocking
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.outlined.LockClock
-import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -33,14 +43,22 @@ import io.github.warleysr.dechainer.R
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.screens.common.PendingChange
 import io.github.warleysr.dechainer.screens.setup.SetupDeviceOwnerPrivileges
-import io.github.warleysr.dechainer.screens.setup.SetupRecovery
-import io.github.warleysr.dechainer.screens.tabs.*
+import io.github.warleysr.dechainer.screens.tabs.ActivityBlockerScreen
+import io.github.warleysr.dechainer.screens.tabs.AppsTab
+import io.github.warleysr.dechainer.screens.tabs.BrowserHardeningScreen
+import io.github.warleysr.dechainer.screens.tabs.ConfigTab
+import io.github.warleysr.dechainer.screens.tabs.ImpulseLockScreen
+import io.github.warleysr.dechainer.screens.tabs.LocalDnsShieldScreen
+import io.github.warleysr.dechainer.screens.tabs.PendingUnlocksScreen
+import io.github.warleysr.dechainer.screens.tabs.RestrictionsTab
+import io.github.warleysr.dechainer.screens.tabs.ScheduleTab
+import io.github.warleysr.dechainer.screens.tabs.SuspensionLogsScreen
 import io.github.warleysr.dechainer.security.SecurityManager
+import io.github.warleysr.dechainer.security.TimelockManager
 import io.github.warleysr.dechainer.ui.theme.DechainerTheme
 import io.github.warleysr.dechainer.viewmodels.DeviceOwnerViewModel
 import io.github.warleysr.dechainer.viewmodels.NavigationViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -57,10 +75,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val wasAuthenticated = savedInstanceState?.getBoolean(STATE_AUTHENTICATED, false) == true
-        authenticated.value =
-            (wasAuthenticated && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L) ||
-                SecurityManager.consumeDebugAutoStartSession(this)
-        SecurityManager.syncRecoveryCodeState(this)
+        authenticated.value = wasAuthenticated && SecurityManager.getImpulseBlockRemainingTime(this) <= 0L
+        TimelockManager.syncAll(this)
         SecurityManager.consumeDebugRestoreUnknownSourcesRestriction(this)
         lifecycleScope.launch(Dispatchers.IO) {
             ApkUpdateInstaller.restoreUnknownSourcesRestrictionsIfIdle(this@MainActivity, abandonStale = true)
@@ -70,23 +86,14 @@ class MainActivity : ComponentActivity() {
             DechainerTheme {
                 val viewModel: DeviceOwnerViewModel = viewModel()
                 val navViewModel: NavigationViewModel = viewModel()
+                val pendingRequests by TimelockManager.requests.collectAsState()
 
-                val recoverySet = SecurityManager.isRecoveryKeySet
-                val isUnlocked = recoverySet && authenticated.value
+                val isUnlocked = authenticated.value
                 val currentScreen = navViewModel.selectedTab()
                 val isRoot = currentScreen in listOf("apps", "schedule", "config", "suspension_logs")
 
                 BackHandler(enabled = isUnlocked && !isRoot) {
                     navViewModel.goBack()
-                }
-
-                var sessionRemaining by remember { mutableLongStateOf(SecurityManager.getSessionRemainingMillis()) }
-                LaunchedEffect(SecurityManager.sessionEndTime) {
-                    while (true) {
-                        sessionRemaining = SecurityManager.getSessionRemainingMillis()
-                        if (sessionRemaining <= 0L) break
-                        delay(1000L)
-                    }
                 }
 
                 Scaffold(
@@ -102,22 +109,17 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             actions = {
-                                if (isUnlocked && sessionRemaining > 0L) {
-                                    val totalSeconds = sessionRemaining / 1000L
-                                    val minutes = totalSeconds / 60
-                                    val seconds = totalSeconds % 60
-                                    
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Outlined.LockClock, null, modifier = Modifier.padding(end = 4.dp))
-                                        Text(
-                                            text = "%02d:%02d".format(minutes, seconds),
-                                            style = MaterialTheme.typography.labelLarge
-                                        )
-                                        IconButton(onClick = { SecurityManager.renewSession() }) {
-                                            Icon(Icons.Outlined.Refresh, stringResource(R.string.renew_session))
-                                        }
-                                        IconButton(onClick = { SecurityManager.endSession() }) {
-                                            Icon(Icons.Outlined.Logout, null)
+                                if (isUnlocked && pendingRequests.isNotEmpty() && currentScreen != "pending_unlocks") {
+                                    IconButton(onClick = { navViewModel.navigateTo("pending_unlocks") }) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge { Text(pendingRequests.size.toString()) }
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.HourglassTop,
+                                                contentDescription = stringResource(R.string.timelock_pending_title)
+                                            )
                                         }
                                     }
                                 }
@@ -156,8 +158,6 @@ class MainActivity : ComponentActivity() {
 
                         val selectedBaseTab = when (currentScreen) {
                             "apps", "schedule", "suspension_logs" -> currentScreen
-                            // Everything else (system restrictions, activity blocker, impulse lock,
-                            // device owner setup) is reached from the Protection tab.
                             else -> "config"
                         }
 
@@ -174,7 +174,8 @@ class MainActivity : ComponentActivity() {
                                                 "schedule" -> Icons.Default.Schedule
                                                 "suspension_logs" -> Icons.Default.History
                                                 else -> Icons.Outlined.Shield
-                                            }, contentDescription = null
+                                            },
+                                            contentDescription = null
                                         )
                                     }
                                 )
@@ -182,38 +183,37 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { innerPadding ->
-
-                    if (!recoverySet)
-                        SetupRecovery(innerPadding)
-                    else {
-                        if (!authenticated.value)
-                            Box(
-                                modifier = Modifier
-                                    .padding(innerPadding)
-                                    .consumeWindowInsets(innerPadding)
-                            ) {
-                                LockScreen(
-                                    isOwner = viewModel.isDeviceOwner(),
-                                    onAuthenticated = {
-                                        if (SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) <= 0L) {
-                                            authenticated.value = true
-                                        }
+                    if (!authenticated.value) {
+                        Box(
+                            modifier = Modifier
+                                .padding(innerPadding)
+                                .consumeWindowInsets(innerPadding)
+                        ) {
+                            LockScreen(
+                                isOwner = viewModel.isDeviceOwner(),
+                                onAuthenticated = {
+                                    if (SecurityManager.getImpulseBlockRemainingTime(this@MainActivity) <= 0L) {
+                                        authenticated.value = true
                                     }
-                                )
-                            }
-                        else
-                            Box(modifier = Modifier.padding(innerPadding)) {
-                                when (currentScreen) {
-                                    "restrictions" -> RestrictionsTab()
-                                    "apps" -> AppsTab()
-                                    "schedule" -> ScheduleTab()
-                                    "config" -> ConfigTab()
-                                    "setup_device_owner" -> SetupDeviceOwnerPrivileges()
-                                    "activity_blocker" -> ActivityBlockerScreen()
-                                    "impulse_lock" -> ImpulseLockScreen()
-                                    "suspension_logs" -> SuspensionLogsScreen()
                                 }
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.padding(innerPadding)) {
+                            when (currentScreen) {
+                                "restrictions" -> RestrictionsTab()
+                                "apps" -> AppsTab()
+                                "schedule" -> ScheduleTab()
+                                "config" -> ConfigTab()
+                                "setup_device_owner" -> SetupDeviceOwnerPrivileges()
+                                "activity_blocker" -> ActivityBlockerScreen()
+                                "impulse_lock" -> ImpulseLockScreen()
+                                "suspension_logs" -> SuspensionLogsScreen()
+                                "pending_unlocks" -> PendingUnlocksScreen()
+                                "local_dns_shield" -> LocalDnsShieldScreen()
+                                "browser_hardening" -> BrowserHardeningScreen()
                             }
+                        }
                     }
                 }
             }
@@ -237,6 +237,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        TimelockManager.syncAll(this)
         val impulseActive = SecurityManager.getImpulseBlockRemainingTime(this) > 0L
         val timedOutInBackground = lastStopElapsed > 0L &&
             SystemClock.elapsedRealtime() - lastStopElapsed > AUTH_GRACE_MS
@@ -244,12 +245,5 @@ class MainActivity : ComponentActivity() {
             authenticated.value = false
         }
         lastStopElapsed = 0L
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (!isChangingConfigurations) {
-            SecurityManager.endSession()
-        }
     }
 }

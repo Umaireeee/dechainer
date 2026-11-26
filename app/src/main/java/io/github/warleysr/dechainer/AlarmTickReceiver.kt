@@ -6,6 +6,7 @@ import android.content.Intent
 import io.github.warleysr.dechainer.data.BlockSuspensionManager
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.MusicLimitTracker
+import io.github.warleysr.dechainer.data.PlayStoreUpdateManager
 
 /** Internal non-exported receiver for exact enforcement alarms. */
 class AlarmTickReceiver : BroadcastReceiver() {
@@ -17,6 +18,8 @@ class AlarmTickReceiver : BroadcastReceiver() {
             MusicLimitTracker.ACTION_TICK -> MusicLimitTracker.onAlarmTick(app)
             DechainerAccessibilityService.ACTION_IMPULSE_RELEASE ->
                 DechainerAccessibilityService.releaseImpulseSuspensionIfExpired(app)
+            PlayStoreUpdateManager.ACTION_PASS_END ->
+                PlayStoreUpdateManager.endPass(app)
         }
     }
 }

@@ -1,6 +1,8 @@
 ﻿package io.github.warleysr.dechainer.data
 
 import io.github.warleysr.dechainer.security.SecurityManager
+import io.github.warleysr.dechainer.security.TimelockManager
+import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
 
 import android.accounts.AccountManager
 import android.annotation.SuppressLint
@@ -243,9 +245,13 @@ object DeviceOwnerRepository {
                 SecurityManager.getActiveImpulseSuspension(ctx) + manual
             if (held.isNotEmpty()) dpm.setPackagesSuspended(adminName, held.toTypedArray(), false)
             DnsGuard.forget(ctx)
+            LocalDnsShieldManager.releaseForDeviceOwnerRemoval(ctx)
+            BrowserHardeningManager.releaseForDeviceOwnerRemoval(ctx)
+            PlayStoreUpdateManager.endPass(ctx)
             AccessibilityWatchdog.setWanted(ctx, false)
             NotificationGuard.setListenerWanted(ctx, false)
             SecurityManager.cancelForcedRemoval(ctx)
+            TimelockManager.cancelAll(ctx)
             AppRepository.invalidateCache()
         } catch (e: Exception) {
             Timber.e(e, "Could not release held apps")
