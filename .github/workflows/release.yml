@@ -45,10 +45,12 @@ jobs:
             echo "dechainer.keyAlias=$KEY_ALIAS"
             echo "dechainer.keyPassword=$KEY_PASSWORD"
           } > local.properties
-      - name: Unit tests and signed release build
+      - name: Run unit tests
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest assembleRelease --stacktrace
+          ./gradlew testDebugUnitTest --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" --stacktrace
+      - name: Build signed release APK
+        run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" --stacktrace
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk "dechainer-${TAG}.apk"
       - uses: softprops/action-gh-release@v2
