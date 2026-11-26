@@ -28,6 +28,26 @@ object CleanResetMigration {
         }
     }
 
+    fun isUpgradeInstall(context: Context): Boolean {
+        val ctx = context.applicationContext
+        return runCatching {
+            val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            info.firstInstallTime != info.lastUpdateTime
+        }.getOrDefault(false)
+    }
+
+    fun markCompleted(context: Context) {
+        val ctx = context.applicationContext
+        synchronized(lock) {
+            val migrationPrefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (!migrationPrefs.getBoolean(KEY_CLEAN_RESET_V245, false)) {
+                migrationPrefs.edit(commit = true) {
+                    putBoolean(KEY_CLEAN_RESET_V245, true)
+                }
+            }
+        }
+    }
+
     fun runIfNeeded(context: Context): Boolean {
         val ctx = context.applicationContext
         synchronized(lock) {

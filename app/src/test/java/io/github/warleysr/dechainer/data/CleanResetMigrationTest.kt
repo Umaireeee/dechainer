@@ -68,4 +68,20 @@ class CleanResetMigrationTest {
         assertFalse(CleanResetMigration.runIfNeeded(context))
         assertEquals(userChoice, BrowserHardeningManager.getConfig(context))
     }
+
+    @Test
+    fun `markCompleted preserves activity_blocker_prefs on fresh installs and skips runIfNeeded`() {
+        val blockerPrefs = context.getSharedPreferences("activity_blocker_prefs", Context.MODE_PRIVATE)
+        blockerPrefs.edit()
+            .putStringSet("blocked_activities", setOf("com.android.settings.homepage.SettingsHomepageActivity"))
+            .commit()
+
+        CleanResetMigration.markCompleted(context)
+
+        assertFalse(CleanResetMigration.runIfNeeded(context))
+        assertEquals(
+            setOf("com.android.settings.homepage.SettingsHomepageActivity"),
+            blockerPrefs.getStringSet("blocked_activities", emptySet())
+        )
+    }
 }

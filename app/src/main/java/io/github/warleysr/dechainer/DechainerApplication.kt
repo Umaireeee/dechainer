@@ -149,9 +149,13 @@ class DechainerApplication : Application() {
             }
         }
 
-        // Run one-time v2.4.5 cleanup synchronously before launching async syncs or UI components
-        // so it can never race with newly queued timelocks or startup policy checks.
-        CleanResetMigration.runIfNeeded(this)
+        // Run one-time v2.4.5 cleanup synchronously on upgrades before launching async syncs or UI
+        // components; on fresh installs mark completed immediately so pre-seeded configs survive.
+        if (CleanResetMigration.isUpgradeInstall(this)) {
+            CleanResetMigration.runIfNeeded(this)
+        } else {
+            CleanResetMigration.markCompleted(this)
+        }
 
         // Catches up after a force stop, which also cancels alarms.
         applicationScope.launch {
