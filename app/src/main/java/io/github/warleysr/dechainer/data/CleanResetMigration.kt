@@ -12,13 +12,13 @@ import io.github.warleysr.dechainer.security.TimelockManager
 import timber.log.Timber
 
 /**
- * One-time migration for v2.4.5 that wipes every previously applied restriction, suspension,
- * app restriction bundle, hidden/uninstall-blocked flag, VPN, Private DNS pin, timelock, and
- * forced removal timer while preserving Device Owner privileges.
+ * One-time migration for v2.4.8 that wipes every previously applied restriction, suspension,
+ * app restriction bundle, hidden/uninstall-blocked flag, VPN, Private DNS pin, timelock,
+ * usage counters, and forced removal timer while preserving Device Owner privileges.
  */
 object CleanResetMigration {
     private const val PREFS = "dechainer_migrations"
-    private const val KEY_CLEAN_RESET_V245 = "clean_reset_v245_done"
+    private const val KEY_CLEAN_RESET_V248 = "clean_reset_v248_done"
     private val lock = Any()
 
     internal fun resetForTest(context: Context) {
@@ -40,9 +40,9 @@ object CleanResetMigration {
         val ctx = context.applicationContext
         synchronized(lock) {
             val migrationPrefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            if (!migrationPrefs.getBoolean(KEY_CLEAN_RESET_V245, false)) {
+            if (!migrationPrefs.getBoolean(KEY_CLEAN_RESET_V248, false)) {
                 migrationPrefs.edit(commit = true) {
-                    putBoolean(KEY_CLEAN_RESET_V245, true)
+                    putBoolean(KEY_CLEAN_RESET_V248, true)
                 }
             }
         }
@@ -52,7 +52,7 @@ object CleanResetMigration {
         val ctx = context.applicationContext
         synchronized(lock) {
             val migrationPrefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            if (migrationPrefs.getBoolean(KEY_CLEAN_RESET_V245, false)) {
+            if (migrationPrefs.getBoolean(KEY_CLEAN_RESET_V248, false)) {
                 return false
             }
 
@@ -147,7 +147,10 @@ object CleanResetMigration {
                 AppTimeLimits.PREFS_NAME,
                 AppTimeLimits.WEEKLY_PREFS_NAME,
                 AppTimeWindows.PREFS_NAME,
-                AppGroupRepository.PREFS_NAME
+                AppGroupRepository.PREFS_NAME,
+                DailyUsageStore.APP_USAGE_PREFS,
+                DailyUsageStore.GROUP_USAGE_PREFS,
+                "usage_meta"
             ).forEach { name ->
                 runCatching {
                     ctx.getSharedPreferences(name, Context.MODE_PRIVATE).edit(commit = true) { clear() }
@@ -161,9 +164,9 @@ object CleanResetMigration {
             runCatching { AppRepository.invalidateCache() }
 
             migrationPrefs.edit(commit = true) {
-                putBoolean(KEY_CLEAN_RESET_V245, true)
+                putBoolean(KEY_CLEAN_RESET_V248, true)
             }
-            Timber.i("CleanResetMigration v2.4.5 completed cleanly")
+            Timber.i("CleanResetMigration v2.4.8 completed cleanly")
             return true
         }
     }

@@ -33,7 +33,11 @@ class DowntimeReceiver : BroadcastReceiver() {
                 when (action) {
                     Intent.ACTION_BOOT_COMPLETED,
                     Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                        CleanResetMigration.runIfNeeded(app)
+                        if (CleanResetMigration.isUpgradeInstall(app)) {
+                            CleanResetMigration.runIfNeeded(app)
+                        } else {
+                            CleanResetMigration.markCompleted(app)
+                        }
                         TimelockManager.syncAll(app)
                         DowntimeManager.sync(app)
                         DechainerAccessibilityService.releaseImpulseSuspensionIfExpired(app)
