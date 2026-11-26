@@ -77,7 +77,8 @@ object LocalDnsShieldManager {
 
     fun applyConfig(context: Context, config: LocalDnsConfig) {
         val ctx = context.applicationContext
-        synchronized(lock) {
+        val reconfigureRoutes = synchronized(lock) {
+            val prev = getConfig(ctx)
             cachedConfig = config
             prefs(ctx).edit(commit = true) { putString(KEY_CONFIG, config.toJsonString()) }
             val count = prefs(ctx).getLong(KEY_BLOCKED_COUNT, 0L).coerceAtLeast(_status.value.blockedCount)
@@ -87,11 +88,12 @@ object LocalDnsShieldManager {
                 lastError = if (!config.enabled) null else _status.value.lastError
             )
             notifyConfigChanged()
+            config.enabled && _status.value.isRunning && prev.blockDoHBypass != config.blockDoHBypass
         }
-        enforce(ctx)
+        enforce(ctx, reconfigure = reconfigureRoutes)
     }
 
-    fun enforce(context: Context) {
+    fun enforce(context: Context, reconfigure: Boolean = false) {
         val ctx = context.applicationContext
         val config = getConfig(ctx)
         val count = prefs(ctx).getLong(KEY_BLOCKED_COUNT, 0L).coerceAtLeast(_status.value.blockedCount)
@@ -127,9 +129,10 @@ object LocalDnsShieldManager {
         }
 
         runCatching {
+            val action = if (reconfigure) LocalDnsVpnService.ACTION_RECONFIGURE else LocalDnsVpnService.ACTION_START
             ContextCompat.startForegroundService(
                 ctx,
-                Intent(ctx, LocalDnsVpnService::class.java).setAction(LocalDnsVpnService.ACTION_START)
+                Intent(ctx, LocalDnsVpnService::class.java).setAction(action)
             )
         }.onFailure {
             Timber.w(it, "Could not start LocalDnsVpnService")

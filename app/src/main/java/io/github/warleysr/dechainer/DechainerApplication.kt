@@ -10,6 +10,7 @@ import android.os.Build
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.AppRepository
 import io.github.warleysr.dechainer.data.BrowserHardeningManager
+import io.github.warleysr.dechainer.data.CleanResetMigration
 import io.github.warleysr.dechainer.data.DeviceOwnerRepository
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.DowntimeManager
@@ -122,6 +123,8 @@ class DechainerApplication : Application() {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         })
+
+        CleanResetMigration.runIfNeeded(this)
 
         applicationScope.launch {
             DeviceOwnerRepository.restoreStuckUserSetupComplete()

@@ -7,6 +7,7 @@ import android.content.Intent
 import io.github.warleysr.dechainer.data.AccessibilityWatchdog
 import io.github.warleysr.dechainer.data.ApkUpdateInstaller
 import io.github.warleysr.dechainer.data.BrowserHardeningManager
+import io.github.warleysr.dechainer.data.CleanResetMigration
 import io.github.warleysr.dechainer.data.DnsGuard
 import io.github.warleysr.dechainer.data.DowntimeManager
 import io.github.warleysr.dechainer.data.NotificationGuard
@@ -21,6 +22,7 @@ class DowntimeReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                CleanResetMigration.runIfNeeded(app)
                 TimelockManager.syncAll(app)
                 DowntimeManager.sync(app)
                 DechainerAccessibilityService.releaseImpulseSuspensionIfExpired(app)

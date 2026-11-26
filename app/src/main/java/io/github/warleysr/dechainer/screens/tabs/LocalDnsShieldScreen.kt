@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,13 +52,21 @@ import io.github.warleysr.dechainer.screens.common.rememberTimelockGate
 import io.github.warleysr.dechainer.security.PendingAction
 import io.github.warleysr.dechainer.vpn.LocalDnsConfig
 import io.github.warleysr.dechainer.vpn.LocalDnsShieldManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.InetAddress
+import java.net.UnknownHostException
 
 @Composable
 fun LocalDnsShieldScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val gate = rememberTimelockGate()
     val status by LocalDnsShieldManager.status.collectAsState()
     var showAddDomainDialog by remember { mutableStateOf(false) }
+    var dnsTestResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var dnsTesting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         LocalDnsShieldManager.refreshState(context)
@@ -154,6 +163,52 @@ fun LocalDnsShieldScreen() {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
+                    }
+                    if (cfg.enabled) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            enabled = !dnsTesting,
+                            onClick = {
+                                dnsTesting = true
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        try {
+                                            val addrs = InetAddress.getAllByName("pornhub.com").toList()
+                                            val allLocal = addrs.isEmpty() || addrs.all {
+                                                it.isAnyLocalAddress || it.isLoopbackAddress
+                                            }
+                                            if (allLocal) {
+                                                true to context.getString(R.string.dns_shield_test_pass)
+                                            } else {
+                                                val ips = addrs.mapNotNull { it.hostAddress }.joinToString(", ")
+                                                false to context.getString(R.string.dns_shield_test_bypass, ips)
+                                            }
+                                        } catch (_: UnknownHostException) {
+                                            true to context.getString(R.string.dns_shield_test_pass)
+                                        } catch (e: Exception) {
+                                            false to (e.message ?: "DNS check failed")
+                                        }
+                                    }
+                                    dnsTestResult = result
+                                    dnsTesting = false
+                                }
+                            }
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (dnsTesting) R.string.dns_shield_testing_btn
+                                    else R.string.dns_shield_test_btn
+                                )
+                            )
+                        }
+                        dnsTestResult?.let { (passed, msg) ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (passed) Color(26, 163, 63) else MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

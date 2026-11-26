@@ -538,6 +538,10 @@
     <string name="dns_shield_recent_blocked">Recently blocked</string>
     <string name="dns_shield_add_domain_title">Block domain</string>
     <string name="dns_shield_add_domain_hint">Ex: reddit.com or x.com</string>
+    <string name="dns_shield_test_btn">Test DNS filter</string>
+    <string name="dns_shield_testing_btn">Testing…</string>
+    <string name="dns_shield_test_pass">Filter working — pornhub.com blocked locally</string>
+    <string name="dns_shield_test_bypass">Bypass detected (%1$s) — set Android Private DNS to Off and turn off browser Secure DNS</string>
 
     <!-- Managed Browser Hardening -->
     <string name="browser_hardening_title">Browser Hardening</string>

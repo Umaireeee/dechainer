@@ -44,6 +44,7 @@ class LocalDnsVpnService : VpnService() {
 
     companion object {
         const val ACTION_START = "io.github.warleysr.dechainer.vpn.START"
+        const val ACTION_RECONFIGURE = "io.github.warleysr.dechainer.vpn.RECONFIGURE"
         const val ACTION_STOP = "io.github.warleysr.dechainer.vpn.STOP"
         private const val CHANNEL_ID = "local_dns_shield"
         private const val NOTIFICATION_ID = 7310
@@ -56,6 +57,7 @@ class LocalDnsVpnService : VpnService() {
         private const val DNS_CACHE_MAX_ENTRIES = 256
         private const val DNS_CACHE_TTL_MS = 60_000L
         private val FALLBACK_UPSTREAMS = listOf("8.8.8.8", "1.1.1.1", "9.9.9.9")
+        private val PUBLIC_DOH_IPS = listOf("1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112")
     }
 
     private data class CachedDnsEntry(
@@ -89,6 +91,10 @@ class LocalDnsVpnService : VpnService() {
             stopVpn()
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_RECONFIGURE && running) {
+            stopVpn()
         }
 
         startForegroundNotification()
@@ -175,6 +181,19 @@ class LocalDnsVpnService : VpnService() {
                 .addAddress(TUN_IPV6_CLIENT, 128)
                 .addRoute(TUN_IPV6_DNS, 128)
                 .addDnsServer(TUN_IPV6_DNS)
+        }
+
+        val cfg = LocalDnsShieldManager.getConfig(applicationContext)
+        if (cfg.blockDoHBypass) {
+            val upstreamHostStrings = upstreamServers.mapNotNull { it.hostAddress }.toSet()
+            val hasRealIspDns = upstreamHostStrings.any { it !in PUBLIC_DOH_IPS }
+            if (hasRealIspDns) {
+                PUBLIC_DOH_IPS.forEach { ip ->
+                    if (ip !in upstreamHostStrings) {
+                        runCatching { builder.addRoute(ip, 32) }
+                    }
+                }
+            }
         }
 
         runCatching { builder.addDisallowedApplication(packageName) }
